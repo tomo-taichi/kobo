@@ -12,9 +12,11 @@ const selectCls = inputCls + " bg-white";
 export function CustomerPaymentNew({
   customerId,
   orders,
+  lockedOrderId,
 }: {
   customerId: string;
   orders: Order[];
+  lockedOrderId?: string;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -64,9 +66,18 @@ export function CustomerPaymentNew({
 
           <div>
             <label className="block text-xs text-gray-500 mb-1">Type</label>
-            <select name="type" defaultValue="debit" className={selectCls}>
-              <option value="debit">Debit (Invoice)</option>
+            <select name="type" defaultValue={lockedOrderId ? "credit" : "debit"} className={selectCls}>
               <option value="credit">Credit (Payment)</option>
+              <option value="debit">Debit (Invoice)</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Category</label>
+            <select name="category" defaultValue="deposit" className={selectCls}>
+              <option value="deposit">Deposit</option>
+              <option value="balance">Balance</option>
+              <option value="other">Other</option>
             </select>
           </div>
 
@@ -90,17 +101,21 @@ export function CustomerPaymentNew({
             </select>
           </div>
 
-          <div>
-            <label className="block text-xs text-gray-500 mb-1">Order (optional)</label>
-            <select name="order_id" className={selectCls}>
-              <option value="">—</option>
-              {orders.map((o) => (
-                <option key={o.id} value={o.id}>
-                  {o.order_date ?? "—"} {(o.seasons as { name: string } | null)?.name ?? ""}
-                </option>
-              ))}
-            </select>
-          </div>
+          {lockedOrderId ? (
+            <input type="hidden" name="order_id" value={lockedOrderId} />
+          ) : (
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Order (optional)</label>
+              <select name="order_id" className={selectCls}>
+                <option value="">—</option>
+                {orders.map((o) => (
+                  <option key={o.id} value={o.id}>
+                    {o.order_date ?? "—"} {(o.seasons as { name: string } | null)?.name ?? ""}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
           <div className="flex-1 min-w-40">
             <label className="block text-xs text-gray-500 mb-1">Note</label>

@@ -2,6 +2,7 @@ import React from "react";
 import { Document, Page, View, Text } from "@react-pdf/renderer";
 import { SIZES } from "@/lib/order-constants";
 import { OC_LABELS, type PaymentTerms, type PdfLang } from "./labels";
+import { computeOcTotals } from "./oc-data";
 
 type SizeQty = { size: string; quantity: number };
 type OrderItem = {
@@ -35,6 +36,13 @@ type Props = {
   paymentTerms: PaymentTerms;
   items: OrderItem[];
   versionLabel?: string | null;
+  // ── variant: shared layout for OC / Advance / Final ──
+  variant?: "oc" | "advance" | "final";
+  numberText?: string | null;       // overrides "ORDER #: n" (e.g. "No. DEP-0001")
+  bankDetails?: string[] | null;     // shown on advance/final
+  paymentDeadline?: string | null;   // shown on advance
+  depositRate?: number;              // advance: advance = total × rate
+  depositApplied?: number;           // final: billing-currency deposit to deduct
 };
 
 function fmtEur(n: number) {
@@ -62,35 +70,38 @@ const W_MEMO = 46;
 export function OcDocument({
   lang, nickname, footerLine, orderNumber, customerName, clientName, customerAddressLines,
   customerId, seasonName, orderDate, discountRate, taxRate, currency, exchangeRate, paymentTerms, items,
-  versionLabel,
+  versionLabel, variant = "oc", numberText, bankDetails, paymentDeadline, depositRate, depositApplied,
 }: Props) {
   const L = OC_LABELS[lang];
 
-  let totalQty = 0;
-  let subtotalRetail = 0;
-  let subtotalWholesale = 0;
-  for (const it of items) {
-    const q = it.sizes.reduce((a, b) => a + b.quantity, 0);
-    totalQty += q;
-    subtotalRetail += it.retailEur * q;
-    subtotalWholesale += it.wholesaleEur * q;
-  }
   const discountPct = Math.round(discountRate * 100);
   const taxPct = Math.round(taxRate * 100);
 
-  // EUR amounts (item table & subtotals always stay in €)
-  const taxAmount = subtotalWholesale * taxRate;
-  const total = subtotalWholesale + taxAmount;
-
-  // JPY customers: convert the wholesale subtotal to ¥ (floor 1,000), compute
-  // tax in ¥ on that basis, total = ¥ subtotal + ¥ tax. Total shown in ¥ only.
   const rate = exchangeRate && exchangeRate > 0 ? exchangeRate : null;
   const isJpy = currency === "JPY" && rate !== null;
-  const floorJpy = (eur: number) => Math.floor((eur * (rate as number)) / 1000) * 1000;
-  const subWholesaleJpy = isJpy ? floorJpy(subtotalWholesale) : 0;
-  const taxJpy = isJpy ? Math.floor((subWholesaleJpy * taxRate) / 1000) * 1000 : 0;
-  const totalJpy = subWholesaleJpy + taxJpy;
+  const t = computeOcTotals(items, taxRate, isJpy, rate);
+  const { totalQty, subtotalRetail, subtotalWholesale, taxAmount, totalEur, subWholesaleJpy, taxJpy, totalJpy, billingTotal } = t;
+  const fmtBill = (n: number) => (isJpy ? fmtJpy(n) : fmtEur(n));
   const wsJpyLabel = lang === "ja" ? "卸 小計 (JPY)" : "Subtotal (WS · JPY)";
+
+  // Title + number per variant
+  const title = variant === "advance" ? L.advanceInvoice : variant === "final" ? L.finalInvoice : L.orderConfirmation;
+  const numText = numberText ?? `${L.orderNo} ${orderNumber}`;
+
+  // Billing rows after the summary Total
+  const extraRows: { label: string; amount: string; bold?: boolean }[] = [];
+  if (variant === "advance") {
+    const dr = depositRate ?? 0;
+    const advanceVal = isJpy ? Math.floor((billingTotal * dr) / 1000) * 1000 : billingTotal * dr;
+    const balanceVal = billingTotal - advanceVal;
+    const dPct = Math.round(dr * 100);
+    extraRows.push({ label: `${L.advancePayment} (${dPct}%)`, amount: fmtBill(advanceVal), bold: true });
+    extraRows.push({ label: `${L.balance} (${100 - dPct}%)`, amount: fmtBill(balanceVal) });
+  } else if (variant === "final") {
+    const applied = depositApplied ?? 0;
+    if (applied > 0) extraRows.push({ label: L.lessDeposit, amount: `− ${fmtBill(applied)}` });
+    extraRows.push({ label: L.balanceDue, amount: fmtBill(billingTotal - applied), bold: true });
+  }
 
   const cell = { fontSize: 7, color: "#1a1a1a" };
   const muted = { color: "#8a8a8a" };
@@ -104,9 +115,9 @@ export function OcDocument({
 
         {/* Title row */}
         <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 10 }}>
-          <Text style={{ fontSize: 14 }}>{L.orderConfirmation}</Text>
+          <Text style={{ fontSize: 14 }}>{title}</Text>
           <Text style={{ marginHorizontal: 10, color: "#d0d0d0", fontSize: 14 }}>|</Text>
-          <Text style={{ fontSize: 9, color: "#555" }}>{L.orderNo} {orderNumber}</Text>
+          <Text style={{ fontSize: 9, color: "#555" }}>{numText}</Text>
           {versionLabel ? (
             <Text style={{ marginLeft: 8, fontSize: 8, color: "#999" }}>({versionLabel})</Text>
           ) : null}
@@ -129,11 +140,13 @@ export function OcDocument({
               <Text style={{ fontSize: 8, color: "#888" }}>{L.date}</Text>
               <Text style={{ fontSize: 8, color: "#888" }}>{L.season}</Text>
               <Text style={{ fontSize: 8, color: "#888" }}>{L.customerId}</Text>
+              {paymentDeadline ? <Text style={{ fontSize: 8, color: "#888" }}>{L.paymentDeadline}</Text> : null}
             </View>
             <View>
               <Text style={{ fontSize: 8, color: "#333" }}>: {fmtDate(orderDate)}</Text>
               <Text style={{ fontSize: 8, color: "#333" }}>: {seasonName}</Text>
               <Text style={{ fontSize: 8, color: "#333" }}>: {customerId}</Text>
+              {paymentDeadline ? <Text style={{ fontSize: 8, color: "#333", fontWeight: "bold" }}>: {paymentDeadline}</Text> : null}
             </View>
           </View>
         </View>
@@ -229,9 +242,24 @@ export function OcDocument({
             <SummaryRow label={L.subtotalWholesale} mid={`${discountPct}%`} amount={fmtEur(subtotalWholesale)} />
             {isJpy ? <SummaryRow label={wsJpyLabel} mid="" amount={fmtJpy(subWholesaleJpy)} /> : null}
             <SummaryRow label={L.tax} mid={`${taxPct}%`} amount={isJpy ? fmtJpy(taxJpy) : fmtEur(taxAmount)} />
-            <SummaryRow label={L.total} mid="" amount={isJpy ? fmtJpy(totalJpy) : fmtEur(total)} bold />
+            <SummaryRow label={L.total} mid="" amount={isJpy ? fmtJpy(totalJpy) : fmtEur(totalEur)} bold />
+            {extraRows.map((r, i) => (
+              <SummaryRow key={i} label={r.label} mid="" amount={r.amount} bold={r.bold} />
+            ))}
           </View>
         </View>
+
+        {/* Bank details (advance / final) */}
+        {variant !== "oc" && bankDetails ? (
+          <View style={{ marginTop: 12 }}>
+            <View style={{ backgroundColor: "#e9e9e9", paddingVertical: 3, paddingHorizontal: 6, marginBottom: 4 }}>
+              <Text style={{ fontSize: 8, color: "#555" }}>{L.bankDetails}</Text>
+            </View>
+            {bankDetails.map((line, i) => (
+              <Text key={i} style={{ fontSize: 7, color: "#444", marginBottom: 1.5 }}>{line}</Text>
+            ))}
+          </View>
+        ) : null}
 
         {/* Footer */}
         <View style={{ position: "absolute", bottom: 22, left: 28, right: 28 }} fixed>

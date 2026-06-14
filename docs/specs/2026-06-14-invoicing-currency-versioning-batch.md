@@ -60,3 +60,25 @@ company_settings += bank_wise_eu text, bank_rakuten_jp text
 
 ## 付随
 - **ADR-0003 を 10円 → 1,000円切り捨てに更新**(コードと整合)。
+
+## 改訂 (2026-06-14 後半): Advance リネーム & OC情報の Advance/Final 展開
+- **Deposit Invoice → "Advance Invoice"** にリネーム（PDF タイトル/ボタン/ファイル名。内部 doc_type は "deposit" のまま。JA「前払い請求書」）。
+- **ボタン表示**: `customers.deposit_terms === "Deposit_and_Production"` のときのみ Advance ボタン表示（Production_Only/null は非表示）。
+- **OcDocument を単一コンポーネント化**: `variant: "oc" | "advance" | "final"` + `numberText` / `bankDetails` / `paymentDeadline` / `depositRate`（advance）/ `depositApplied`（final）。OC/Advance/Final が同一ボディ（会社ヘッダー・商品表全列・サマリ・支払条件・フッター）を共有。金額計算は `computeOcTotals`（oc-data）に集約。
+- **Advance Invoice** = OC 全情報 + サマリ下に **Advance Payment (30%) + Balance (70%)** + Payment Deadline + BANK DETAILS。advance debit は `computeOcTotals` の billingTotal×depositRate（JPY は floor 1,000）で記録。
+- **Final Invoice** = OC 全情報（商品表全列）+ **税込 Total** + **Less: Advance Paid（プール充当）+ Balance Due** + BANK DETAILS。デポジットは**税込 Total から差引**。→ 前述の「Final に税が無い」未解決項目は**解消**（Advance 30% + Final 70% = 100% で帳簿整合）。
+- 旧 `deposit-invoice-document.tsx` / `final-invoice-document.tsx` は削除（OcDocument に統合）。
+
+## 改訂 (2026-06-15): Payment History タブ & フラグ自動化 & Documents 再構成
+- **Payment History タブ**（`orders/[id]/payments`）追加。当該 order の `customer_payments` を表示し、上部に Invoiced(debit合計)/Paid(credit合計)/Balance。手動登録は **credit + category(deposit/balance/other)**（`CustomerPaymentNew` を category 対応 + order ロックモードに拡張、`createPaymentEntry` も category 対応）。
+- **フラグを請求済/納品済の唯一のステータス源に**: Final 生成 → `is_flagged_invoice` 自動 ON、Commercial/Delivery 生成 → `is_flagged_delivery` 自動 ON。バッチ選択ポップアップの「処理済み除外」も**フラグ基準**（`BatchItem.processed`）に変更。
+- **Delivery Note は `group_type==="Domestic"` のみ**、それ以外は Commercial Invoice（Documents で出し分け、両方は出さない）。
+- **Documents タブ再構成**: 上部に PDF作成ボタンを横並び → Invoice & Delivery Status → Saved Versions。
+- **Saved Versions に Items / Total 列**: 生成時に `order_documents.total_qty` / `total_amount`（商品合計・請求通貨）をスナップショット保存（migration 追加、各 save アクションで書込）。
+- 残課題: Final の税は実装済み（Advance 30%+Final 70% で整合）。
+
+## 実装状況 (2026-06-14)
+- Phase 1〜5 実装完了・検証済み。`beginVersion`/`finalizeVersion`/`upsertDocumentDebit`(`src/lib/pdf/document-log.ts`)、`BatchGenerateButton`/`DepositGenerateButton`、各 save アクション。
+- **権限**: 後発 raw migration のテーブル(order_documents, order_document_versions, customer_payments, company_settings, customer_contracts)に `anon/authenticated` の DML grant + permissive RLS ポリシーを付与(既存テーブルと同パターン)。
+- **未解決 / 要確認**: **Final Invoice に税行が無い**。tax_included 顧客では OC 合計=WS+税、デポジット=30%×(WS+税) だが、Final はバッチ WS 小計 − デポジット差引(税なし)で請求するため、税込み顧客では OC 合計と Final 合計が一致しない。Final に税を載せるか要判断(現状スコープ外)。
+- **プレビュー**(API ルート直接)はバッチ選択前の下書きとして `is_flagged_invoice`/`is_flagged_delivery` を使用(保存版はポップアップの明示選択)。Invoice & Delivery Flags テーブルはこのプレビュー/フォールバック用に残置。

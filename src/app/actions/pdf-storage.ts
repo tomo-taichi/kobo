@@ -6,12 +6,11 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { ensureFonts } from "@/lib/pdf/fonts";
 import { OcDocument } from "@/lib/pdf/oc-document";
-import { DepositInvoiceDocument } from "@/lib/pdf/deposit-invoice-document";
-import { FinalInvoiceDocument } from "@/lib/pdf/final-invoice-document";
 import { CommercialInvoiceDocument } from "@/lib/pdf/commercial-invoice-document";
-import { getLang, buildPaymentTerms, bankDetailLines } from "@/lib/pdf/labels";
-import { buildOcProps } from "@/lib/pdf/oc-data";
-import { beginVersion, finalizeVersion } from "@/lib/pdf/document-log";
+import { DeliveryNoteDocument } from "@/lib/pdf/delivery-note-document";
+import { getLang, OC_LABELS } from "@/lib/pdf/labels";
+import { buildOcProps, computeOcTotals, buildDeliveryNoteProps } from "@/lib/pdf/oc-data";
+import { beginVersion, finalizeVersion, upsertDocumentDebit } from "@/lib/pdf/document-log";
 
 export type SavePdfResult = { url: string } | { error: string };
 
@@ -67,6 +66,8 @@ export async function saveOcPdf(orderId: string): Promise<SavePdfResult> {
 
     const url = await upload(supabase, orderId, `OC_${v.versionLabel}`, buffer as unknown as Buffer);
     await finalizeVersion(supabase, { ...v, fileUrl: url });
+    const ocT = computeOcTotals((props as any).items, (props as any).taxRate, (props as any).currency === "JPY", (props as any).exchangeRate);
+    await supabase.from("order_documents").update({ total_qty: ocT.totalQty, total_amount: ocT.billingTotal }).eq("id", v.documentId);
     await supabase.from("orders").update({ pdf_oc_url: url }).eq("id", orderId);
     revalidatePath(`/orders/${orderId}/documents`);
     return { url };
@@ -75,134 +76,186 @@ export async function saveOcPdf(orderId: string): Promise<SavePdfResult> {
   }
 }
 
-export async function saveDepositPdf(orderId: string): Promise<SavePdfResult> {
+// Advance Invoice (internally doc_type "deposit") — full OC body + advance/balance + bank + deadline
+export async function saveDepositPdf(orderId: string, paymentDeadline?: string | null): Promise<SavePdfResult> {
   ensureFonts();
   const supabase = await createClient();
 
-  const orderResult = await supabase
-    .from("orders")
-    .select("order_date, currency_type, deposit_rate, deposit_amount_eur, deposit_amount_jpy, invoice_count, customers(name, group_type, currency, bank, deposit_terms, billing_company, billing_address, billing_city, billing_country), seasons(name)")
-    .eq("id", orderId)
-    .single();
+  const props: any = await buildOcProps(supabase, orderId);
+  if (!props) return { error: "Order not found" };
 
-  const order: any = orderResult.data;
-  if (!order) return { error: "Order not found" };
-
-  const lang = getLang(order.customers?.group_type);
-  const company = await resolveCompany(supabase, lang);
-  const paymentTerms = buildPaymentTerms(
-    order.customers?.group_type,
-    order.customers?.deposit_terms === "Deposit_and_Production",
-    Math.round(Number(order.deposit_rate ?? 0) * 100),
-    company.nickname,
-  );
-  const bankDetails = bankDetailLines(order.customers?.bank, company.bankWiseEu, company.bankRakutenJp);
-
+  const isJpy = props.currency === "JPY";
+  const deadlineDisplay = paymentDeadline ? paymentDeadline.replaceAll("-", "/") : null;
   const v = await beginVersion(supabase, orderId, "deposit");
 
+  // Advance amount (= what's billed now) computed the same way the PDF renders it
+  const t = computeOcTotals(props.items, props.taxRate, isJpy, props.exchangeRate);
+  const advance = isJpy
+    ? Math.floor((t.billingTotal * props.depositRate) / 1000) * 1000
+    : t.billingTotal * props.depositRate;
+
   try {
-    const buffer = await renderToBuffer(React.createElement(DepositInvoiceDocument, {
-      lang,
-      company,
-      customerName: order.customers?.billing_company || order.customers?.name || "—",
-      customerAddress: buildCustomerAddress(order.customers),
-      seasonName: order.seasons?.name ?? "—",
-      orderDate: order.order_date,
-      currency: order.customers?.currency === "JPY" ? "JPY" : "EUR",
-      depositAmountEur: order.deposit_amount_eur ? Number(order.deposit_amount_eur) : null,
-      depositAmountJpy: order.deposit_amount_jpy ? Number(order.deposit_amount_jpy) : null,
-      invoiceCount: order.invoice_count ?? 0,
-      paymentTerms,
-      bankDetails,
-      paymentDeadline: null,
+    const buffer = await renderToBuffer(React.createElement(OcDocument, {
+      ...props,
+      variant: "advance",
+      numberText: `${OC_LABELS[props.lang as "en" | "ja"].invoiceNo} DEP-${String(props.invoiceCount + 1).padStart(4, "0")}`,
+      paymentDeadline: deadlineDisplay,
       versionLabel: v.versionLabel,
     }) as any);
 
-    const url = await upload(supabase, orderId, `Deposit_${v.versionLabel}`, buffer as unknown as Buffer);
+    const url = await upload(supabase, orderId, `Advance_${v.versionLabel}`, buffer as unknown as Buffer);
     await finalizeVersion(supabase, { ...v, fileUrl: url });
+    await supabase.from("order_documents")
+      .update({ total_qty: t.totalQty, total_amount: t.billingTotal, ...(paymentDeadline ? { deposit_deadline: paymentDeadline } : {}) })
+      .eq("id", v.documentId);
+
+    await upsertDocumentDebit(supabase, {
+      documentId: v.documentId,
+      orderId,
+      customerId: props.customerIdRaw,
+      category: "deposit",
+      amount: advance,
+      currency: isJpy ? "JPY" : "EUR",
+      note: `Advance Invoice ${v.versionLabel}`,
+    });
+
     await supabase.from("orders").update({ pdf_deposit_url: url }).eq("id", orderId);
     revalidatePath(`/orders/${orderId}/documents`);
+    if (props.customerIdRaw) revalidatePath(`/customers/${props.customerIdRaw}/payments`);
     return { url };
   } catch (e: any) {
     return { error: e?.message ?? "PDF generation failed" };
   }
 }
 
-export async function saveFinalInvoicePdf(orderId: string): Promise<SavePdfResult> {
+export type BatchOpts = { mode?: "new" | "revise"; documentId?: string | null; itemIds?: string[] | null };
+
+// Final Invoice — full OC body + tax, less paid-deposit (pool), Balance Due. Batch-aware.
+export async function saveFinalInvoicePdf(orderId: string, opts: BatchOpts = {}): Promise<SavePdfResult> {
   ensureFonts();
   const supabase = await createClient();
 
-  const [orderResult, itemsResult] = await Promise.all([
-    supabase
-      .from("orders")
-      .select("order_date, currency_type, exchange_rate, deposit_rate, invoice_count, customers(name, group_type, currency, bank, deposit_terms, billing_company, billing_address, billing_city, billing_country), seasons(name)")
-      .eq("id", orderId)
-      .single(),
-    supabase
-      .from("order_items")
-      .select("customer_wholesale_eur, products(product_number, product_category, model_name, name, color), order_item_sizes(size, quantity)")
-      .eq("order_id", orderId)
-      .eq("is_flagged_invoice", true),
-  ]);
+  const props: any = await buildOcProps(supabase, orderId);
+  if (!props) return { error: "Order not found" };
 
-  const order: any = orderResult.data;
-  if (!order) return { error: "Order not found" };
+  const isJpy = props.currency === "JPY";
 
-  const lang = getLang(order.customers?.group_type);
-  const company = await resolveCompany(supabase, lang);
-  const paymentTerms = buildPaymentTerms(
-    order.customers?.group_type,
-    order.customers?.deposit_terms === "Deposit_and_Production",
-    Math.round(Number(order.deposit_rate ?? 0) * 100),
-    company.nickname,
-  );
-  const bankDetails = bankDetailLines(order.customers?.bank, company.bankWiseEu, company.bankRakutenJp);
-  const v = await beginVersion(supabase, orderId, "final");
+  // Selected batch items (fallback to all items if no explicit selection)
+  const selectedIds: string[] | null = opts.itemIds && opts.itemIds.length > 0 ? opts.itemIds : null;
+  const batchItems = selectedIds
+    ? props.items.filter((i: any) => selectedIds.includes(i.id))
+    : props.items;
+  if (!batchItems.length) return { error: "No items selected for this invoice" };
 
-  const items = (itemsResult.data ?? []).map((item: any) => ({
-    productId: fmtId(item.products?.product_number),
-    productCategory: item.products?.product_category ?? null,
-    modelName: item.products?.model_name ?? item.products?.name ?? "—",
-    color: item.products?.color ?? null,
-    customerWholesaleEur: Number(item.customer_wholesale_eur),
-    sizes: (item.order_item_sizes ?? []).map((s: any) => ({ size: s.size, quantity: s.quantity })),
-  }));
+  const v = await beginVersion(supabase, orderId, "final", {
+    documentId: opts.mode === "revise" ? opts.documentId : null,
+    forceNew: opts.mode !== "revise",
+    itemIds: batchItems.map((i: any) => i.id),
+  });
+
+  // Batch total (tax-inclusive) in billing currency
+  const t = computeOcTotals(batchItems, props.taxRate, isJpy, props.exchangeRate);
+  const billingTotal = t.billingTotal;
+
+  // Deposit pool: paid deposit (credits) consumed sequentially across batch finals
+  const { data: depCredits } = await supabase
+    .from("customer_payments")
+    .select("amount")
+    .eq("order_id", orderId)
+    .eq("type", "credit")
+    .eq("category", "deposit");
+  const totalPaidDeposit = (depCredits ?? []).reduce((s: number, r: any) => s + Number(r.amount), 0);
+
+  const { data: otherFinals } = await supabase
+    .from("order_documents")
+    .select("deposit_applied")
+    .eq("order_id", orderId)
+    .eq("doc_type", "final")
+    .neq("id", v.documentId);
+  const appliedByOthers = (otherFinals ?? []).reduce((s: number, r: any) => s + Number(r.deposit_applied ?? 0), 0);
+
+  const remainingPool = Math.max(0, totalPaidDeposit - appliedByOthers);
+  const depositApplied = Math.min(remainingPool, billingTotal);
+  const balanceDue = billingTotal - depositApplied;
 
   try {
-    const buffer = await renderToBuffer(React.createElement(FinalInvoiceDocument, {
-      lang,
-      company,
-      customerName: order.customers?.billing_company || order.customers?.name || "—",
-      customerAddress: buildCustomerAddress(order.customers),
-      seasonName: order.seasons?.name ?? "—",
-      orderDate: order.order_date,
-      currency: order.customers?.currency === "JPY" ? "JPY" : "EUR",
-      exchangeRate: order.exchange_rate ? Number(order.exchange_rate) : null,
-      invoiceCount: order.invoice_count ?? 1,
-      items,
-      paymentTerms,
-      bankDetails,
-      depositAppliedEur: null,
+    const buffer = await renderToBuffer(React.createElement(OcDocument, {
+      ...props,
+      items: batchItems,
+      variant: "final",
+      numberText: `${OC_LABELS[props.lang as "en" | "ja"].invoiceNo} INV-${String(props.invoiceCount).padStart(4, "0")}`,
+      depositApplied,
       versionLabel: v.versionLabel,
     }) as any);
 
-    const url = await upload(supabase, orderId, `FinalInvoice_${v.versionLabel}`, buffer as unknown as Buffer);
+    const url = await upload(supabase, orderId, `FinalInvoice_b${v.seqNo}_${v.versionLabel}`, buffer as unknown as Buffer);
     await finalizeVersion(supabase, { ...v, fileUrl: url });
+
+    await supabase.from("order_documents")
+      .update({ deposit_applied: depositApplied, total_qty: t.totalQty, total_amount: t.billingTotal })
+      .eq("id", v.documentId);
+    // Auto-tick "invoiced" for the included items (status source)
+    await supabase.from("order_items").update({ is_flagged_invoice: true }).in("id", batchItems.map((i: any) => i.id));
+    await upsertDocumentDebit(supabase, {
+      documentId: v.documentId,
+      orderId,
+      customerId: props.customerIdRaw,
+      category: "balance",
+      amount: balanceDue,
+      currency: isJpy ? "JPY" : "EUR",
+      note: `Final Invoice batch ${v.seqNo} ${v.versionLabel}`,
+    });
+
     await supabase.from("orders").update({ pdf_final_url: url }).eq("id", orderId);
     revalidatePath(`/orders/${orderId}/documents`);
+    if (props.customerIdRaw) revalidatePath(`/customers/${props.customerIdRaw}/payments`);
     return { url };
   } catch (e: any) {
     return { error: e?.message ?? "PDF generation failed" };
   }
 }
 
-export async function saveCommercialPdf(orderId: string, isOverseas: boolean): Promise<SavePdfResult> {
+export async function saveCommercialPdf(orderId: string, isOverseas: boolean, opts: BatchOpts = {}): Promise<SavePdfResult> {
   ensureFonts();
   const supabase = await createClient();
+
+  // Domestic 納品書 (Delivery Note) — dedicated Japanese all-¥ layout
+  if (!isOverseas) {
+    const dn: any = await buildDeliveryNoteProps(supabase, orderId, opts.itemIds);
+    if (!dn) return { error: "Order not found" };
+    if (dn.itemRowIds.length === 0) return { error: "No items selected" };
+
+    const v = await beginVersion(supabase, orderId, "delivery", {
+      documentId: opts.mode === "revise" ? opts.documentId : null,
+      forceNew: opts.mode !== "revise",
+      itemIds: dn.itemRowIds,
+    });
+
+    try {
+      const buffer = await renderToBuffer(React.createElement(DeliveryNoteDocument, { ...dn, versionLabel: v.versionLabel }) as any);
+      const url = await upload(supabase, orderId, `DeliveryNote_b${v.seqNo}_${v.versionLabel}`, buffer as unknown as Buffer);
+      await finalizeVersion(supabase, { ...v, fileUrl: url });
+
+      let totalQty = 0, wholesaleJpy = 0;
+      for (const it of dn.items) {
+        const q = it.sizes.reduce((a: number, b: any) => a + b.quantity, 0);
+        totalQty += q;
+        wholesaleJpy += it.whsleJpy * q;
+      }
+      const totalAmount = wholesaleJpy + Math.round(wholesaleJpy * dn.taxRate);
+      await supabase.from("order_documents").update({ total_qty: totalQty, total_amount: totalAmount }).eq("id", v.documentId);
+      await supabase.from("order_items").update({ is_flagged_delivery: true }).in("id", dn.itemRowIds);
+      await supabase.from("orders").update({ pdf_commercial_url: url }).eq("id", orderId);
+      revalidatePath(`/orders/${orderId}/documents`);
+      return { url };
+    } catch (e: any) {
+      return { error: e?.message ?? "PDF generation failed" };
+    }
+  }
 
   const orderResult = await supabase
     .from("orders")
-    .select("order_date, currency_type, exchange_rate, customers(name, group_type, billing_company, billing_address, billing_city, billing_country), seasons(name)")
+    .select("order_date, currency_type, exchange_rate, customers(name, group_type, currency, billing_company, billing_address, billing_city, billing_country), seasons(name)")
     .eq("id", orderId)
     .single();
 
@@ -211,23 +264,36 @@ export async function saveCommercialPdf(orderId: string, isOverseas: boolean): P
 
   const lang = getLang(order.customers?.group_type);
   const company = await resolveCompany(supabase, lang);
-  const v = await beginVersion(supabase, orderId, isOverseas ? "commercial" : "delivery");
 
+  // Selected batch items (fallback to flag if no explicit selection)
   const flagField = isOverseas ? "is_flagged_invoice" : "is_flagged_delivery";
-  const itemsResult = await supabase
+  let itemsQuery = supabase
     .from("order_items")
-    .select("customer_wholesale_eur, products(product_number, product_category, model_name, name, color), order_item_sizes(size, quantity), product_materials(materials(name))")
-    .eq("order_id", orderId)
-    .eq(flagField, true);
+    .select("id, customer_wholesale_eur, products(product_number, product_category, model_name, name, color, product_materials(materials(name))), order_item_sizes(size, quantity)")
+    .eq("order_id", orderId);
+  if (opts.itemIds && opts.itemIds.length > 0) {
+    itemsQuery = itemsQuery.in("id", opts.itemIds);
+  } else {
+    itemsQuery = itemsQuery.eq(flagField, true);
+  }
+  const { data: itemRows } = await itemsQuery;
+  if (!itemRows || itemRows.length === 0) return { error: "No items selected" };
 
-  const items = (itemsResult.data ?? []).map((item: any) => ({
+  const docType = isOverseas ? "commercial" : "delivery";
+  const v = await beginVersion(supabase, orderId, docType, {
+    documentId: opts.mode === "revise" ? opts.documentId : null,
+    forceNew: opts.mode !== "revise",
+    itemIds: (itemRows as any[]).map((r) => r.id),
+  });
+
+  const items = (itemRows as any[]).map((item: any) => ({
     productId: fmtId(item.products?.product_number),
     productCategory: item.products?.product_category ?? null,
     modelName: item.products?.model_name ?? item.products?.name ?? "—",
     color: item.products?.color ?? null,
     customerWholesaleEur: Number(item.customer_wholesale_eur),
     sizes: (item.order_item_sizes ?? []).map((s: any) => ({ size: s.size, quantity: s.quantity })),
-    materials: (item.product_materials ?? []).map((pm: any) => pm.materials?.name ?? "").filter(Boolean),
+    materials: (item.products?.product_materials ?? []).map((pm: any) => pm.materials?.name ?? "").filter(Boolean),
   }));
 
   try {
@@ -246,8 +312,19 @@ export async function saveCommercialPdf(orderId: string, isOverseas: boolean): P
     }) as any);
 
     const key = isOverseas ? "CommercialInvoice" : "DeliveryNote";
-    const url = await upload(supabase, orderId, `${key}_${v.versionLabel}`, buffer as unknown as Buffer);
+    const url = await upload(supabase, orderId, `${key}_b${v.seqNo}_${v.versionLabel}`, buffer as unknown as Buffer);
     await finalizeVersion(supabase, { ...v, fileUrl: url });
+
+    // Goods total snapshot (WS value in billing currency, no tax) + qty
+    const isJpy = order.customers?.currency === "JPY";
+    const rate = order.exchange_rate ? Number(order.exchange_rate) : null;
+    const totalQty = items.reduce((s: number, i: any) => s + i.sizes.reduce((a: number, b: any) => a + b.quantity, 0), 0);
+    const wsEur = items.reduce((s: number, i: any) => s + i.customerWholesaleEur * i.sizes.reduce((a: number, b: any) => a + b.quantity, 0), 0);
+    const totalAmount = isJpy && rate ? Math.floor((wsEur * rate) / 1000) * 1000 : wsEur;
+    await supabase.from("order_documents").update({ total_qty: totalQty, total_amount: totalAmount }).eq("id", v.documentId);
+    // Auto-tick "delivered" for the included items (status source)
+    await supabase.from("order_items").update({ is_flagged_delivery: true }).in("id", (itemRows as any[]).map((r) => r.id));
+
     await supabase.from("orders").update({ pdf_commercial_url: url }).eq("id", orderId);
     revalidatePath(`/orders/${orderId}/documents`);
     return { url };

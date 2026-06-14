@@ -8,6 +8,7 @@ const TABS = [
   { segment: "products",   label: "Products" },
   { segment: "financials", label: "Financials" },
   { segment: "documents",  label: "Documents" },
+  { segment: "payments",   label: "Payment History" },
 ];
 
 export function OrderTabNav({ orderId }: { orderId: string }) {

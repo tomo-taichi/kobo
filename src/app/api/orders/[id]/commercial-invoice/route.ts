@@ -3,7 +3,9 @@ import React from "react";
 import { createClient } from "@/lib/supabase/server";
 import { ensureFonts } from "@/lib/pdf/fonts";
 import { CommercialInvoiceDocument } from "@/lib/pdf/commercial-invoice-document";
+import { DeliveryNoteDocument } from "@/lib/pdf/delivery-note-document";
 import { getLang } from "@/lib/pdf/labels";
+import { buildDeliveryNoteProps } from "@/lib/pdf/oc-data";
 
 function fmtId(raw: string | null): string {
   if (!raw) return "—";
@@ -46,6 +48,17 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   const lang = getLang(order.customers?.group_type);
   const isOverseas = forceType ? forceType !== "domestic" : order.customers?.group_type !== "Domestic";
 
+  // Domestic 納品書 — dedicated Japanese all-¥ layout (preview = all items)
+  if (!isOverseas) {
+    const dn: any = await buildDeliveryNoteProps(supabase, id);
+    if (!dn) return new Response("Not found", { status: 404 });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const dnStream = await renderToStream(React.createElement(DeliveryNoteDocument, { ...dn }) as any);
+    return new Response(dnStream as unknown as ReadableStream, {
+      headers: { "Content-Type": "application/pdf", "Content-Disposition": `inline; filename="DeliveryNote-${id.slice(0, 8)}.pdf"` },
+    });
+  }
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const cs: any = companyResult.data;
   const company = {
@@ -57,7 +70,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   const flagField = isOverseas ? "is_flagged_invoice" : "is_flagged_delivery";
   const itemsResult = await supabase
     .from("order_items")
-    .select("customer_wholesale_eur, products(product_number, product_category, model_name, name, color), order_item_sizes(size, quantity), product_materials(materials(name))")
+    .select("customer_wholesale_eur, products(product_number, product_category, model_name, name, color, product_materials(materials(name))), order_item_sizes(size, quantity)")
     .eq("order_id", id)
     .eq(flagField, true);
 
@@ -72,7 +85,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       size: s.size,
       quantity: s.quantity,
     })),
-    materials: (item.product_materials ?? []).map((pm: { materials: { name: string } | null }) => pm.materials?.name ?? "").filter(Boolean),
+    materials: (item.products?.product_materials ?? []).map((pm: { materials: { name: string } | null }) => pm.materials?.name ?? "").filter(Boolean),
   }));
 
   const customerName = order.customers?.billing_company || order.customers?.name || "—";
