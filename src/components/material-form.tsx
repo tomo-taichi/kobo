@@ -1,0 +1,286 @@
+"use client";
+
+import { useActionState, useState } from "react";
+import {
+  FABRIC_CATEGORIES,
+  ACCESSORY_CATEGORIES,
+  UNIT_TYPES,
+  CATEGORY_LABELS,
+  UNIT_TYPE_LABELS,
+  COMPOSITION_GROUPS,
+  MAX_COMPOSITIONS,
+} from "@/lib/material-constants";
+
+type Action = (_state: string | null, formData: FormData) => Promise<string | null>;
+type Supplier = { id: string; name: string };
+type Season   = { id: string; name: string };
+type CompRow  = { label: string; pct: string };
+
+type Props = {
+  action: Action;
+  suppliers: Supplier[];
+  seasons?: Season[];
+  pastColors?: string[];
+  initialData?: {
+    name?: string;
+    category?: string;
+    unit_price_jpy?: number;
+    set_price_jpy?: number;
+    unit_type?: string;
+    supplier_id?: string | null;
+    season_id?: string | null;
+    color?: string;
+    comp_1_label?: string; comp_1_pct?: number | null;
+    comp_2_label?: string; comp_2_pct?: number | null;
+    comp_3_label?: string; comp_3_pct?: number | null;
+    comp_4_label?: string; comp_4_pct?: number | null;
+    comp_5_label?: string; comp_5_pct?: number | null;
+  };
+  id?: string;
+  onCancel?: () => void;
+};
+
+const inputCls = "w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-gray-900";
+
+function buildInitialComps(d: Props["initialData"]): CompRow[] {
+  const rows: CompRow[] = [];
+  for (let i = 1; i <= MAX_COMPOSITIONS; i++) {
+    const label = (d as Record<string, unknown>)?.[`comp_${i}_label`] as string | undefined;
+    const pct   = (d as Record<string, unknown>)?.[`comp_${i}_pct`]   as number | null | undefined;
+    if (label) rows.push({ label, pct: pct != null ? String(pct) : "" });
+  }
+  return rows.length > 0 ? rows : [{ label: "", pct: "" }];
+}
+
+function SectionHeading({ children }: { children: React.ReactNode }) {
+  return (
+    <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider border-b border-gray-100 pb-1 mb-3">
+      {children}
+    </h3>
+  );
+}
+
+export function MaterialForm({ action, suppliers, seasons = [], pastColors = [], initialData = {}, id, onCancel }: Props) {
+  const [error, formAction, pending] = useActionState(action, null);
+  const [comps, setComps] = useState<CompRow[]>(() => buildInitialComps(initialData));
+  const [compError, setCompError] = useState<string | null>(null);
+
+  const total = comps.reduce((sum, r) => sum + (Number(r.pct) || 0), 0);
+
+  function handleCompChange(i: number, field: "label" | "pct", value: string) {
+    setComps((prev) => prev.map((r, idx) => idx === i ? { ...r, [field]: value } : r));
+    setCompError(null);
+  }
+
+  function addRow() {
+    if (comps.length < MAX_COMPOSITIONS) setComps((prev) => [...prev, { label: "", pct: "" }]);
+  }
+
+  function removeRow(i: number) {
+    if (comps.length > 1) setComps((prev) => prev.filter((_, idx) => idx !== i));
+  }
+
+  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    const filled = comps.filter((r) => r.label && r.pct);
+    if (filled.length === 0) {
+      e.preventDefault();
+      setCompError("At least one composition entry is required");
+      return;
+    }
+    if (total !== 100) {
+      e.preventDefault();
+      setCompError(`Total is ${total}%. Must equal 100%`);
+      return;
+    }
+  }
+
+  return (
+    <form action={formAction} onSubmit={handleSubmit} className="flex flex-col gap-5">
+      {id && <input type="hidden" name="id" value={id} />}
+      {error && <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded">{error}</p>}
+
+      {/* ── Group 1: Material Info ── */}
+      <div>
+        <SectionHeading>Material Info</SectionHeading>
+        <div className="flex flex-col gap-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="col-span-2">
+              <label className="block text-xs font-medium text-gray-600 mb-1">
+                Material Name <span className="text-red-500">*</span>
+                <span className="ml-1 text-gray-400 font-normal">(English)</span>
+              </label>
+              <input
+                name="name"
+                defaultValue={initialData.name ?? ""}
+                required
+                lang="en-GB"
+                spellCheck
+                placeholder="e.g. Wool Gabardine"
+                className={inputCls}
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">
+                Colour <span className="text-red-500">*</span>
+                <span className="ml-1 text-gray-400 font-normal">(English)</span>
+              </label>
+              {pastColors.length > 0 && (
+                <datalist id="past-colours">
+                  {pastColors.map((c) => <option key={c} value={c} />)}
+                </datalist>
+              )}
+              <input
+                name="color"
+                defaultValue={initialData.color ?? ""}
+                list={pastColors.length > 0 ? "past-colours" : undefined}
+                required
+                lang="en-GB"
+                spellCheck
+                placeholder="e.g. Navy Blue"
+                className={inputCls}
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Category <span className="text-red-500">*</span></label>
+              <select name="category" defaultValue={initialData.category ?? ""} required className={inputCls + " bg-white"}>
+                <option value="">Select...</option>
+                <optgroup label="Fabric">
+                  {FABRIC_CATEGORIES.map((c) => (
+                    <option key={c} value={c}>{CATEGORY_LABELS[c]}</option>
+                  ))}
+                </optgroup>
+                <optgroup label="Accessory Material">
+                  {ACCESSORY_CATEGORIES.map((c) => (
+                    <option key={c} value={c}>{CATEGORY_LABELS[c]}</option>
+                  ))}
+                </optgroup>
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Season <span className="text-red-500">*</span></label>
+            <select name="season_id" defaultValue={initialData.season_id ?? ""} required className={inputCls + " bg-white"}>
+              <option value="">— Select —</option>
+              {seasons.map((s) => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Group 2: Sourcing & Pricing ── */}
+      <div>
+        <SectionHeading>Sourcing &amp; Pricing</SectionHeading>
+        <div className="flex flex-col gap-3">
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Supplier</label>
+            <select name="supplier_id" defaultValue={initialData.supplier_id ?? ""} className={inputCls + " bg-white"}>
+              <option value="">— None —</option>
+              {suppliers.map((s) => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Unit <span className="text-red-500">*</span></label>
+            <select name="unit_type" defaultValue={initialData.unit_type ?? ""} required className={inputCls + " bg-white"}>
+              <option value="">Select...</option>
+              {UNIT_TYPES.map((u) => (
+                <option key={u} value={u}>{UNIT_TYPE_LABELS[u]}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Actual Unit Price (¥)</label>
+              <input
+                name="unit_price_jpy"
+                type="number" min="0" step="0.01"
+                defaultValue={initialData.unit_price_jpy ?? 0}
+                className={inputCls}
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Set Price (¥)</label>
+              <input
+                name="set_price_jpy"
+                type="number" min="0" step="0.01"
+                defaultValue={initialData.set_price_jpy ?? 0}
+                className={inputCls}
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Group 3: Composition ── */}
+      <div>
+        <SectionHeading>
+          Composition
+          <span className={`ml-2 normal-case font-normal tracking-normal ${total === 100 ? "text-green-600" : "text-gray-400"}`}>
+            Total: {total}%
+          </span>
+        </SectionHeading>
+        {compError && <p className="text-xs text-red-600 mb-2">{compError}</p>}
+        <div className="flex flex-col gap-2">
+          {comps.map((row, i) => (
+            <div key={i} className="flex gap-2 items-center">
+              <input type="hidden" name={`comp_${i + 1}_label`} value={row.label} />
+              <input type="hidden" name={`comp_${i + 1}_pct`}   value={row.pct} />
+              <select
+                value={row.label}
+                onChange={(e) => handleCompChange(i, "label", e.target.value)}
+                className="flex-1 px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-gray-900 bg-white"
+              >
+                <option value="">— Select —</option>
+                {COMPOSITION_GROUPS.map((group) => (
+                  <optgroup key={group.label} label={group.label}>
+                    {group.items.map((item) => (
+                      <option key={item} value={item}>{item}</option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
+              <div className="flex items-center gap-1">
+                <input
+                  type="number" min="1" max="100"
+                  value={row.pct}
+                  onChange={(e) => handleCompChange(i, "pct", e.target.value)}
+                  placeholder="0"
+                  className="w-16 px-2 py-2 border border-gray-300 rounded-md text-sm text-right focus:outline-none focus:ring-2 focus:ring-gray-900"
+                />
+                <span className="text-sm text-gray-500">%</span>
+              </div>
+              {comps.length > 1 && (
+                <button type="button" onClick={() => removeRow(i)} className="text-gray-300 hover:text-red-500 text-lg leading-none">×</button>
+              )}
+            </div>
+          ))}
+          {comps.length < MAX_COMPOSITIONS && (
+            <button type="button" onClick={addRow} className="text-xs text-gray-500 hover:text-gray-900 border border-gray-200 rounded px-2 py-1 w-fit hover:bg-gray-50 mt-1">
+              + Add row
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="flex gap-2 pt-1">
+        <button type="submit" disabled={pending} className="px-4 py-2 bg-gray-900 text-white text-sm rounded-md hover:bg-gray-700 disabled:opacity-50">
+          {pending ? "Saving..." : id ? "Update" : "Create"}
+        </button>
+        {onCancel && (
+          <button type="button" onClick={onCancel} className="px-4 py-2 text-sm text-gray-600 border border-gray-300 rounded-md hover:bg-gray-50">
+            Cancel
+          </button>
+        )}
+      </div>
+    </form>
+  );
+}
