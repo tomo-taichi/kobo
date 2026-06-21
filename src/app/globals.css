@@ -1,6 +1,11 @@
 @import "tailwindcss";
 
 :root {
+  /* The app is a light-only design (white surfaces, dark-gray text via Tailwind
+     utilities). Pin the document to a light color scheme so OS Dark Mode can't
+     flip the base background to black (which left dark text unreadable) or render
+     native controls (select / date pickers / scrollbars) with dark chrome. */
+  color-scheme: light;
   --background: #ffffff;
   --foreground: #171717;
 }
@@ -10,13 +15,6 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
 }
 
 body {
