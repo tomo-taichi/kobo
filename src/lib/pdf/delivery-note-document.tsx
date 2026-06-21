@@ -18,6 +18,7 @@ type Company = {
   phone: string | null;
   email: string | null;
   sealUrl: string | null;
+  registrationNo: string | null;
 };
 
 type Props = {
@@ -92,6 +93,7 @@ export function DeliveryNoteDocument({
               <View style={{ height: 6 }} />
               {company.phone ? <Text style={{ fontSize: 9, color: "#333" }}>tel:　{company.phone}</Text> : null}
               {company.email ? <Text style={{ fontSize: 9, color: "#333" }}>email: {company.email}</Text> : null}
+              {company.registrationNo ? <Text style={{ fontSize: 9, color: "#333" }}>登録番号: {company.registrationNo}</Text> : null}
             </View>
             {company.sealUrl ? (
               // eslint-disable-next-line jsx-a11y/alt-text

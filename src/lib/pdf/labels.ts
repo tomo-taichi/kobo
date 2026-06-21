@@ -65,8 +65,10 @@ export const LABELS = {
   },
 } as const;
 
-export function getLang(groupType: string | null | undefined): PdfLang {
-  return groupType === "Domestic" ? "ja" : "en";
+// Document language follows the customer's currency: JPY → Japanese, else English.
+// See docs/adr/0006-document-language-by-currency.md
+export function getLang(currency: string | null | undefined): PdfLang {
+  return currency === "JPY" ? "ja" : "en";
 }
 
 export type CompanyInfo = {
@@ -98,7 +100,7 @@ export const OC_LABELS = {
     tax: "Tax",
     total: "Total",
     advanceInvoice: "Advance Invoice",
-    finalInvoice: "Final Invoice",
+    finalInvoice: "Invoice",
     invoiceNo: "No.",
     advancePayment: "Advance Payment",
     balance: "Balance",
@@ -106,6 +108,8 @@ export const OC_LABELS = {
     balanceDue: "Balance Due",
     paymentDeadline: "Payment Deadline",
     bankDetails: "BANK DETAILS:",
+    issueDate: "Issue Date",
+    currency: "Currency",
   },
   ja: {
     orderConfirmation: "オーダーコンファーメーション",
@@ -116,19 +120,19 @@ export const OC_LABELS = {
     colCategory: "カテゴリ",
     colId: "ID",
     colItem: "品名",
-    colWholesale: "卸値",
-    colRetail: "小売",
+    colWholesale: "下代",
+    colRetail: "上代",
     colQty: "数量",
-    colWhsleTotal: "卸合計",
-    colRetailTotal: "小売合計",
+    colWhsleTotal: "下代合計",
+    colRetailTotal: "上代合計",
     colMemo: "備考",
     paymentTerm: "お支払い条件:",
-    subtotalRetail: "小売 小計",
-    subtotalWholesale: "卸 小計",
+    subtotalRetail: "上代 小計",
+    subtotalWholesale: "下代 小計",
     tax: "消費税",
     total: "合計",
     advanceInvoice: "前払い請求書",
-    finalInvoice: "ファイナルインボイス",
+    finalInvoice: "請求書",
     invoiceNo: "No.",
     advancePayment: "前払い金",
     balance: "残額",
@@ -136,6 +140,8 @@ export const OC_LABELS = {
     balanceDue: "請求額",
     paymentDeadline: "お支払い期限",
     bankDetails: "振込先 / BANK DETAILS:",
+    issueDate: "発行日",
+    currency: "通貨",
   },
 } as const;
 

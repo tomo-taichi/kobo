@@ -22,6 +22,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     variant: "final",
     numberText: `${OC_LABELS[props.lang as "en" | "ja"].invoiceNo} INV-${String(props.invoiceCount).padStart(4, "0")}`,
     depositApplied: 0,
+    issueDate: new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Tokyo" }).replaceAll("-", "/"),
   }) as any);
 
   return new Response(stream as unknown as ReadableStream, {

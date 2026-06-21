@@ -77,6 +77,11 @@ company_settings += bank_wise_eu text, bank_rakuten_jp text
 - **Saved Versions に Items / Total 列**: 生成時に `order_documents.total_qty` / `total_amount`（商品合計・請求通貨）をスナップショット保存（migration 追加、各 save アクションで書込）。
 - 残課題: Final の税は実装済み（Advance 30%+Final 70% で整合）。
 
+## 改訂 (2026-06-22): デポジット差引方式の変更 + Select All
+- **デポジット差引をプール方式から「各バッチ合計の 30% を引く」方式に変更**。Final 生成時にポップアップで **「Deposit Paid? Yes / No」** を確認(Deposit_and_Production 顧客のみ表示)。Yes → `deposit_rate × そのバッチの税込合計` を差引、No → 差引なし(全額請求)。各バッチが自分の 30% を引くため、全バッチ合計の差引 = 注文全体の 30%(= デポジット)で整合。`customer_payments` の credit プール消費ロジックは廃止(手動確認に置換)。
+- **Select All / Clear ボタン**を Final/Commercial/Delivery の商品選択ポップアップに追加。
+- 請求書サマリの「請求額」行は削除(上部の強調帯に集約)。
+
 ## 実装状況 (2026-06-14)
 - Phase 1〜5 実装完了・検証済み。`beginVersion`/`finalizeVersion`/`upsertDocumentDebit`(`src/lib/pdf/document-log.ts`)、`BatchGenerateButton`/`DepositGenerateButton`、各 save アクション。
 - **権限**: 後発 raw migration のテーブル(order_documents, order_document_versions, customer_payments, company_settings, customer_contracts)に `anon/authenticated` の DML grant + permissive RLS ポリシーを付与(既存テーブルと同パターン)。

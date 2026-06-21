@@ -31,7 +31,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   const [orderResult, companyResult] = await Promise.all([
     supabase
       .from("orders")
-      .select("order_date, currency_type, exchange_rate, customers(name, group_type, billing_company, billing_address, billing_city, billing_country), seasons(name)")
+      .select("order_date, currency_type, exchange_rate, customers(name, group_type, currency, billing_company, billing_address, billing_city, billing_country), seasons(name)")
       .eq("id", id)
       .single(),
     supabase
@@ -44,9 +44,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   const order: any = orderResult.data;
   if (!order) return new Response("Not found", { status: 404 });
 
-  // Use group_type to determine language; override via ?type=domestic param
-  const lang = getLang(order.customers?.group_type);
-  const isOverseas = forceType ? forceType !== "domestic" : order.customers?.group_type !== "Domestic";
+  // Language + shipping-doc type follow currency; override via ?type=domestic param
+  const lang = getLang(order.customers?.currency);
+  const isOverseas = forceType ? forceType !== "domestic" : order.customers?.currency !== "JPY";
 
   // Domestic 納品書 — dedicated Japanese all-¥ layout (preview = all items)
   if (!isOverseas) {

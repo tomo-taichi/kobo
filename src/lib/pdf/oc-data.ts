@@ -31,22 +31,29 @@ export function computeOcTotals(
   isJpy: boolean,
   rate: number | null,
 ) {
-  let totalQty = 0, subtotalRetail = 0, subtotalWholesale = 0;
+  const useJpy = isJpy && rate !== null && rate > 0;
+  // JPY 金額は商品単価を円に換算（unitEur × rate を四捨五入で整数円）し、行・小計が
+  // 整合するよう積み上げる。消費税は基準×税率を円単位で算出（適格請求書要件）。
+  // 1,000 円丸めは行ごと ¥/€ 併記との不整合を避けるため廃止（ADR-0003 / 0006）。
+  const unitJpy = (eur: number) => Math.round(eur * (rate as number));
+
+  let totalQty = 0, subtotalRetail = 0, subtotalWholesale = 0, subWholesaleJpy = 0, subRetailJpy = 0;
   for (const it of items) {
     const q = it.sizes.reduce((a, b) => a + b.quantity, 0);
     totalQty += q;
     subtotalRetail += it.retailEur * q;
     subtotalWholesale += it.wholesaleEur * q;
+    if (useJpy) {
+      subWholesaleJpy += unitJpy(it.wholesaleEur) * q;
+      subRetailJpy += unitJpy(it.retailEur) * q;
+    }
   }
-  const floor1000 = (n: number) => Math.floor(n / 1000) * 1000;
   const taxAmount = subtotalWholesale * taxRate;
   const totalEur = subtotalWholesale + taxAmount;
-  const useJpy = isJpy && rate !== null && rate > 0;
-  const subWholesaleJpy = useJpy ? floor1000(subtotalWholesale * (rate as number)) : 0;
-  const taxJpy = useJpy ? floor1000(subWholesaleJpy * taxRate) : 0;
+  const taxJpy = useJpy ? Math.floor(subWholesaleJpy * taxRate) : 0;
   const totalJpy = subWholesaleJpy + taxJpy;
   return {
-    totalQty, subtotalRetail, subtotalWholesale, taxAmount, totalEur,
+    totalQty, subtotalRetail, subtotalWholesale, subRetailJpy, taxAmount, totalEur,
     subWholesaleJpy, taxJpy, totalJpy,
     billingTotal: useJpy ? totalJpy : totalEur,
   };
@@ -78,7 +85,7 @@ export async function buildDeliveryNoteProps(supabase: any, orderId: string, ite
       .single(),
     supabase
       .from("company_settings")
-      .select("name_ja, address_ja, phone, email, seal_url")
+      .select("name_ja, address_ja, phone, email, seal_url, registration_no")
       .single(),
   ]);
 
@@ -119,6 +126,7 @@ export async function buildDeliveryNoteProps(supabase: any, orderId: string, ite
       phone: cs.phone ?? null,
       email: cs.email ?? null,
       sealUrl: cs.seal_url ?? null,
+      registrationNo: cs.registration_no ?? null,
     },
     customerName: customer.billing_company || customer.name || "—",
     seasonName: order.seasons?.name ?? "—",
@@ -146,7 +154,7 @@ export async function buildOcProps(supabase: any, orderId: string) {
       .eq("order_id", orderId),
     supabase
       .from("company_settings")
-      .select("name_ja, address_ja, nickname, phone, email, bank_wise_eu, bank_rakuten_jp")
+      .select("name_ja, address_ja, nickname, phone, email, bank_wise_eu, bank_rakuten_jp, registration_no")
       .single(),
   ]);
 
@@ -154,15 +162,19 @@ export async function buildOcProps(supabase: any, orderId: string) {
   if (!order) return null;
 
   const customer = order.customers ?? {};
-  const lang: PdfLang = getLang(customer.group_type);
+  const lang: PdfLang = getLang(customer.currency);
   const cs: any = companyResult.data ?? {};
 
   const nickname = cs.nickname || "taichimurakami";
+  const regNoLine = cs.registration_no
+    ? (lang === "ja" ? `登録番号: ${cs.registration_no}` : `Reg. No.: ${cs.registration_no}`)
+    : null;
   const footerLine = [
     cs.name_ja,
     cs.address_ja,
     cs.phone ? `tel: ${cs.phone}` : null,
     cs.email ? `email: ${cs.email}` : null,
+    regNoLine,
   ].filter(Boolean).join("  |  ");
 
   // 宛名 (addressee) = Company Name + billing address; ClientName = 通称 (customers.name)

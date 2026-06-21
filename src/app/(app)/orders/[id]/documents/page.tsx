@@ -35,8 +35,9 @@ export default async function OrderDocumentsPage({ params }: { params: Promise<{
   const items: any[] = itemsResult.data ?? [];
   const hasAnyFlag = items.some((i) => i.is_flagged_invoice || i.is_flagged_delivery);
   const showAdvance = order.customers?.deposit_terms === "Deposit_and_Production";
-  const isDomestic = order.customers?.group_type === "Domestic";
   const currency = order.customers?.currency === "JPY" ? "JPY" : "EUR";
+  // JPY customers ship with a 納品書 (Delivery Note); EUR with a Commercial Invoice (customs)
+  const isJpy = currency === "JPY";
 
   const fmtAmount = (n: number) =>
     currency === "JPY"
@@ -90,7 +91,7 @@ export default async function OrderDocumentsPage({ params }: { params: Promise<{
     { kind: "oc", label: "Order Confirmation", previewHref: `/api/orders/${id}/oc`, savedUrl: order.pdf_oc_url, saveAction: saveOcPdf.bind(null, id) },
     showAdvance ? { kind: "deposit", label: "Advance Invoice", previewHref: `/api/orders/${id}/deposit-invoice`, savedUrl: order.pdf_deposit_url } : null,
     { kind: "batch", docType: "final", label: "Final Invoice", previewHref: `/api/orders/${id}/final-invoice`, savedUrl: order.pdf_final_url },
-    isDomestic
+    isJpy
       ? { kind: "batch", docType: "delivery", label: "Delivery Note", previewHref: `/api/orders/${id}/commercial-invoice?type=domestic`, savedUrl: order.pdf_commercial_url }
       : { kind: "batch", docType: "commercial", label: "Commercial Invoice", previewHref: `/api/orders/${id}/commercial-invoice`, savedUrl: order.pdf_commercial_url },
   ].filter(Boolean) as any[];
@@ -112,7 +113,7 @@ export default async function OrderDocumentsPage({ params }: { params: Promise<{
               {b.kind === "deposit" ? (
                 <DepositGenerateButton orderId={id} savedUrl={b.savedUrl} />
               ) : b.kind === "batch" ? (
-                <BatchGenerateButton orderId={id} docType={b.docType} items={batchItemsFor(b.docType)} existingDocs={batchDocsFor(b.docType)} savedUrl={b.savedUrl} />
+                <BatchGenerateButton orderId={id} docType={b.docType} items={batchItemsFor(b.docType)} existingDocs={batchDocsFor(b.docType)} savedUrl={b.savedUrl} hasDeposit={showAdvance} />
               ) : (
                 <PdfSaveButton label="Generate & Save" savedUrl={b.savedUrl} action={b.saveAction} />
               )}

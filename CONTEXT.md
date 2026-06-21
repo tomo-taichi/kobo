@@ -27,10 +27,16 @@ Order から発行される書類。OC（Order Confirmation）・Deposit Invoice
 _Avoid_: Order
 
 **Final Invoice**:
-請求書。顧客への支払い請求書類。
+顧客への支払い請求書類。PDF タイトルは JPY 顧客向け「請求書」/ EUR 顧客向け「Invoice」（言語は currency で決まる → ADR-0006）。日本向けは**適格請求書（インボイス制度）**として扱い、発行事業者の**登録番号**（`company_settings.registration_no`, T+13桁）を記載する。消費税額は基準×税率と整合（円単位、ADR-0003）。発行日・支払期限も記載。
+_Avoid_: ファイナルインボイス（PDF 表記は「請求書」/「Invoice」）
 
 **Commercial Invoice**:
-出荷時に発行する書類。顧客グループによって内容が異なる。Overseas 顧客向けは税関用書類（製品名・数量・素材・原産国など）、Domestic 顧客向けは納品書（製品名・サイズなど）。Split Invoice の場合は該当バッチの商品のみ記載。
+出荷時に発行する書類。**通貨で出し分ける**: EUR 顧客向けは Commercial Invoice（英語・税関用書類: 製品名・数量・素材・原産国など）、JPY 顧客向けは納品書（日本語・製品名・サイズ・上代/下代など）。Split Invoice の場合は該当バッチの商品のみ記載。
+_注_: 旧ルールは group_type==="Domestic" のみ納品書だったが、Customer/Personal（JPY）も日本語の納品書に含めるため通貨ベースに統一。
+
+**Document Language（書類の言語）**:
+顧客向け PDF（OC・Advance Invoice・Final Invoice・納品書/Commercial Invoice）の言語は **`customers.currency` で決まる**: `JPY` = 日本語、`EUR` = 英語。言語と書類種別（納品書/Commercial Invoice）は同じ currency 軸で揃う。言語は「数値の通貨」とは別概念だが、判定キーは同じ currency を使う（EUR 建ての日本人顧客は英語書類になる点に留意）。社内の Web UI は言語切替なしで常に英語。
+_Avoid_: 「日本人顧客」を group_type で判定すること（言語は currency で判定する）
 
 **OC（Order Confirmation）**:
 受注確認書。商品リスト（Product名・カラー・数量）・Retail 価格・Wholesale 価格の両方を表示する。EUR 建てと JPY 建ての2パターンで発行可能（`Invoice Currency Type` に準じる）。Deposit 金額も記載。

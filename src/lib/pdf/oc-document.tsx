@@ -40,7 +40,8 @@ type Props = {
   variant?: "oc" | "advance" | "final";
   numberText?: string | null;       // overrides "ORDER #: n" (e.g. "No. DEP-0001")
   bankDetails?: string[] | null;     // shown on advance/final
-  paymentDeadline?: string | null;   // shown on advance
+  paymentDeadline?: string | null;   // shown on advance/final (payment due date)
+  issueDate?: string | null;         // shown on advance/final (発行日)
   depositRate?: number;              // advance: advance = total × rate
   depositApplied?: number;           // final: billing-currency deposit to deduct
 };
@@ -61,17 +62,18 @@ function fmtDate(d: string | null) {
 
 // Column widths (A4 usable ≈ 523pt @ 36pt padding)
 const W_CAT = 38;
-const W_PRICE = 52;
-const W_SIZE = 12;
-const W_QTY = 20;
-const W_TOTAL = 50;
-const W_MEMO = 46;
+const W_PRICE = 58;
+const W_SIZE = 11;
+const W_QTY = 18;
+const W_TOTAL = 56;
+const W_MEMO = 40;
 
 export function OcDocument({
   lang, nickname, footerLine, orderNumber, customerName, clientName, customerAddressLines,
   customerId, seasonName, orderDate, discountRate, taxRate, currency, exchangeRate, paymentTerms, items,
-  versionLabel, variant = "oc", numberText, bankDetails, paymentDeadline, depositRate, depositApplied,
+  versionLabel, variant = "oc", numberText, bankDetails, paymentDeadline, issueDate, depositRate, depositApplied,
 }: Props) {
+  const isInvoice = variant !== "oc";
   const L = OC_LABELS[lang];
 
   const discountPct = Math.round(discountRate * 100);
@@ -80,27 +82,31 @@ export function OcDocument({
   const rate = exchangeRate && exchangeRate > 0 ? exchangeRate : null;
   const isJpy = currency === "JPY" && rate !== null;
   const t = computeOcTotals(items, taxRate, isJpy, rate);
-  const { totalQty, subtotalRetail, subtotalWholesale, taxAmount, totalEur, subWholesaleJpy, taxJpy, totalJpy, billingTotal } = t;
+  const { totalQty, subtotalRetail, subtotalWholesale, subRetailJpy, taxAmount, totalEur, subWholesaleJpy, taxJpy, totalJpy, billingTotal } = t;
   const fmtBill = (n: number) => (isJpy ? fmtJpy(n) : fmtEur(n));
-  const wsJpyLabel = lang === "ja" ? "卸 小計 (JPY)" : "Subtotal (WS · JPY)";
+  const jpyU = (eur: number) => Math.round(eur * (rate as number)); // per-unit/line ¥ (matches computeOcTotals)
 
   // Title + number per variant
   const title = variant === "advance" ? L.advanceInvoice : variant === "final" ? L.finalInvoice : L.orderConfirmation;
   const numText = numberText ?? `${L.orderNo} ${orderNumber}`;
 
-  // Billing rows after the summary Total
+  // Billing rows after the summary Total + the headline amount due
   const extraRows: { label: string; amount: string; bold?: boolean }[] = [];
+  let amountDue = billingTotal;
   if (variant === "advance") {
     const dr = depositRate ?? 0;
-    const advanceVal = isJpy ? Math.floor((billingTotal * dr) / 1000) * 1000 : billingTotal * dr;
+    const advanceVal = isJpy ? Math.round(billingTotal * dr) : billingTotal * dr;
     const balanceVal = billingTotal - advanceVal;
     const dPct = Math.round(dr * 100);
     extraRows.push({ label: `${L.advancePayment} (${dPct}%)`, amount: fmtBill(advanceVal), bold: true });
     extraRows.push({ label: `${L.balance} (${100 - dPct}%)`, amount: fmtBill(balanceVal) });
+    amountDue = advanceVal;
   } else if (variant === "final") {
     const applied = depositApplied ?? 0;
+    // 前払い金充当は内訳として残す。請求額（合計の下）は上部の強調帯に表示するため
+    // サマリには重複させない。
     if (applied > 0) extraRows.push({ label: L.lessDeposit, amount: `− ${fmtBill(applied)}` });
-    extraRows.push({ label: L.balanceDue, amount: fmtBill(billingTotal - applied), bold: true });
+    amountDue = billingTotal - applied;
   }
 
   const cell = { fontSize: 7, color: "#1a1a1a" };
@@ -115,9 +121,9 @@ export function OcDocument({
 
         {/* Title row */}
         <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 10 }}>
-          <Text style={{ fontSize: 14 }}>{title}</Text>
-          <Text style={{ marginHorizontal: 10, color: "#d0d0d0", fontSize: 14 }}>|</Text>
-          <Text style={{ fontSize: 9, color: "#555" }}>{numText}</Text>
+          <Text style={{ fontSize: 14, flexShrink: 0 }}>{title}</Text>
+          <Text style={{ marginHorizontal: 10, color: "#d0d0d0", fontSize: 14, flexShrink: 0 }}>|</Text>
+          <Text style={{ fontSize: 9, color: "#555", flexShrink: 0 }}>{numText}</Text>
           {versionLabel ? (
             <Text style={{ marginLeft: 8, fontSize: 8, color: "#999" }}>({versionLabel})</Text>
           ) : null}
@@ -137,19 +143,41 @@ export function OcDocument({
           </View>
           <View style={{ flexDirection: "row" }}>
             <View style={{ marginRight: 6 }}>
-              <Text style={{ fontSize: 8, color: "#888" }}>{L.date}</Text>
+              {isInvoice ? (
+                issueDate ? <Text style={{ fontSize: 8, color: "#888" }}>{L.issueDate}</Text> : null
+              ) : (
+                <Text style={{ fontSize: 8, color: "#888" }}>{L.date}</Text>
+              )}
               <Text style={{ fontSize: 8, color: "#888" }}>{L.season}</Text>
               <Text style={{ fontSize: 8, color: "#888" }}>{L.customerId}</Text>
-              {paymentDeadline ? <Text style={{ fontSize: 8, color: "#888" }}>{L.paymentDeadline}</Text> : null}
+              {isInvoice ? <Text style={{ fontSize: 8, color: "#888" }}>{L.currency}</Text> : null}
             </View>
             <View>
-              <Text style={{ fontSize: 8, color: "#333" }}>: {fmtDate(orderDate)}</Text>
+              {isInvoice ? (
+                issueDate ? <Text style={{ fontSize: 8, color: "#333" }}>: {issueDate}</Text> : null
+              ) : (
+                <Text style={{ fontSize: 8, color: "#333" }}>: {fmtDate(orderDate)}</Text>
+              )}
               <Text style={{ fontSize: 8, color: "#333" }}>: {seasonName}</Text>
               <Text style={{ fontSize: 8, color: "#333" }}>: {customerId}</Text>
-              {paymentDeadline ? <Text style={{ fontSize: 8, color: "#333", fontWeight: "bold" }}>: {paymentDeadline}</Text> : null}
+              {isInvoice ? <Text style={{ fontSize: 8, color: "#333" }}>: {currency}</Text> : null}
             </View>
           </View>
         </View>
+
+        {/* Prominent amount-due + deadline band (invoices) */}
+        {isInvoice ? (
+          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", backgroundColor: "#f3f3f3", borderRadius: 4, paddingVertical: 8, paddingHorizontal: 12, marginBottom: 12 }}>
+            <View>
+              <Text style={{ fontSize: 8, color: "#888", marginBottom: 1 }}>{L.paymentDeadline}</Text>
+              <Text style={{ fontSize: 12, fontWeight: "bold" }}>{paymentDeadline ?? "—"}</Text>
+            </View>
+            <View style={{ alignItems: "flex-end" }}>
+              <Text style={{ fontSize: 8, color: "#888", marginBottom: 1 }}>{L.balanceDue}</Text>
+              <Text style={{ fontSize: 16, fontWeight: "bold" }}>{fmtBill(amountDue)}</Text>
+            </View>
+          </View>
+        ) : null}
 
         {/* Product table */}
         <View>
@@ -185,10 +213,21 @@ export function OcDocument({
                     {[item.materialName, item.color].filter(Boolean).join(" | ") || "—"}
                   </Text>
                 </View>
-                {/* wholesale / retail unit */}
+                {/* wholesale(下代) / retail(上代) unit — JPY shows ¥ + € */}
                 <View style={{ width: W_PRICE }}>
-                  <Text style={{ ...cell, textAlign: "right" }}>{fmtEur(item.wholesaleEur)}</Text>
-                  <Text style={{ fontSize: 7, ...muted, textAlign: "right" }}>{fmtEur(item.retailEur)}</Text>
+                  {isJpy ? (
+                    <>
+                      <Text style={{ ...cell, textAlign: "right" }}>{fmtJpy(jpyU(item.wholesaleEur))}</Text>
+                      <Text style={{ fontSize: 5.5, ...muted, textAlign: "right", marginBottom: 1.5 }}>{fmtEur(item.wholesaleEur)}</Text>
+                      <Text style={{ ...cell, textAlign: "right" }}>{fmtJpy(jpyU(item.retailEur))}</Text>
+                      <Text style={{ fontSize: 5.5, ...muted, textAlign: "right" }}>{fmtEur(item.retailEur)}</Text>
+                    </>
+                  ) : (
+                    <>
+                      <Text style={{ ...cell, textAlign: "right" }}>{fmtEur(item.wholesaleEur)}</Text>
+                      <Text style={{ fontSize: 7, ...muted, textAlign: "right" }}>{fmtEur(item.retailEur)}</Text>
+                    </>
+                  )}
                 </View>
                 {/* sizes */}
                 {SIZES.map((s) => {
@@ -199,9 +238,27 @@ export function OcDocument({
                 })}
                 {/* qty */}
                 <Text style={{ width: W_QTY, ...cell, textAlign: "right", fontWeight: "bold" }}>{qty}</Text>
-                {/* totals */}
-                <Text style={{ width: W_TOTAL, ...cell, textAlign: "right" }}>{fmtEur(item.wholesaleEur * qty)}</Text>
-                <Text style={{ width: W_TOTAL, fontSize: 7, ...muted, textAlign: "right" }}>{fmtEur(item.retailEur * qty)}</Text>
+                {/* 下代合計 / 上代合計 — JPY shows ¥ + € */}
+                <View style={{ width: W_TOTAL }}>
+                  {isJpy ? (
+                    <>
+                      <Text style={{ ...cell, textAlign: "right" }}>{fmtJpy(jpyU(item.wholesaleEur) * qty)}</Text>
+                      <Text style={{ fontSize: 5.5, ...muted, textAlign: "right" }}>{fmtEur(item.wholesaleEur * qty)}</Text>
+                    </>
+                  ) : (
+                    <Text style={{ ...cell, textAlign: "right" }}>{fmtEur(item.wholesaleEur * qty)}</Text>
+                  )}
+                </View>
+                <View style={{ width: W_TOTAL }}>
+                  {isJpy ? (
+                    <>
+                      <Text style={{ ...cell, textAlign: "right" }}>{fmtJpy(jpyU(item.retailEur) * qty)}</Text>
+                      <Text style={{ fontSize: 5.5, ...muted, textAlign: "right" }}>{fmtEur(item.retailEur * qty)}</Text>
+                    </>
+                  ) : (
+                    <Text style={{ fontSize: 7, ...muted, textAlign: "right" }}>{fmtEur(item.retailEur * qty)}</Text>
+                  )}
+                </View>
                 {/* memo */}
                 <Text style={{ width: W_MEMO, fontSize: 6, ...muted, textAlign: "right" }}>{item.memo ?? ""}</Text>
               </View>
@@ -214,8 +271,14 @@ export function OcDocument({
             <View style={{ flex: 1 }} />
             {SIZES.map((s) => <View key={s} style={{ width: W_SIZE }} />)}
             <Text style={{ width: W_QTY, fontSize: 8, textAlign: "right", fontWeight: "bold" }}>{totalQty}</Text>
-            <Text style={{ width: W_TOTAL, fontSize: 7, textAlign: "right", ...muted }}>{fmtEur(subtotalWholesale)}</Text>
-            <Text style={{ width: W_TOTAL, fontSize: 7, textAlign: "right", ...muted }}>{fmtEur(subtotalRetail)}</Text>
+            <View style={{ width: W_TOTAL }}>
+              <Text style={{ fontSize: 7, textAlign: "right", ...muted }}>{isJpy ? fmtJpy(subWholesaleJpy) : fmtEur(subtotalWholesale)}</Text>
+              {isJpy ? <Text style={{ fontSize: 5.5, textAlign: "right", ...muted }}>{fmtEur(subtotalWholesale)}</Text> : null}
+            </View>
+            <View style={{ width: W_TOTAL }}>
+              <Text style={{ fontSize: 7, textAlign: "right", ...muted }}>{isJpy ? fmtJpy(subRetailJpy) : fmtEur(subtotalRetail)}</Text>
+              {isJpy ? <Text style={{ fontSize: 5.5, textAlign: "right", ...muted }}>{fmtEur(subtotalRetail)}</Text> : null}
+            </View>
             <View style={{ width: W_MEMO }} />
           </View>
         </View>
@@ -236,11 +299,10 @@ export function OcDocument({
             ) : null}
           </View>
 
-          {/* Summary table */}
-          <View style={{ width: 190 }}>
-            <SummaryRow label={L.subtotalRetail} mid={String(totalQty)} amount={fmtEur(subtotalRetail)} />
-            <SummaryRow label={L.subtotalWholesale} mid={`${discountPct}%`} amount={fmtEur(subtotalWholesale)} />
-            {isJpy ? <SummaryRow label={wsJpyLabel} mid="" amount={fmtJpy(subWholesaleJpy)} /> : null}
+          {/* Summary table — JPY shows ¥ (primary) + € (secondary) */}
+          <View style={{ width: 200 }}>
+            <SummaryRow label={L.subtotalRetail} mid={String(totalQty)} amount={isJpy ? fmtJpy(subRetailJpy) : fmtEur(subtotalRetail)} sub={isJpy ? fmtEur(subtotalRetail) : undefined} />
+            <SummaryRow label={L.subtotalWholesale} mid={`${discountPct}%`} amount={isJpy ? fmtJpy(subWholesaleJpy) : fmtEur(subtotalWholesale)} sub={isJpy ? fmtEur(subtotalWholesale) : undefined} />
             <SummaryRow label={L.tax} mid={`${taxPct}%`} amount={isJpy ? fmtJpy(taxJpy) : fmtEur(taxAmount)} />
             <SummaryRow label={L.total} mid="" amount={isJpy ? fmtJpy(totalJpy) : fmtEur(totalEur)} bold />
             {extraRows.map((r, i) => (
@@ -270,12 +332,15 @@ export function OcDocument({
   );
 }
 
-function SummaryRow({ label, mid, amount, bold }: { label: string; mid: string; amount: string; bold?: boolean }) {
+function SummaryRow({ label, mid, amount, sub, bold }: { label: string; mid: string; amount: string; sub?: string; bold?: boolean }) {
   return (
     <View style={{ flexDirection: "row", borderBottom: "0.5pt solid #ddd", borderLeft: "0.5pt solid #ddd", borderRight: "0.5pt solid #ddd" }}>
       <Text style={{ flex: 1, fontSize: 8, paddingVertical: 3, paddingHorizontal: 5, backgroundColor: "#f5f5f5", fontWeight: bold ? "bold" : "normal" }}>{label}</Text>
-      <Text style={{ width: 38, fontSize: 8, paddingVertical: 3, paddingHorizontal: 4, textAlign: "center", color: "#666" }}>{mid}</Text>
-      <Text style={{ width: 66, fontSize: 8, paddingVertical: 3, paddingHorizontal: 5, textAlign: "right", fontWeight: bold ? "bold" : "normal" }}>{amount}</Text>
+      <Text style={{ width: 34, fontSize: 8, paddingVertical: 3, paddingHorizontal: 4, textAlign: "center", color: "#666" }}>{mid}</Text>
+      <View style={{ width: 78, paddingVertical: 3, paddingHorizontal: 5 }}>
+        <Text style={{ fontSize: 8, textAlign: "right", fontWeight: bold ? "bold" : "normal" }}>{amount}</Text>
+        {sub ? <Text style={{ fontSize: 6, textAlign: "right", color: "#999" }}>{sub}</Text> : null}
+      </View>
     </View>
   );
 }

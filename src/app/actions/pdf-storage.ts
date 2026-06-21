@@ -91,7 +91,7 @@ export async function saveDepositPdf(orderId: string, paymentDeadline?: string |
   // Advance amount (= what's billed now) computed the same way the PDF renders it
   const t = computeOcTotals(props.items, props.taxRate, isJpy, props.exchangeRate);
   const advance = isJpy
-    ? Math.floor((t.billingTotal * props.depositRate) / 1000) * 1000
+    ? Math.round(t.billingTotal * props.depositRate)
     : t.billingTotal * props.depositRate;
 
   try {
@@ -100,6 +100,7 @@ export async function saveDepositPdf(orderId: string, paymentDeadline?: string |
       variant: "advance",
       numberText: `${OC_LABELS[props.lang as "en" | "ja"].invoiceNo} DEP-${String(props.invoiceCount + 1).padStart(4, "0")}`,
       paymentDeadline: deadlineDisplay,
+      issueDate: issueDateJst(),
       versionLabel: v.versionLabel,
     }) as any);
 
@@ -128,7 +129,12 @@ export async function saveDepositPdf(orderId: string, paymentDeadline?: string |
   }
 }
 
-export type BatchOpts = { mode?: "new" | "revise"; documentId?: string | null; itemIds?: string[] | null };
+export type BatchOpts = { mode?: "new" | "revise"; documentId?: string | null; itemIds?: string[] | null; paymentDeadline?: string | null; depositPaid?: boolean };
+
+// Generation date (発行日) in JST, formatted YYYY/MM/DD
+function issueDateJst(): string {
+  return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Tokyo" }).replaceAll("-", "/");
+}
 
 // Final Invoice — full OC body + tax, less paid-deposit (pool), Balance Due. Batch-aware.
 export async function saveFinalInvoicePdf(orderId: string, opts: BatchOpts = {}): Promise<SavePdfResult> {
@@ -157,34 +163,24 @@ export async function saveFinalInvoicePdf(orderId: string, opts: BatchOpts = {})
   const t = computeOcTotals(batchItems, props.taxRate, isJpy, props.exchangeRate);
   const billingTotal = t.billingTotal;
 
-  // Deposit pool: paid deposit (credits) consumed sequentially across batch finals
-  const { data: depCredits } = await supabase
-    .from("customer_payments")
-    .select("amount")
-    .eq("order_id", orderId)
-    .eq("type", "credit")
-    .eq("category", "deposit");
-  const totalPaidDeposit = (depCredits ?? []).reduce((s: number, r: any) => s + Number(r.amount), 0);
-
-  const { data: otherFinals } = await supabase
-    .from("order_documents")
-    .select("deposit_applied")
-    .eq("order_id", orderId)
-    .eq("doc_type", "final")
-    .neq("id", v.documentId);
-  const appliedByOthers = (otherFinals ?? []).reduce((s: number, r: any) => s + Number(r.deposit_applied ?? 0), 0);
-
-  const remainingPool = Math.max(0, totalPaidDeposit - appliedByOthers);
-  const depositApplied = Math.min(remainingPool, billingTotal);
+  // Deduct the paid deposit when confirmed via the popup: deposit_rate (30%) of
+  // THIS batch's total. Each batch deducts its own 30%, so across all batches the
+  // deduction sums to 30% of the order total (= the deposit). No deduction if "No".
+  const depositApplied = opts.depositPaid
+    ? (isJpy ? Math.round(billingTotal * props.depositRate) : billingTotal * props.depositRate)
+    : 0;
   const balanceDue = billingTotal - depositApplied;
 
   try {
+    const dueDisplay = opts.paymentDeadline ? opts.paymentDeadline.replaceAll("-", "/") : null;
     const buffer = await renderToBuffer(React.createElement(OcDocument, {
       ...props,
       items: batchItems,
       variant: "final",
       numberText: `${OC_LABELS[props.lang as "en" | "ja"].invoiceNo} INV-${String(props.invoiceCount).padStart(4, "0")}`,
       depositApplied,
+      issueDate: issueDateJst(),
+      paymentDeadline: dueDisplay,
       versionLabel: v.versionLabel,
     }) as any);
 
@@ -192,7 +188,7 @@ export async function saveFinalInvoicePdf(orderId: string, opts: BatchOpts = {})
     await finalizeVersion(supabase, { ...v, fileUrl: url });
 
     await supabase.from("order_documents")
-      .update({ deposit_applied: depositApplied, total_qty: t.totalQty, total_amount: t.billingTotal })
+      .update({ deposit_applied: depositApplied, total_qty: t.totalQty, total_amount: t.billingTotal, ...(opts.paymentDeadline ? { deposit_deadline: opts.paymentDeadline } : {}) })
       .eq("id", v.documentId);
     // Auto-tick "invoiced" for the included items (status source)
     await supabase.from("order_items").update({ is_flagged_invoice: true }).in("id", batchItems.map((i: any) => i.id));
@@ -262,7 +258,7 @@ export async function saveCommercialPdf(orderId: string, isOverseas: boolean, op
   const order: any = orderResult.data;
   if (!order) return { error: "Order not found" };
 
-  const lang = getLang(order.customers?.group_type);
+  const lang = getLang(order.customers?.currency);
   const company = await resolveCompany(supabase, lang);
 
   // Selected batch items (fallback to flag if no explicit selection)

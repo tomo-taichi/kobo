@@ -21,6 +21,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     variant: "advance",
     numberText: `${OC_LABELS[props.lang as "en" | "ja"].invoiceNo} DEP-${String(props.invoiceCount + 1).padStart(4, "0")}`,
     paymentDeadline: null,
+    issueDate: new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Tokyo" }).replaceAll("-", "/"),
   }) as any);
 
   return new Response(stream as unknown as ReadableStream, {

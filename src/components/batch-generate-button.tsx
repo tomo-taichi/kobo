@@ -13,13 +13,21 @@ type Props = {
   items: BatchItem[];
   existingDocs: BatchDoc[];
   savedUrl: string | null;
+  hasDeposit?: boolean; // Deposit_and_Production customer → ask "Deposit Paid?"
 };
 
-export function BatchGenerateButton({ orderId, docType, items, existingDocs, savedUrl: initialSavedUrl }: Props) {
+export function BatchGenerateButton({ orderId, docType, items, existingDocs, savedUrl: initialSavedUrl, hasDeposit }: Props) {
+  const askDeposit = docType === "final" && !!hasDeposit;
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<"new" | "revise">("new");
   const [reviseDocId, setReviseDocId] = useState<string>(existingDocs[0]?.documentId ?? "");
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [depositPaid, setDepositPaid] = useState(true);
+  const [dueDate, setDueDate] = useState<string>(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 30);
+    return d.toISOString().slice(0, 10);
+  });
   const [savedUrl, setSavedUrl] = useState(initialSavedUrl);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -68,10 +76,12 @@ export function BatchGenerateButton({ orderId, docType, items, existingDocs, sav
 
   function handleGenerate() {
     if (selected.size === 0) { setError("Select at least one item."); return; }
+    const due = docType === "final" ? (dueDate || null) : null;
+    const dep = askDeposit ? depositPaid : undefined;
     const opts: BatchOpts =
       mode === "revise"
-        ? { mode: "revise", documentId: reviseDocId, itemIds: [...selected] }
-        : { mode: "new", itemIds: [...selected] };
+        ? { mode: "revise", documentId: reviseDocId, itemIds: [...selected], paymentDeadline: due, depositPaid: dep }
+        : { mode: "new", itemIds: [...selected], paymentDeadline: due, depositPaid: dep };
     setError(null);
     startTransition(async () => {
       const result = docType === "final"
@@ -132,6 +142,45 @@ export function BatchGenerateButton({ orderId, docType, items, existingDocs, sav
                 ))}
               </select>
             )}
+
+            {/* Payment due date (Final invoice only) */}
+            {docType === "final" && (
+              <div className="mb-3">
+                <label className="block text-xs font-medium text-gray-600 mb-1">Payment Deadline</label>
+                <input
+                  type="date"
+                  value={dueDate}
+                  onChange={(e) => setDueDate(e.target.value)}
+                  className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-gray-900"
+                />
+              </div>
+            )}
+
+            {/* Deposit Paid? (Deposit + Production customers, Final only) */}
+            {askDeposit && (
+              <div className="mb-3">
+                <label className="block text-xs font-medium text-gray-600 mb-1">Deposit Paid?</label>
+                <div className="flex gap-4 text-sm">
+                  <label className="flex items-center gap-1.5">
+                    <input type="radio" checked={depositPaid} onChange={() => setDepositPaid(true)} />
+                    Yes (deduct 30%)
+                  </label>
+                  <label className="flex items-center gap-1.5">
+                    <input type="radio" checked={!depositPaid} onChange={() => setDepositPaid(false)} />
+                    No (bill full)
+                  </label>
+                </div>
+              </div>
+            )}
+
+            {/* Items header with Select All / Clear */}
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-xs font-medium text-gray-600">Items</span>
+              <div className="flex gap-2 text-xs">
+                <button type="button" onClick={() => setSelected(new Set(visibleItems.map((i) => i.id)))} className="text-blue-600 hover:underline">Select All</button>
+                <button type="button" onClick={() => setSelected(new Set())} className="text-gray-400 hover:underline">Clear</button>
+              </div>
+            </div>
 
             {/* Items */}
             <div className="flex-1 overflow-y-auto border border-gray-100 rounded divide-y divide-gray-100 mb-3">
