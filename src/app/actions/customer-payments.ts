@@ -9,7 +9,7 @@ export async function createPaymentEntry(
 ): Promise<string | null> {
   const customerId = formData.get("customer_id") as string;
   const amount = parseFloat((formData.get("amount") as string) || "0");
-  if (!amount || amount <= 0) return "金額を入力してください";
+  if (!amount || amount <= 0) return "Please enter an amount";
 
   const orderId = (formData.get("order_id") as string) || null;
   const category = (formData.get("category") as string) || "other";

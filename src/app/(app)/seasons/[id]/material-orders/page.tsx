@@ -23,9 +23,9 @@ export default async function MaterialOrdersPage({ params }: { params: Promise<{
   if (productIds.length === 0) {
     return (
       <div className="space-y-6">
-        <Link href="/seasons" className="text-sm text-gray-500 hover:text-gray-900">← シーズン一覧</Link>
-        <h1 className="text-2xl font-semibold text-gray-900">資材発注: {season.name}</h1>
-        <p className="text-gray-400 text-sm">このシーズンに製品がありません</p>
+        <Link href="/seasons" className="text-sm text-gray-500 hover:text-gray-900">← Season List</Link>
+        <h1 className="text-2xl font-semibold text-gray-900">Material Order: {season.name}</h1>
+        <p className="text-gray-400 text-sm">No products in this season</p>
       </div>
     );
   }
@@ -92,23 +92,23 @@ export default async function MaterialOrdersPage({ params }: { params: Promise<{
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-3">
-        <Link href="/seasons" className="text-sm text-gray-500 hover:text-gray-900">← シーズン一覧</Link>
+        <Link href="/seasons" className="text-sm text-gray-500 hover:text-gray-900">← Season List</Link>
       </div>
-      <h1 className="text-2xl font-semibold text-gray-900">資材発注: {season.name}</h1>
+      <h1 className="text-2xl font-semibold text-gray-900">Material Order: {season.name}</h1>
 
       {materialRows.length === 0 ? (
-        <p className="text-gray-400 text-sm">素材が設定された製品がありません</p>
+        <p className="text-gray-400 text-sm">No products with materials configured</p>
       ) : (
         <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">素材</th>
-                <th className="text-right px-4 py-3 font-medium text-gray-600">使用合計</th>
-                <th className="text-right px-4 py-3 font-medium text-gray-600">サンプル残量</th>
-                <th className="text-right px-4 py-3 font-medium text-gray-600">正味必要量</th>
-                <th className="text-right px-4 py-3 font-medium text-gray-600">発注数量</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">メモ</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">Material</th>
+                <th className="text-right px-4 py-3 font-medium text-gray-600">Total Usage</th>
+                <th className="text-right px-4 py-3 font-medium text-gray-600">Sample Remaining</th>
+                <th className="text-right px-4 py-3 font-medium text-gray-600">Net Required</th>
+                <th className="text-right px-4 py-3 font-medium text-gray-600">Order Qty</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">Notes</th>
                 <th className="text-right px-4 py-3 font-medium text-gray-600"></th>
               </tr>
             </thead>

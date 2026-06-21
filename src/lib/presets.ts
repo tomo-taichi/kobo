@@ -31,13 +31,13 @@ export const ACCESSORY_MATERIAL_GROUPS = [
 ] as const;
 
 export const MATERIAL_GROUP_LABELS: Record<string, string> = {
-  main: "メイン",
-  lining: "裏地",
-  body_lining: "胴裏",
-  sleeve_lining: "袖裏",
-  pocket_front: "ポケット前",
-  pocket_back: "ポケット後",
-  interlining: "芯地",
-  accessory_parts: "副資材パーツ",
-  accessory_tag: "副資材タグ",
+  main: "Main",
+  lining: "Lining",
+  body_lining: "Body Lining",
+  sleeve_lining: "Sleeve Lining",
+  pocket_front: "Pocket (Front)",
+  pocket_back: "Pocket (Back)",
+  interlining: "Interlining",
+  accessory_parts: "Accessory Parts",
+  accessory_tag: "Accessory Tag",
 };

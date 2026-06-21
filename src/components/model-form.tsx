@@ -22,7 +22,7 @@ export function ModelForm({ action, initialName = "", initialCategory = "", init
         <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded">{error}</p>
       )}
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">モデル名 *</label>
+        <label className="block text-sm font-medium text-gray-700 mb-1">Model Name *</label>
         <input
           name="name"
           defaultValue={initialName}
@@ -32,28 +32,28 @@ export function ModelForm({ action, initialName = "", initialCategory = "", init
       </div>
       <div className="flex gap-3">
         <div className="flex-1">
-          <label className="block text-sm font-medium text-gray-700 mb-1">カテゴリー *</label>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Category *</label>
           <select
             name="category"
             defaultValue={initialCategory}
             required
             className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
           >
-            <option value="">選択...</option>
+            <option value="">Select...</option>
             {MODEL_CATEGORIES.map((c) => (
               <option key={c} value={c}>{c}</option>
             ))}
           </select>
         </div>
         <div className="flex-1">
-          <label className="block text-sm font-medium text-gray-700 mb-1">性別 *</label>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Sex *</label>
           <select
             name="gender"
             defaultValue={initialGender}
             required
             className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
           >
-            <option value="">選択...</option>
+            <option value="">Select...</option>
             {MODEL_GENDERS.map((g) => (
               <option key={g} value={g}>{g}</option>
             ))}
@@ -65,7 +65,7 @@ export function ModelForm({ action, initialName = "", initialCategory = "", init
         disabled={pending}
         className="px-4 py-2 bg-gray-900 text-white text-sm rounded-md hover:bg-gray-700 disabled:opacity-50 w-fit"
       >
-        {pending ? "保存中..." : id ? "更新" : "作成"}
+        {pending ? "Saving..." : id ? "Update" : "Create"}
       </button>
     </form>
   );

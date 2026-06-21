@@ -19,10 +19,10 @@ export default async function SeasonEditPage({ params }: { params: Promise<{ id:
     <div className="space-y-6">
       <div className="flex items-center gap-3">
         <Link href="/seasons" className="text-sm text-gray-500 hover:text-gray-900">
-          ← シーズン一覧
+          ← Season List
         </Link>
       </div>
-      <h1 className="text-2xl font-semibold text-gray-900">シーズン編集</h1>
+      <h1 className="text-2xl font-semibold text-gray-900">Edit Season</h1>
       <div className="bg-white border border-gray-200 rounded-lg p-4 max-w-md">
         <SeasonForm action={updateSeason} initialName={season.name} id={season.id} />
       </div>

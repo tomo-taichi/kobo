@@ -29,7 +29,7 @@ export async function createSupplier(
 ): Promise<string | null> {
   const supabase = await createClient();
   const fields = extractFields(formData);
-  if (!fields.name) return "仕入先名を入力してください";
+  if (!fields.name) return "Please enter a supplier name";
   const { error } = await supabase.from("suppliers").insert(fields);
   if (error) return error.message;
   revalidatePath("/suppliers");
@@ -43,7 +43,7 @@ export async function updateSupplier(
   const supabase = await createClient();
   const id = formData.get("id") as string;
   const fields = extractFields(formData);
-  if (!fields.name) return "仕入先名を入力してください";
+  if (!fields.name) return "Please enter a supplier name";
   const { error } = await supabase.from("suppliers").update(fields).eq("id", id);
   if (error) return error.message;
   revalidatePath("/suppliers");

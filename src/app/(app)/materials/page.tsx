@@ -19,7 +19,7 @@ export default async function MaterialsPage() {
   const suppliers = suppliersResult.data ?? [];
   const seasons   = seasonsResult.data ?? [];
 
-  // 過去に使用された色のユニークリスト
+  // Unique list of colors used in the past
   const pastColors = Array.from(
     new Set(rawMaterials.map((m: any) => m.color).filter(Boolean))
   ) as string[];

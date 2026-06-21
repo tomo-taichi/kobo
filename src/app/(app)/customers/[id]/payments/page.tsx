@@ -64,7 +64,7 @@ export default async function CustomerPaymentsPage({ params }: { params: Promise
       {/* Ledger table */}
       <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
         {!(entries ?? []).length ? (
-          <p className="px-5 py-8 text-sm text-gray-400">支払い履歴がありません</p>
+          <p className="px-5 py-8 text-sm text-gray-400">No payment history</p>
         ) : (
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b border-gray-200">

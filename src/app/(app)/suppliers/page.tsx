@@ -13,7 +13,7 @@ export default async function SuppliersPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold text-gray-900">仕入先</h1>
+        <h1 className="text-2xl font-semibold text-gray-900">Suppliers</h1>
         <SupplierNewModal action={createSupplier} />
       </div>
 
@@ -21,10 +21,10 @@ export default async function SuppliersPage() {
         <table className="w-full text-sm">
           <thead className="bg-gray-50 border-b border-gray-200">
             <tr>
-              <th className="text-left px-4 py-3 font-medium text-gray-600">仕入先名</th>
-              <th className="text-left px-4 py-3 font-medium text-gray-600">代表担当者</th>
-              <th className="text-left px-4 py-3 font-medium text-gray-600">国</th>
-              <th className="text-right px-4 py-3 font-medium text-gray-600">操作</th>
+              <th className="text-left px-4 py-3 font-medium text-gray-600">Supplier Name</th>
+              <th className="text-left px-4 py-3 font-medium text-gray-600">Primary Contact</th>
+              <th className="text-left px-4 py-3 font-medium text-gray-600">Country</th>
+              <th className="text-right px-4 py-3 font-medium text-gray-600">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
@@ -40,7 +40,7 @@ export default async function SuppliersPage() {
                       href={`/suppliers/${s.id}/edit`}
                       className="text-gray-500 hover:text-gray-900 text-xs underline"
                     >
-                      編集
+                      Edit
                     </Link>
                   </td>
                 </tr>
@@ -49,7 +49,7 @@ export default async function SuppliersPage() {
             {!suppliers?.length && (
               <tr>
                 <td colSpan={4} className="px-4 py-8 text-center text-gray-400 text-sm">
-                  仕入先がありません
+                  No suppliers
                 </td>
               </tr>
             )}

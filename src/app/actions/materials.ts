@@ -36,7 +36,7 @@ export async function createMaterial(
 ): Promise<string | null> {
   const supabase = await createClient();
   const name = (formData.get("name") as string)?.trim();
-  if (!name) return "素材名を入力してください";
+  if (!name) return "Please enter a material name";
   const category = formData.get("category") as string;
   const unit_price_jpy = Number(formData.get("unit_price_jpy"));
   const unit_type = formData.get("unit_type") as string;
@@ -114,7 +114,7 @@ export async function updateMaterial(
   const supabase = await createClient();
   const id = formData.get("id") as string;
   const name = (formData.get("name") as string)?.trim();
-  if (!name) return "素材名を入力してください";
+  if (!name) return "Please enter a material name";
   const category = formData.get("category") as string;
   const unit_price_jpy = Number(formData.get("unit_price_jpy"));
   const unit_type = formData.get("unit_type") as string;

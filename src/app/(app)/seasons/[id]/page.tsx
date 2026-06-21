@@ -28,7 +28,7 @@ export default async function SeasonDetailPage({ params }: { params: Promise<{ i
     <div className="space-y-6">
       <div className="flex items-center gap-3">
         <Link href="/seasons" className="text-sm text-gray-500 hover:text-gray-900">
-          ← シーズン一覧
+          ← Season List
         </Link>
       </div>
 
@@ -36,7 +36,7 @@ export default async function SeasonDetailPage({ params }: { params: Promise<{ i
 
       {/* Edit form */}
       <div className="bg-white border border-gray-200 rounded-lg p-5 max-w-lg">
-        <h2 className="text-sm font-medium text-gray-700 mb-4">シーズン情報</h2>
+        <h2 className="text-sm font-medium text-gray-700 mb-4">Season Info</h2>
         <SeasonForm
           action={updateSeason}
           initialName={s.name}
@@ -47,42 +47,42 @@ export default async function SeasonDetailPage({ params }: { params: Promise<{ i
 
       {/* Related links */}
       <div className="bg-white border border-gray-200 rounded-lg p-5">
-        <h2 className="text-base font-medium text-gray-800 mb-4">関連</h2>
+        <h2 className="text-base font-medium text-gray-800 mb-4">Related</h2>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <Link
             href={`/products?season_id=${id}`}
             className="flex flex-col items-center gap-1 p-4 border border-gray-200 rounded-lg hover:bg-gray-50"
           >
             <span className="text-2xl font-semibold text-gray-800">{productCount ?? 0}</span>
-            <span className="text-xs text-gray-500">製品</span>
+            <span className="text-xs text-gray-500">Products</span>
           </Link>
           <Link
             href={`/orders?season_id=${id}`}
             className="flex flex-col items-center gap-1 p-4 border border-gray-200 rounded-lg hover:bg-gray-50"
           >
             <span className="text-2xl font-semibold text-gray-800">{orderCount ?? 0}</span>
-            <span className="text-xs text-gray-500">受注</span>
+            <span className="text-xs text-gray-500">Orders</span>
           </Link>
           <Link
             href={`/seasons/${id}/production`}
             className="flex flex-col items-center gap-1 p-4 border border-gray-200 rounded-lg hover:bg-gray-50"
           >
             <span className="text-xl text-gray-400">→</span>
-            <span className="text-xs text-gray-500">生産進捗</span>
+            <span className="text-xs text-gray-500">Production Progress</span>
           </Link>
           <Link
             href={`/seasons/${id}/material-orders`}
             className="flex flex-col items-center gap-1 p-4 border border-gray-200 rounded-lg hover:bg-gray-50"
           >
             <span className="text-xl text-gray-400">→</span>
-            <span className="text-xs text-gray-500">資材発注</span>
+            <span className="text-xs text-gray-500">Material Order</span>
           </Link>
         </div>
       </div>
 
       {/* Tag PDFs */}
       <div className="bg-white border border-gray-200 rounded-lg p-5">
-        <h2 className="text-base font-medium text-gray-800 mb-4">一括タグ印刷</h2>
+        <h2 className="text-base font-medium text-gray-800 mb-4">Batch Tag Printing</h2>
         <div className="flex gap-2">
           <a
             href={`/api/seasons/${id}/tags`}
@@ -90,7 +90,7 @@ export default async function SeasonDetailPage({ params }: { params: Promise<{ i
             rel="noreferrer"
             className="text-sm px-3 py-1.5 bg-gray-800 text-white rounded hover:bg-gray-700"
           >
-            製品タグ一括 PDF
+            Product Tags Batch PDF
           </a>
           <a
             href={`/api/seasons/${id}/tags?type=composition`}
@@ -98,7 +98,7 @@ export default async function SeasonDetailPage({ params }: { params: Promise<{ i
             rel="noreferrer"
             className="text-sm px-3 py-1.5 border border-gray-300 text-gray-700 rounded hover:bg-gray-50"
           >
-            混率タグ一括 PDF
+            Composition Tags Batch PDF
           </a>
         </div>
       </div>

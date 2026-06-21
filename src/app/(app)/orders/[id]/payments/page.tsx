@@ -56,7 +56,7 @@ export default async function OrderPaymentsPage({ params }: { params: Promise<{ 
 
       <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
         {!(entries ?? []).length ? (
-          <p className="px-5 py-8 text-sm text-gray-400">この注文の支払い履歴はまだありません。請求書(Advance/Final)を発行すると debit が自動で記録されます。</p>
+          <p className="px-5 py-8 text-sm text-gray-400">No payment history for this order yet. Issuing an invoice (Advance / Final) automatically records a debit.</p>
         ) : (
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b border-gray-200">

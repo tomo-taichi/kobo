@@ -41,7 +41,7 @@ export function CustomerContractsSection({
   }
 
   function handleDelete(contractId: string, storagePath: string) {
-    if (!confirm("この契約書を削除しますか？")) return;
+    if (!confirm("Are you sure you want to delete this contract?")) return;
     startDelete(async () => {
       await deleteCustomerContract(contractId, storagePath, customerId);
       router.refresh();
@@ -89,7 +89,7 @@ export function CustomerContractsSection({
         </ul>
       )}
       {contracts.length === 0 && (
-        <p className="text-xs text-gray-400 mb-3">契約書が登録されていません</p>
+        <p className="text-xs text-gray-400 mb-3">No contracts added yet</p>
       )}
 
       <form onSubmit={handleUpload} className="flex gap-2 items-center flex-wrap">

@@ -131,7 +131,7 @@ export async function saveDepositPdf(orderId: string, paymentDeadline?: string |
 
 export type BatchOpts = { mode?: "new" | "revise"; documentId?: string | null; itemIds?: string[] | null; paymentDeadline?: string | null; depositPaid?: boolean };
 
-// Generation date (発行日) in JST, formatted YYYY/MM/DD
+// Generation date (issue date) in JST, formatted YYYY/MM/DD
 function issueDateJst(): string {
   return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Tokyo" }).replaceAll("-", "/");
 }
@@ -215,7 +215,7 @@ export async function saveCommercialPdf(orderId: string, isOverseas: boolean, op
   ensureFonts();
   const supabase = await createClient();
 
-  // Domestic 納品書 (Delivery Note) — dedicated Japanese all-¥ layout
+  // Domestic Delivery Note (納品書) — dedicated Japanese all-¥ layout
   if (!isOverseas) {
     const dn: any = await buildDeliveryNoteProps(supabase, orderId, opts.itemIds);
     if (!dn) return { error: "Order not found" };

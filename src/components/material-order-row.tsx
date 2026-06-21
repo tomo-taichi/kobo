@@ -67,7 +67,7 @@ export function MaterialOrderRow({
         <input
           type="text" value={notes}
           onChange={(e) => setNotes(e.target.value)}
-          placeholder="メモ..."
+          placeholder="Notes..."
           className="w-full px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
         />
       </td>
@@ -79,7 +79,7 @@ export function MaterialOrderRow({
             disabled={saving}
             className="text-xs px-2 py-1 bg-gray-900 text-white rounded hover:bg-gray-700 disabled:opacity-50"
           >
-            {saving ? "..." : "保存"}
+            {saving ? "..." : "Save"}
           </button>
         </div>
       </td>

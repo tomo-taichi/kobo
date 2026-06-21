@@ -206,7 +206,7 @@ export function MaterialsClient({
 
   return (
     <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-      {/* フィルタ・ソートバー */}
+      {/* Filter / sort bar */}
       <div className="px-4 py-3 border-b border-gray-100 space-y-2">
         <input
           type="text"
@@ -325,7 +325,7 @@ export function MaterialsClient({
 
                 {/* Status — derived, not editable */}
                 <td className={`${cellCls} text-center`}>
-                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${status === "完成" ? "bg-green-50 text-green-700" : "bg-yellow-50 text-yellow-700"}`}>
+                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${status === "Complete" ? "bg-green-50 text-green-700" : "bg-yellow-50 text-yellow-700"}`}>
                     {status}
                   </span>
                 </td>

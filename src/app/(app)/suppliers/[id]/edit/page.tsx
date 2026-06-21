@@ -18,9 +18,9 @@ export default async function SupplierEditPage({ params }: { params: Promise<{ i
   return (
     <div className="space-y-6">
       <Link href="/suppliers" className="text-sm text-gray-500 hover:text-gray-900">
-        ← 仕入先一覧
+        ← Suppliers
       </Link>
-      <h1 className="text-2xl font-semibold text-gray-900">仕入先編集</h1>
+      <h1 className="text-2xl font-semibold text-gray-900">Edit Supplier</h1>
       <div className="bg-white border border-gray-200 rounded-lg p-5 max-w-lg">
         <SupplierForm
           action={updateSupplier}

@@ -15,7 +15,7 @@ export async function login(
   });
 
   if (error) {
-    return "メールアドレスまたはパスワードが正しくありません";
+    return "Incorrect email or password";
   }
 
   redirect("/");

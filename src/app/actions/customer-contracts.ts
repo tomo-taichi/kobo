@@ -8,7 +8,7 @@ export async function uploadCustomerContract(
   formData: FormData
 ): Promise<string | null> {
   const file = formData.get("file") as File | null;
-  if (!file || file.size === 0) return "ファイルを選択してください";
+  if (!file || file.size === 0) return "Please select a file";
 
   const supabase = await createClient();
   const path = `${customerId}/${Date.now()}_${file.name}`;

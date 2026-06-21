@@ -25,8 +25,8 @@ type Props = {
   onCancel?: () => void;
 };
 
-const PRESET_COUNTRIES = ["日本", "イタリア", "中国", "アメリカ", "イギリス"];
-const TITLES = ["社長", "担当者"];
+const PRESET_COUNTRIES = ["Japan", "Italy", "China", "USA", "UK"];
+const TITLES = ["President", "Contact Person"];
 
 function SectionHeading({ children }: { children: React.ReactNode }) {
   return (
@@ -56,10 +56,10 @@ export function SupplierForm({ action, initial = {}, id, onCancel }: Props) {
         <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded">{error}</p>
       )}
 
-      {/* 仕入先名 */}
+      {/* Supplier name */}
       <div>
         <label className="block text-xs font-medium text-gray-600 mb-1">
-          仕入先名 <span className="text-red-500">*</span>
+          Supplier Name <span className="text-red-500">*</span>
         </label>
         <input
           name="name"
@@ -69,19 +69,19 @@ export function SupplierForm({ action, initial = {}, id, onCancel }: Props) {
         />
       </div>
 
-      {/* 会社情報 */}
+      {/* Company info */}
       <div>
-        <SectionHeading>会社情報</SectionHeading>
+        <SectionHeading>Company Info</SectionHeading>
         <div className="flex flex-col gap-3">
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">国</label>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Country</label>
             {isCustom ? (
               <div className="flex gap-1">
                 <input
                   name="country"
                   value={customCountry}
                   onChange={(e) => setCustomCountry(e.target.value)}
-                  placeholder="国名を入力"
+                  placeholder="Enter country name"
                   className="flex-1 px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
                 />
                 <button
@@ -99,80 +99,80 @@ export function SupplierForm({ action, initial = {}, id, onCancel }: Props) {
                 onChange={handleCountryChange}
                 className={inputCls + " bg-white"}
               >
-                <option value="">— 選択 —</option>
+                <option value="">— Select —</option>
                 {PRESET_COUNTRIES.map((c) => (
                   <option key={c} value={c}>{c}</option>
                 ))}
-                <option value="__custom__">リスト追加（手入力）</option>
+                <option value="__custom__">Add to list (manual entry)</option>
               </select>
             )}
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">住所</label>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Address</label>
             <input name="address" defaultValue={initial.address ?? ""} className={inputCls} />
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">会社電話番号</label>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Company Tel</label>
             <input name="company_phone" type="tel" defaultValue={initial.company_phone ?? ""} className={inputCls} />
           </div>
         </div>
       </div>
 
-      {/* 代表担当者 */}
+      {/* Primary contact person */}
       <div>
-        <SectionHeading>代表担当者</SectionHeading>
+        <SectionHeading>Primary Contact Person</SectionHeading>
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">担当者名</label>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Contact Person</label>
             <input name="primary_name" defaultValue={initial.primary_name ?? ""} className={inputCls} />
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">タイトル</label>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Title</label>
             <select name="primary_title" defaultValue={initial.primary_title ?? ""} className={inputCls + " bg-white"}>
-              <option value="">— 選択 —</option>
+              <option value="">— Select —</option>
               {TITLES.map((t) => <option key={t} value={t}>{t}</option>)}
             </select>
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">携帯番号</label>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Mobile</label>
             <input name="primary_mobile" type="tel" defaultValue={initial.primary_mobile ?? ""} className={inputCls} />
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">メールアドレス</label>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Email</label>
             <input name="primary_email" type="email" defaultValue={initial.primary_email ?? ""} className={inputCls} />
           </div>
         </div>
       </div>
 
-      {/* サブ担当者 */}
+      {/* Secondary contact person */}
       <div>
-        <SectionHeading>サブ担当者</SectionHeading>
+        <SectionHeading>Secondary Contact Person</SectionHeading>
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">担当者名</label>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Contact Person</label>
             <input name="secondary_name" defaultValue={initial.secondary_name ?? ""} className={inputCls} />
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">タイトル</label>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Title</label>
             <select name="secondary_title" defaultValue={initial.secondary_title ?? ""} className={inputCls + " bg-white"}>
-              <option value="">— 選択 —</option>
+              <option value="">— Select —</option>
               {TITLES.map((t) => <option key={t} value={t}>{t}</option>)}
             </select>
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">携帯番号</label>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Mobile</label>
             <input name="secondary_mobile" type="tel" defaultValue={initial.secondary_mobile ?? ""} className={inputCls} />
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">メールアドレス</label>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Email</label>
             <input name="secondary_email" type="email" defaultValue={initial.secondary_email ?? ""} className={inputCls} />
           </div>
         </div>
       </div>
 
-      {/* メモ */}
+      {/* Notes */}
       <div>
-        <label className="block text-xs font-medium text-gray-600 mb-1">メモ</label>
+        <label className="block text-xs font-medium text-gray-600 mb-1">Notes</label>
         <textarea name="notes" defaultValue={initial.notes ?? ""} rows={2} className={inputCls} />
       </div>
 
@@ -182,7 +182,7 @@ export function SupplierForm({ action, initial = {}, id, onCancel }: Props) {
           disabled={pending}
           className="px-4 py-2 bg-gray-900 text-white text-sm rounded-md hover:bg-gray-700 disabled:opacity-50"
         >
-          {pending ? "保存中..." : id ? "更新" : "作成"}
+          {pending ? "Saving..." : id ? "Update" : "Create"}
         </button>
         {onCancel && (
           <button
@@ -190,7 +190,7 @@ export function SupplierForm({ action, initial = {}, id, onCancel }: Props) {
             onClick={onCancel}
             className="px-4 py-2 text-sm text-gray-600 border border-gray-300 rounded-md hover:bg-gray-50"
           >
-            キャンセル
+            Cancel
           </button>
         )}
       </div>

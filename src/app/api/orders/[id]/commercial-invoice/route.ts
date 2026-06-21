@@ -48,7 +48,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   const lang = getLang(order.customers?.currency);
   const isOverseas = forceType ? forceType !== "domestic" : order.customers?.currency !== "JPY";
 
-  // Domestic 納品書 — dedicated Japanese all-¥ layout (preview = all items)
+  // Domestic Delivery Note (納品書) — dedicated Japanese all-¥ layout (preview = all items)
   if (!isOverseas) {
     const dn: any = await buildDeliveryNoteProps(supabase, id);
     if (!dn) return new Response("Not found", { status: 404 });

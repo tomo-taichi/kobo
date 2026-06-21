@@ -18,13 +18,13 @@ export const CATEGORY_LABELS: Record<string, string> = {
 
 export const UNIT_TYPE_LABELS: Record<string, string> = {
   meter: "m",
-  piece: "個",
+  piece: "pcs",
   ds: "ds",
 };
 
 export const COMPOSITION_GROUPS: { label: string; items: string[] }[] = [
   {
-    label: "天然繊維",
+    label: "Natural Fibers",
     items: [
       "綿-COTTON",
       "海島綿-SEA ISLAND COTTON",
@@ -41,7 +41,7 @@ export const COMPOSITION_GROUPS: { label: string; items: string[] }[] = [
     ],
   },
   {
-    label: "化学繊維",
+    label: "Synthetic Fibers",
     items: [
       "反射ﾅｲﾛﾝ-REFLECT NYLON",
       "ﾅｲﾛﾝ-NYLON",
@@ -55,7 +55,7 @@ export const COMPOSITION_GROUPS: { label: string; items: string[] }[] = [
     ],
   },
   {
-    label: "皮革",
+    label: "Leather",
     items: [
       "仔牛-CALF FULL GRAIN",
       "水牛-BISON FULL GRAIN",
@@ -66,7 +66,7 @@ export const COMPOSITION_GROUPS: { label: string; items: string[] }[] = [
     ],
   },
   {
-    label: "金属・その他",
+    label: "Metal & Other",
     items: [
       "印刷紙-PRINTED PAPER",
       "ｽｽﾞ-TIN",
@@ -93,9 +93,9 @@ type MaterialForStatus = {
   comp_5_pct?: number | null;
 };
 
-export function getMaterialStatus(m: MaterialForStatus): "完成" | "未入力" {
-  if (!m.set_price_jpy || Number(m.set_price_jpy) <= 0) return "未入力";
+export function getMaterialStatus(m: MaterialForStatus): "Complete" | "Incomplete" {
+  if (!m.set_price_jpy || Number(m.set_price_jpy) <= 0) return "Incomplete";
   const total = [m.comp_1_pct, m.comp_2_pct, m.comp_3_pct, m.comp_4_pct, m.comp_5_pct]
     .reduce((sum, p) => sum + (p ?? 0), 0);
-  return total === 100 ? "完成" : "未入力";
+  return total === 100 ? "Complete" : "Incomplete";
 }

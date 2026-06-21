@@ -56,15 +56,15 @@ export default async function HomePage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold text-gray-900">ダッシュボード</h1>
-        <p className="text-sm text-gray-400">未完了受注 (F 以外)</p>
+        <h1 className="text-2xl font-semibold text-gray-900">Dashboard</h1>
+        <p className="text-sm text-gray-400">Open Orders (excluding F)</p>
       </div>
 
       {sortedGroups.length === 0 ? (
         <div className="bg-white border border-gray-200 rounded-lg p-12 text-center">
-          <p className="text-gray-400 text-sm">未完了の受注はありません</p>
+          <p className="text-gray-400 text-sm">No open orders</p>
           <Link href="/orders/new" className="mt-4 inline-block text-sm text-gray-900 underline">
-            新規受注を作成
+            Create New Order
           </Link>
         </div>
       ) : (
@@ -93,7 +93,7 @@ export default async function HomePage() {
                           href={`/orders/${order.id}`}
                           className="text-gray-500 hover:text-gray-900 text-xs underline"
                         >
-                          詳細
+                          Details
                         </Link>
                       </td>
                     </tr>

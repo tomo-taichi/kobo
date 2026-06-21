@@ -24,7 +24,7 @@ export function SupplierNewModal({ action }: { action: Action }) {
         >
           <div className="bg-white rounded-xl shadow-xl w-full max-w-lg mx-4 p-6 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-5">
-              <h2 className="text-base font-semibold text-gray-900">新規仕入先作成</h2>
+              <h2 className="text-base font-semibold text-gray-900">New Supplier</h2>
               <button
                 onClick={() => setOpen(false)}
                 className="text-gray-400 hover:text-gray-600 text-xl leading-none"

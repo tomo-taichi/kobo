@@ -16,13 +16,13 @@ export default async function CompositionOptionsPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-semibold text-gray-900">混率オプション</h1>
+      <h1 className="text-2xl font-semibold text-gray-900">Composition Options</h1>
       <p className="text-sm text-gray-500">
-        製品タグに印刷する混率の選択肢を管理します。半角カタカナ＋英語形式で入力してください。
+        Manage the composition choices printed on product tags. Enter them in half-width katakana + English format.
       </p>
 
       <div className="bg-white border border-gray-200 rounded-lg p-4">
-        <h2 className="text-sm font-medium text-gray-700 mb-3">新規追加</h2>
+        <h2 className="text-sm font-medium text-gray-700 mb-3">Add New</h2>
         <CompositionOptionForm action={createCompositionOption} />
       </div>
 
@@ -30,9 +30,9 @@ export default async function CompositionOptionsPage() {
         <table className="w-full text-sm">
           <thead className="bg-gray-50 border-b border-gray-200">
             <tr>
-              <th className="text-left px-4 py-3 font-medium text-gray-600 w-12">順序</th>
-              <th className="text-left px-4 py-3 font-medium text-gray-600">ラベル</th>
-              <th className="text-right px-4 py-3 font-medium text-gray-600">操作</th>
+              <th className="text-left px-4 py-3 font-medium text-gray-600 w-12">Order</th>
+              <th className="text-left px-4 py-3 font-medium text-gray-600">Label</th>
+              <th className="text-right px-4 py-3 font-medium text-gray-600">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
@@ -63,7 +63,7 @@ export default async function CompositionOptionsPage() {
                     href={`/composition-options/${opt.id}/edit`}
                     className="text-gray-500 hover:text-gray-900 text-xs underline"
                   >
-                    編集
+                    Edit
                   </Link>
                 </td>
               </tr>
@@ -71,7 +71,7 @@ export default async function CompositionOptionsPage() {
             {!options?.length && (
               <tr>
                 <td colSpan={3} className="px-4 py-6 text-center text-gray-400 text-sm">
-                  混率オプションがありません
+                  No composition options
                 </td>
               </tr>
             )}

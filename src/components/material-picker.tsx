@@ -19,10 +19,10 @@ export type PickableMaterial = {
   seasons: { name: string } | null;
 };
 
-function materialStatus(m: PickableMaterial): "完成" | "未入力" {
+function materialStatus(m: PickableMaterial): "Complete" | "Incomplete" {
   const compTotal = [m.comp_1_pct, m.comp_2_pct, m.comp_3_pct, m.comp_4_pct, m.comp_5_pct]
     .reduce<number>((sum, v) => sum + (v ?? 0), 0);
-  return Number(m.set_price_jpy) > 0 && compTotal === 100 ? "完成" : "未入力";
+  return Number(m.set_price_jpy) > 0 && compTotal === 100 ? "Complete" : "Incomplete";
 }
 
 const filterCls = "w-full px-3 py-1.5 border border-gray-200 rounded-md text-xs bg-white focus:outline-none focus:ring-1 focus:ring-gray-900";
@@ -145,9 +145,9 @@ export function MaterialPickerModal({
                   className="hover:bg-blue-50 cursor-pointer"
                 >
                   <td className="px-3 py-2">
-                    {materialStatus(m) === "完成"
-                      ? <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">● 完成</span>
-                      : <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-600">● 未入力</span>
+                    {materialStatus(m) === "Complete"
+                      ? <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">● Complete</span>
+                      : <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-600">● Incomplete</span>
                     }
                   </td>
                   <td className="px-3 py-2 text-gray-500 text-xs font-mono">{m.material_number ?? "—"}</td>

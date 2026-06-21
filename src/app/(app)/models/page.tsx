@@ -19,10 +19,10 @@ export default async function ModelsPage({
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-semibold text-gray-900">モデル</h1>
+      <h1 className="text-2xl font-semibold text-gray-900">Models</h1>
 
       <div className="bg-white border border-gray-200 rounded-lg p-4">
-        <h2 className="text-sm font-medium text-gray-700 mb-3">新規作成</h2>
+        <h2 className="text-sm font-medium text-gray-700 mb-3">New</h2>
         <ModelForm action={createModel} />
       </div>
 
@@ -34,7 +34,7 @@ export default async function ModelsPage({
               defaultValue={category ?? ""}
               className="px-2 py-1 border border-gray-300 rounded text-sm"
             >
-              <option value="">全カテゴリー</option>
+              <option value="">All Categories</option>
               {MODEL_CATEGORIES.map((c) => (
                 <option key={c} value={c}>{c}</option>
               ))}
@@ -44,17 +44,17 @@ export default async function ModelsPage({
               defaultValue={gender ?? ""}
               className="px-2 py-1 border border-gray-300 rounded text-sm"
             >
-              <option value="">全性別</option>
+              <option value="">All Sexes</option>
               {MODEL_GENDERS.map((g) => (
                 <option key={g} value={g}>{g}</option>
               ))}
             </select>
             <button type="submit" className="px-3 py-1 bg-gray-100 border border-gray-300 rounded text-sm hover:bg-gray-200">
-              絞り込み
+              Filter
             </button>
             {(category || gender) && (
               <Link href="/models" className="text-xs text-gray-500 hover:text-gray-900 underline">
-                クリア
+                Clear
               </Link>
             )}
           </form>
@@ -62,10 +62,10 @@ export default async function ModelsPage({
         <table className="w-full text-sm">
           <thead className="bg-gray-50 border-b border-gray-200">
             <tr>
-              <th className="text-left px-4 py-3 font-medium text-gray-600">名前</th>
-              <th className="text-left px-4 py-3 font-medium text-gray-600">カテゴリー</th>
-              <th className="text-left px-4 py-3 font-medium text-gray-600">性別</th>
-              <th className="text-right px-4 py-3 font-medium text-gray-600">操作</th>
+              <th className="text-left px-4 py-3 font-medium text-gray-600">Name</th>
+              <th className="text-left px-4 py-3 font-medium text-gray-600">Category</th>
+              <th className="text-left px-4 py-3 font-medium text-gray-600">Sex</th>
+              <th className="text-right px-4 py-3 font-medium text-gray-600">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
@@ -79,7 +79,7 @@ export default async function ModelsPage({
                     href={`/models/${m.id}/edit`}
                     className="text-gray-500 hover:text-gray-900 text-xs underline"
                   >
-                    編集
+                    Edit
                   </Link>
                 </td>
               </tr>
@@ -87,7 +87,7 @@ export default async function ModelsPage({
             {!models?.length && (
               <tr>
                 <td colSpan={4} className="px-4 py-6 text-center text-gray-400 text-sm">
-                  モデルがありません
+                  No models
                 </td>
               </tr>
             )}

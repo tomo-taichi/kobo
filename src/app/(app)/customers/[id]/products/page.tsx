@@ -51,12 +51,12 @@ export default async function CustomerProductsPage({ params }: { params: Promise
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <span className="text-xs text-gray-500">{totalItems} 商品 / {byOrder.length} オーダー</span>
+        <span className="text-xs text-gray-500">{totalItems} Products / {byOrder.length} Orders</span>
       </div>
 
       {byOrder.length === 0 && (
         <div className="bg-white border border-gray-200 rounded-lg px-5 py-8 text-sm text-gray-400">
-          商品オーダー履歴がありません
+          No product order history
         </div>
       )}
 
@@ -72,13 +72,13 @@ export default async function CustomerProductsPage({ params }: { params: Promise
                 <span className="text-xs text-gray-400">{order.order_date ?? ""}</span>
               </div>
               <Link href={`/orders/${order.id}`} className="text-xs text-gray-400 hover:text-gray-900 underline">
-                オーダー詳細 →
+                Order Details →
               </Link>
             </div>
             <table className="w-full text-sm">
               <thead className="border-b border-gray-100">
                 <tr>
-                  <th className="text-left px-4 py-2 font-medium text-gray-500 text-xs">品番</th>
+                  <th className="text-left px-4 py-2 font-medium text-gray-500 text-xs">Product No.</th>
                   <th className="text-left px-4 py-2 font-medium text-gray-500 text-xs">Name</th>
                   <th className="text-left px-4 py-2 font-medium text-gray-500 text-xs">Colour</th>
                   <th className="text-left px-4 py-2 font-medium text-gray-500 text-xs">Model</th>

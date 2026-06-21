@@ -13,7 +13,7 @@ export default async function SeasonsPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold text-gray-900">シーズン</h1>
+        <h1 className="text-2xl font-semibold text-gray-900">Seasons</h1>
         <SeasonNewToggle action={createSeason} />
       </div>
 
@@ -21,9 +21,9 @@ export default async function SeasonsPage() {
         <table className="w-full text-sm">
           <thead className="bg-gray-50 border-b border-gray-200">
             <tr>
-              <th className="text-left px-4 py-3 font-medium text-gray-600">シーズン名</th>
-              <th className="text-right px-4 py-3 font-medium text-gray-600">為替レート（JPY/EUR）</th>
-              <th className="text-right px-4 py-3 font-medium text-gray-600">操作</th>
+              <th className="text-left px-4 py-3 font-medium text-gray-600">Season Name</th>
+              <th className="text-right px-4 py-3 font-medium text-gray-600">Exchange Rate (JPY/EUR)</th>
+              <th className="text-right px-4 py-3 font-medium text-gray-600">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
@@ -44,13 +44,13 @@ export default async function SeasonsPage() {
                 <td className="px-4 py-3 text-right">
                   <div className="flex items-center justify-end gap-3">
                     <Link href={`/seasons/${s.id}/production`} className="text-gray-500 hover:text-gray-900 text-xs underline">
-                      生産進捗
+                      Production Progress
                     </Link>
                     <Link href={`/seasons/${s.id}/material-orders`} className="text-gray-500 hover:text-gray-900 text-xs underline">
-                      資材発注
+                      Material Order
                     </Link>
                     <Link href={`/seasons/${s.id}`} className="text-gray-500 hover:text-gray-900 text-xs underline">
-                      詳細
+                      Details
                     </Link>
                   </div>
                 </td>
@@ -59,7 +59,7 @@ export default async function SeasonsPage() {
             {!seasons?.length && (
               <tr>
                 <td colSpan={3} className="px-4 py-8 text-center text-gray-400 text-sm">
-                  シーズンがありません
+                  No seasons
                 </td>
               </tr>
             )}

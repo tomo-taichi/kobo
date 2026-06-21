@@ -42,16 +42,16 @@ export default async function ProductionProgressPage({ params }: { params: Promi
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-3">
-        <Link href="/seasons" className="text-sm text-gray-500 hover:text-gray-900">← シーズン一覧</Link>
+        <Link href="/seasons" className="text-sm text-gray-500 hover:text-gray-900">← Season List</Link>
       </div>
-      <h1 className="text-2xl font-semibold text-gray-900">生産進捗: {season.name}</h1>
+      <h1 className="text-2xl font-semibold text-gray-900">Production Progress: {season.name}</h1>
 
       <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
         <ProductionGrid seasonId={seasonId} rows={rows} />
       </div>
 
       <div className="bg-white border border-gray-200 rounded-lg p-5">
-        <h2 className="text-base font-medium text-gray-800 mb-4">一括タグ印刷</h2>
+        <h2 className="text-base font-medium text-gray-800 mb-4">Batch Tag Printing</h2>
         <div className="flex gap-2">
           <a
             href={`/api/seasons/${seasonId}/tags`}
@@ -59,7 +59,7 @@ export default async function ProductionProgressPage({ params }: { params: Promi
             rel="noreferrer"
             className="text-sm px-3 py-1.5 bg-gray-800 text-white rounded hover:bg-gray-700"
           >
-            製品タグ一括 PDF
+            Product Tags Batch PDF
           </a>
           <a
             href={`/api/seasons/${seasonId}/tags?type=composition`}
@@ -67,7 +67,7 @@ export default async function ProductionProgressPage({ params }: { params: Promi
             rel="noreferrer"
             className="text-sm px-3 py-1.5 border border-gray-300 text-gray-700 rounded hover:bg-gray-50"
           >
-            混率タグ一括 PDF
+            Composition Tags Batch PDF
           </a>
         </div>
       </div>

@@ -18,9 +18,9 @@ export default async function ModelEditPage({ params }: { params: Promise<{ id: 
   return (
     <div className="space-y-6">
       <Link href="/models" className="text-sm text-gray-500 hover:text-gray-900">
-        ← モデル一覧
+        ← Models
       </Link>
-      <h1 className="text-2xl font-semibold text-gray-900">モデル編集</h1>
+      <h1 className="text-2xl font-semibold text-gray-900">Edit Model</h1>
       <div className="bg-white border border-gray-200 rounded-lg p-4">
         <ModelForm
           action={updateModel}

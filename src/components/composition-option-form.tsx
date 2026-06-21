@@ -23,7 +23,7 @@ export function CompositionOptionForm({ action, initialLabel = "", id }: Props) 
           name="label"
           defaultValue={initialLabel}
           required
-          placeholder="例: ｶｼﾐｱ-cashmere 100%"
+          placeholder="e.g. ｶｼﾐｱ-cashmere 100%"
           className="flex-1 px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-gray-900 font-mono"
         />
         <button
@@ -31,7 +31,7 @@ export function CompositionOptionForm({ action, initialLabel = "", id }: Props) 
           disabled={pending}
           className="px-4 py-2 bg-gray-900 text-white text-sm rounded-md hover:bg-gray-700 disabled:opacity-50"
         >
-          {pending ? "保存中..." : id ? "更新" : "追加"}
+          {pending ? "Saving..." : id ? "Update" : "Add"}
         </button>
       </div>
     </form>

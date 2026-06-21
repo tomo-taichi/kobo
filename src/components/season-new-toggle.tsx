@@ -7,7 +7,7 @@ type Action = (_state: string | null, formData: FormData) => Promise<string | nu
 
 export function SeasonNewToggle({ action }: { action: Action }) {
   return (
-    <NewModal title="新規シーズン作成">
+    <NewModal title="New Season">
       {(onClose) => <SeasonForm action={action} onCancel={onClose} />}
     </NewModal>
   );

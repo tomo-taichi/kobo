@@ -15,7 +15,7 @@ export function CustomerPaymentDelete({
   const [pending, start] = useTransition();
 
   function handleDelete() {
-    if (!confirm("このエントリを削除しますか？")) return;
+    if (!confirm("Are you sure you want to delete this entry?")) return;
     start(async () => {
       await deletePaymentEntry(entryId, customerId);
       router.refresh();

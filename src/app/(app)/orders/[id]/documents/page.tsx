@@ -36,7 +36,7 @@ export default async function OrderDocumentsPage({ params }: { params: Promise<{
   const hasAnyFlag = items.some((i) => i.is_flagged_invoice || i.is_flagged_delivery);
   const showAdvance = order.customers?.deposit_terms === "Deposit_and_Production";
   const currency = order.customers?.currency === "JPY" ? "JPY" : "EUR";
-  // JPY customers ship with a 納品書 (Delivery Note); EUR with a Commercial Invoice (customs)
+  // JPY customers ship with a Delivery Note (納品書); EUR with a Commercial Invoice (customs)
   const isJpy = currency === "JPY";
 
   const fmtAmount = (n: number) =>

@@ -15,11 +15,11 @@ import { updateProductCosts } from "@/app/actions/product-costs";
 
 // ── Role definitions ─────────────────────────────────────────────────────────
 const ROLES = [
-  { key: "sleeve_lining",  ja: "袖裏地",            en: "Sleeve Lining" },
-  { key: "pocket_facing",  ja: "ポケットスレキ向布",  en: "Pocket Facing" },
-  { key: "pocket_bag",     ja: "ポケットスレキ手前布", en: "Pocket Bag" },
-  { key: "interfacing",    ja: "芯地",              en: "Interfacing" },
-  { key: "accessories",    ja: "付属",              en: "Accessories" },
+  { key: "sleeve_lining",  label: "Sleeve Lining" },
+  { key: "pocket_facing",  label: "Pocket Facing" },
+  { key: "pocket_bag",     label: "Pocket Bag" },
+  { key: "interfacing",    label: "Interfacing" },
+  { key: "accessories",    label: "Accessories" },
 ] as const;
 type RoleKey = typeof ROLES[number]["key"];
 
@@ -276,7 +276,7 @@ export function ProductCostForm({
                   className={`px-4 py-2.5 bg-white ${roleIdx < ROLES.length - 1 ? "border-b border-gray-50" : ""}`}>
                   <div className="flex items-center justify-between mb-1.5">
                     <span className="text-xs font-medium text-gray-600">
-                      {role.ja}<span className="text-gray-400 font-normal ml-1.5">/ {role.en}</span>
+                      {role.label}
                     </span>
                     <button type="button" onClick={() => setPickerRole(role.key)}
                       className="text-xs text-gray-400 hover:text-gray-700 border border-gray-200 rounded px-2 py-0.5 hover:border-gray-400">

@@ -32,15 +32,15 @@ const CONTRACT_COLOURS: Record<string, string> = {
 };
 
 const CONTRACT_LABELS: Record<string, string> = {
-  Active:     "契約中",
-  "On Hold":  "契約HOLD",
-  Terminated: "契約破棄",
+  Active:     "Active",
+  "On Hold":  "On Hold",
+  Terminated: "Terminated",
 };
 
 const CONTRACT_STATUSES = [
-  { value: "Active",     label: "契約中" },
-  { value: "On Hold",    label: "契約HOLD" },
-  { value: "Terminated", label: "契約破棄" },
+  { value: "Active",     label: "Active" },
+  { value: "On Hold",    label: "On Hold" },
+  { value: "Terminated", label: "Terminated" },
 ] as const;
 
 const SORT_OPTIONS = [
@@ -94,7 +94,7 @@ export function CustomersClient({ customers }: { customers: Customer[] }) {
 
   return (
     <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-      {/* フィルタバー */}
+      {/* Filter bar */}
       <div className="px-4 py-3 border-b border-gray-100 space-y-2">
         <input
           type="text"
@@ -154,12 +154,12 @@ export function CustomersClient({ customers }: { customers: Customer[] }) {
                   : "border-gray-300 text-gray-500 hover:bg-gray-50"
               }`}
             >
-              {showAll ? `契約破棄を非表示 (${terminatedCount})` : `全て表示 (契約破棄 ${terminatedCount}件)`}
+              {showAll ? `Hide Terminated (${terminatedCount})` : `Show All (${terminatedCount} Terminated)`}
             </button>
           )}
 
           <span className={`text-xs text-gray-400 ${terminatedCount === 0 ? "ml-auto" : ""}`}>
-            {filtered.length} / {showAll ? customers.length : customers.length - terminatedCount} 件
+            {filtered.length} / {showAll ? customers.length : customers.length - terminatedCount}
           </span>
         </div>
       </div>

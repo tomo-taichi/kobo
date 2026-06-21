@@ -22,7 +22,7 @@ export default function LoginPage() {
 
           <div className="space-y-1">
             <label htmlFor="email" className="block text-sm font-medium text-gray-700">
-              メールアドレス
+              Email
             </label>
             <input
               id="email"
@@ -36,7 +36,7 @@ export default function LoginPage() {
 
           <div className="space-y-1">
             <label htmlFor="password" className="block text-sm font-medium text-gray-700">
-              パスワード
+              Password
             </label>
             <input
               id="password"
@@ -53,7 +53,7 @@ export default function LoginPage() {
             disabled={pending}
             className="w-full py-2 px-4 bg-gray-900 text-white text-sm font-medium rounded-md hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
-            {pending ? "ログイン中..." : "ログイン"}
+            {pending ? "Logging in..." : "Log in"}
           </button>
         </form>
       </div>

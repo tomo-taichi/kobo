@@ -10,7 +10,7 @@ export async function createCompositionOption(
 ): Promise<string | null> {
   const supabase = await createClient();
   const label = (formData.get("label") as string)?.trim();
-  if (!label) return "ラベルを入力してください";
+  if (!label) return "Please enter a label";
   const { data: last } = await supabase
     .from("composition_options")
     .select("sort_order")
@@ -31,7 +31,7 @@ export async function updateCompositionOption(
   const supabase = await createClient();
   const id = formData.get("id") as string;
   const label = (formData.get("label") as string)?.trim();
-  if (!label) return "ラベルを入力してください";
+  if (!label) return "Please enter a label";
   const { error } = await supabase.from("composition_options").update({ label }).eq("id", id);
   if (error) return error.message;
   revalidatePath("/composition-options");

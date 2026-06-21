@@ -115,9 +115,9 @@ function CountrySelect({
 const FORWARDERS     = ["EMS", "FedEx", "UPS", "DHL", "TNT"] as const;
 const SNS_PLATFORMS  = ["Instagram", "X (Twitter)", "Facebook", "TikTok", "LINE", "WeChat", "YouTube", "Other"] as const;
 const CONTRACT_STATUSES = [
-  { value: "Active",     label: "契約中" },
-  { value: "Terminated", label: "契約破棄" },
-  { value: "On Hold",    label: "契約HOLD" },
+  { value: "Active",     label: "Active" },
+  { value: "Terminated", label: "Terminated" },
+  { value: "On Hold",    label: "On Hold" },
 ] as const;
 const MAX_SHOPS = 10;
 const MAX_SNS   = 8;
@@ -240,7 +240,7 @@ export function CustomerForm({ action, initialData = {}, id, onCancel }: Props) 
             </select>
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">契約開始日</label>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Contract Start Date</label>
             <input
               type="date"
               name="contract_start_date"
@@ -249,7 +249,7 @@ export function CustomerForm({ action, initialData = {}, id, onCancel }: Props) 
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">契約破棄日</label>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Contract End Date</label>
             <input
               type="date"
               name="contract_end_date"

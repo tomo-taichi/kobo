@@ -24,20 +24,20 @@ export function SeasonForm({ action, initialName = "", initialExchangeRate, id, 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div>
           <label className="block text-xs font-medium text-gray-600 mb-1">
-            シーズン名 <span className="text-red-500">*</span>
+            Season Name <span className="text-red-500">*</span>
           </label>
           <input
             name="name"
             defaultValue={initialName}
             required
-            placeholder="例: 26.2"
+            placeholder="e.g. 26.2"
             className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
           />
         </div>
 
         <div>
           <label className="block text-xs font-medium text-gray-600 mb-1">
-            為替レート（JPY/EUR）<span className="text-red-500 ml-0.5">*</span>
+            Exchange Rate (JPY/EUR)<span className="text-red-500 ml-0.5">*</span>
           </label>
           <input
             name="eur_jpy_rate"
@@ -46,7 +46,7 @@ export function SeasonForm({ action, initialName = "", initialExchangeRate, id, 
             min="0"
             required
             defaultValue={initialExchangeRate ?? ""}
-            placeholder="例: 162.50"
+            placeholder="e.g. 162.50"
             className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
           />
         </div>
@@ -58,7 +58,7 @@ export function SeasonForm({ action, initialName = "", initialExchangeRate, id, 
           disabled={pending}
           className="px-4 py-2 bg-gray-900 text-white text-sm rounded-md hover:bg-gray-700 disabled:opacity-50"
         >
-          {pending ? "保存中..." : id ? "更新" : "作成"}
+          {pending ? "Saving..." : id ? "Update" : "Create"}
         </button>
         {onCancel && (
           <button
@@ -66,7 +66,7 @@ export function SeasonForm({ action, initialName = "", initialExchangeRate, id, 
             onClick={onCancel}
             className="px-4 py-2 text-sm text-gray-600 border border-gray-300 rounded-md hover:bg-gray-50"
           >
-            キャンセル
+            Cancel
           </button>
         )}
       </div>

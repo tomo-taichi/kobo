@@ -36,7 +36,7 @@ export function MaterialNewModal({
         >
           <div className="bg-white rounded-xl shadow-xl w-full max-w-lg mx-4 p-6">
             <div className="flex items-center justify-between mb-5">
-              <h2 className="text-base font-semibold text-gray-900">新規素材作成</h2>
+              <h2 className="text-base font-semibold text-gray-900">New Material</h2>
               <button onClick={() => setOpen(false)} className="text-gray-400 hover:text-gray-600 text-xl leading-none">✕</button>
             </div>
             <MaterialForm
