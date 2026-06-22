@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { saveDepositPdf } from "@/app/actions/pdf-storage";
+import { useCancelConfirm, CancelConfirmDialog } from "@/components/cancel-confirm";
 
 function defaultDeadline(): string {
   const d = new Date();
@@ -17,6 +18,7 @@ export function DepositGenerateButton({ orderId, savedUrl: initialSavedUrl }: { 
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const router = useRouter();
+  const { confirming, onContentChange, requestClose, discard, keep } = useCancelConfirm(open, () => setOpen(false));
 
   function handleGenerate() {
     setError(null);
@@ -50,8 +52,8 @@ export function DepositGenerateButton({ orderId, savedUrl: initialSavedUrl }: { 
       </div>
 
       {open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={() => !isPending && setOpen(false)}>
-          <div className="bg-white rounded-lg shadow-xl w-80 p-5" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
+          <div onChange={onContentChange} className="bg-white rounded-lg shadow-xl w-80 p-5">
             <h3 className="text-sm font-semibold text-gray-800 mb-1">Advance Invoice</h3>
             <p className="text-xs text-gray-400 mb-3">Set the advance payment deadline (default: today + 7 days).</p>
 
@@ -67,7 +69,7 @@ export function DepositGenerateButton({ orderId, savedUrl: initialSavedUrl }: { 
 
             <div className="flex justify-end gap-2">
               <button
-                onClick={() => setOpen(false)}
+                onClick={requestClose}
                 disabled={isPending}
                 className="text-sm px-3 py-1.5 border border-gray-300 text-gray-600 rounded hover:bg-gray-50 disabled:opacity-50"
               >
@@ -82,6 +84,7 @@ export function DepositGenerateButton({ orderId, savedUrl: initialSavedUrl }: { 
               </button>
             </div>
           </div>
+          <CancelConfirmDialog open={confirming} onKeep={keep} onDiscard={discard} />
         </div>
       )}
     </div>

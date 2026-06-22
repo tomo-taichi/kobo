@@ -3,6 +3,7 @@
 import { useState, useMemo, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { saveFinalInvoicePdf, saveCommercialPdf, type BatchOpts } from "@/app/actions/pdf-storage";
+import { useCancelConfirm, CancelConfirmDialog } from "@/components/cancel-confirm";
 
 export type BatchItem = { id: string; productId: string; modelName: string; color: string | null; qty: number; processed: boolean };
 export type BatchDoc = { documentId: string; seqNo: number; itemIds: string[]; versionLabel: string | null };
@@ -32,6 +33,7 @@ export function BatchGenerateButton({ orderId, docType, items, existingDocs, sav
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const router = useRouter();
+  const { confirming, markDirty, onContentChange, requestClose, discard, keep } = useCancelConfirm(open, () => setOpen(false));
 
   // "Processed" (already invoiced / delivered) comes from the item flags
   const available = useMemo(() => items.filter((i) => !i.processed), [items]);
@@ -112,8 +114,8 @@ export function BatchGenerateButton({ orderId, docType, items, existingDocs, sav
       </div>
 
       {open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={() => !isPending && setOpen(false)}>
-          <div className="bg-white rounded-lg shadow-xl w-[460px] max-h-[80vh] flex flex-col p-5" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
+          <div onChange={onContentChange} className="bg-white rounded-lg shadow-xl w-[460px] max-h-[80vh] flex flex-col p-5">
             <h3 className="text-sm font-semibold text-gray-800 mb-1">Select items for this batch</h3>
             <p className="text-xs text-gray-400 mb-3">Choose which products to include. Already-processed items are hidden in New.</p>
 
@@ -177,8 +179,8 @@ export function BatchGenerateButton({ orderId, docType, items, existingDocs, sav
             <div className="flex items-center justify-between mb-1">
               <span className="text-xs font-medium text-gray-600">Items</span>
               <div className="flex gap-2 text-xs">
-                <button type="button" onClick={() => setSelected(new Set(visibleItems.map((i) => i.id)))} className="text-blue-600 hover:underline">Select All</button>
-                <button type="button" onClick={() => setSelected(new Set())} className="text-gray-400 hover:underline">Clear</button>
+                <button type="button" onClick={() => { setSelected(new Set(visibleItems.map((i) => i.id))); markDirty(); }} className="text-blue-600 hover:underline">Select All</button>
+                <button type="button" onClick={() => { setSelected(new Set()); markDirty(); }} className="text-gray-400 hover:underline">Clear</button>
               </div>
             </div>
 
@@ -203,7 +205,7 @@ export function BatchGenerateButton({ orderId, docType, items, existingDocs, sav
             <div className="flex justify-between items-center">
               <span className="text-xs text-gray-400">{selected.size} selected</span>
               <div className="flex gap-2">
-                <button onClick={() => setOpen(false)} disabled={isPending}
+                <button onClick={requestClose} disabled={isPending}
                   className="text-sm px-3 py-1.5 border border-gray-300 text-gray-600 rounded hover:bg-gray-50 disabled:opacity-50">
                   Cancel
                 </button>
@@ -214,6 +216,7 @@ export function BatchGenerateButton({ orderId, docType, items, existingDocs, sav
               </div>
             </div>
           </div>
+          <CancelConfirmDialog open={confirming} onKeep={keep} onDiscard={discard} />
         </div>
       )}
     </div>

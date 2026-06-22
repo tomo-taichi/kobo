@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { MaterialForm } from "@/components/material-form";
+import { useCancelConfirm, CancelConfirmDialog } from "@/components/cancel-confirm";
 
 type Action = (_state: string | null, formData: FormData) => Promise<string | null>;
 type Supplier = { id: string; name: string };
@@ -19,6 +20,7 @@ export function MaterialNewModal({
   pastColors?: string[];
 }) {
   const [open, setOpen] = useState(false);
+  const { confirming, onContentChange, requestClose, discard, keep } = useCancelConfirm(open, () => setOpen(false));
 
   return (
     <>
@@ -30,23 +32,21 @@ export function MaterialNewModal({
       </button>
 
       {open && (
-        <div
-          className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 overflow-y-auto py-8"
-          onClick={(e) => { if (e.target === e.currentTarget) setOpen(false); }}
-        >
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg mx-4 p-6">
+        <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 overflow-y-auto py-8">
+          <div onChange={onContentChange} className="bg-white rounded-xl shadow-xl w-full max-w-lg mx-4 p-6">
             <div className="flex items-center justify-between mb-5">
               <h2 className="text-base font-semibold text-gray-900">New Material</h2>
-              <button onClick={() => setOpen(false)} className="text-gray-400 hover:text-gray-600 text-xl leading-none">✕</button>
+              <button onClick={requestClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">✕</button>
             </div>
             <MaterialForm
               action={action}
               suppliers={suppliers}
               seasons={seasons}
               pastColors={pastColors}
-              onCancel={() => setOpen(false)}
+              onCancel={requestClose}
             />
           </div>
+          <CancelConfirmDialog open={confirming} onKeep={keep} onDiscard={discard} />
         </div>
       )}
     </>
