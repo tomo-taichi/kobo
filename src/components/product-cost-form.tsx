@@ -40,6 +40,17 @@ type MfgState = {
   cutting: number; sewing: number; knitting: number;
   thread: number; finish: number; packing: number;
 };
+// An enabled colour of this product (product_colors) + its main-material price.
+type ColorRow = {
+  productColorId: string;
+  materialColorId: string;
+  color: string;
+  mainSetPriceJpy: number;  // main material's price for this colour (override or base)
+  markupRate: number;
+  retailRate: number;
+  retailPriceEur: number;
+};
+type ColorEdit = { markup: number; retailRate: number; retailPrice: number };
 type Props = {
   productId: string; productCategory: string | null;
   mainMaterial: MaterialInfo | null; liningMaterial: MaterialInfo | null;
@@ -47,8 +58,8 @@ type Props = {
   allMaterials: PickableMaterial[];
   initialAdditionalRows: { materialId: string; quantity: number; role: string }[];
   initialManufacturing: MfgState;
-  initialCostEurRate: number; initialMarkupRate: number;
-  initialRetailRate: number; initialRetailPriceEur: number;
+  initialCostEurRate: number;
+  colors: ColorRow[];
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -132,7 +143,7 @@ export function ProductCostForm({
   initialMainQuantity, initialLiningQuantity,
   allMaterials, initialAdditionalRows,
   initialManufacturing,
-  initialCostEurRate, initialMarkupRate, initialRetailRate, initialRetailPriceEur,
+  initialCostEurRate, colors,
 }: Props) {
   const [mainQty,    setMainQty]    = useState(initialMainQuantity);
   const [liningQty,  setLiningQty]  = useState(initialLiningQuantity);
@@ -142,9 +153,9 @@ export function ProductCostForm({
   const [pickerRole, setPickerRole] = useState<RoleKey | null>(null);
   const [mfg,        setMfg]        = useState<MfgState>(initialManufacturing);
   const [eurRate,    setEurRate]    = useState(initialCostEurRate);
-  const [markupRate, setMarkupRate] = useState(initialMarkupRate);
-  const [retailRate, setRetailRate] = useState(initialRetailRate);
-  const [retailPrice, setRetailPrice] = useState(initialRetailPriceEur);
+  const [colorEdits, setColorEdits] = useState<ColorEdit[]>(
+    () => colors.map((c) => ({ markup: c.markupRate, retailRate: c.retailRate, retailPrice: c.retailPriceEur }))
+  );
 
   type SaveStatus = "idle" | "saving" | "saved" | "error";
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
@@ -152,19 +163,29 @@ export function ProductCostForm({
 
   const materialMap = new Map(allMaterials.map((m) => [m.id, m]));
 
-  // Live calculations
-  const mainCost        = (mainMaterial?.setPriceJpy   ?? 0) * mainQty;
+  // Live calculations — base (using each material's base price; main varies per colour)
   const liningCost      = (liningMaterial?.setPriceJpy ?? 0) * liningQty;
   const additionalCost  = additional.reduce((sum, r) => {
     const m = materialMap.get(r.materialId);
     return sum + (m ? Number(m.set_price_jpy) : 0) * r.quantity;
   }, 0);
-  const materialCostJpy = mainCost + liningCost + additionalCost;
+  const nonMainCostJpy  = liningCost + additionalCost;
+  const baseMainCost    = (mainMaterial?.setPriceJpy ?? 0) * mainQty;
+  const baseMaterialCost = baseMainCost + nonMainCostJpy;
   const mfgCost         = mfg.cutting + mfg.sewing + mfg.knitting + mfg.thread + mfg.finish + mfg.packing;
-  const costJpy         = calcCostJpy(materialCostJpy, mfg);
-  const costEur         = calcCostEur(costJpy, eurRate || 1);
-  const idealWsEur      = calcWholesaleEur(costEur, markupRate);
-  const retailRef       = calcRetailRefEur(idealWsEur, retailRate);  // suggestion only
+  const baseCostJpy     = calcCostJpy(baseMaterialCost, mfg);
+
+  // Per-colour derived values
+  const colorCalc = (i: number) => {
+    const c = colors[i];
+    const e = colorEdits[i] ?? { markup: 3.0, retailRate: 3.5, retailPrice: 0 };
+    const materialCost = c.mainSetPriceJpy * mainQty + nonMainCostJpy;
+    const costJpy = materialCost + mfgCost;
+    const costEur = calcCostEur(costJpy, eurRate || 1);
+    const idealWs = calcWholesaleEur(costEur, e.markup);
+    const ref     = calcRetailRefEur(idealWs, e.retailRate);
+    return { costJpy, costEur, idealWs, ref };
+  };
 
   // Autofill
   const autofillType = productCategory ? (CATEGORY_TO_GARMENT[productCategory] ?? null) : null;
@@ -183,8 +204,8 @@ export function ProductCostForm({
   // Auto-save: debounce 800ms, skip initial mount
   const isFirstRender = useRef(true);
   const saveTimer     = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const latestRef     = useRef({ mainQty, liningQty, additional, mfg, eurRate, markupRate, retailRate, retailPrice });
-  latestRef.current   = { mainQty, liningQty, additional, mfg, eurRate, markupRate, retailRate, retailPrice };
+  const latestRef     = useRef({ mainQty, liningQty, additional, mfg, eurRate, colorEdits });
+  latestRef.current   = { mainQty, liningQty, additional, mfg, eurRate, colorEdits };
 
   useEffect(() => {
     if (isFirstRender.current) { isFirstRender.current = false; return; }
@@ -197,14 +218,20 @@ export function ProductCostForm({
       const result = await updateProductCosts(
         productId, v.mainQty, v.liningQty,
         v.additional.filter((r) => r.materialId),
-        v.mfg, v.eurRate, v.markupRate, v.retailRate, v.retailPrice
+        v.mfg, v.eurRate,
+        colors.map((c, i) => ({
+          productColorId: c.productColorId,
+          markupRate:     v.colorEdits[i]?.markup ?? 3.0,
+          retailRate:     v.colorEdits[i]?.retailRate ?? 3.5,
+          retailPriceEur: v.colorEdits[i]?.retailPrice ?? 0,
+        }))
       );
       if (result) { setSaveStatus("error"); setSaveError(result); }
       else { setSaveStatus("saved"); }
     }, 800);
     return () => { if (saveTimer.current) clearTimeout(saveTimer.current); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mainQty, liningQty, additional, mfg, eurRate, markupRate, retailRate, retailPrice]);
+  }, [mainQty, liningQty, additional, mfg, eurRate, colorEdits]);
 
   const handlePickerSelect = useCallback((m: PickableMaterial) => {
     if (!pickerRole) return;
@@ -220,6 +247,10 @@ export function ProductCostForm({
   const updateAdditionalQty = useCallback((i: number, qty: number) => {
     setAdditional((prev) => prev.map((r, idx) => idx === i ? { ...r, quantity: qty } : r));
   }, []);
+
+  function setColorField(i: number, field: keyof ColorEdit, v: number) {
+    setColorEdits((prev) => prev.map((e, idx) => idx === i ? { ...e, [field]: v } : e));
+  }
 
   return (
     <div className="space-y-8">
@@ -321,11 +352,11 @@ export function ProductCostForm({
           </div>
         </div>
 
-        {/* Total material */}
+        {/* Total material (base) */}
         <div className="flex items-center gap-3 pt-2 border-t border-gray-200">
-          <div className="flex-1 text-xs font-semibold text-gray-600 uppercase tracking-wide">Total Material Cost</div>
+          <div className="flex-1 text-xs font-semibold text-gray-600 uppercase tracking-wide">Total Material Cost <span className="font-normal text-gray-400">— base</span></div>
           <div className="w-24 shrink-0" /><div className="w-8 shrink-0" />
-          <div className="w-24 text-right font-mono font-semibold text-gray-900 shrink-0">¥{fmt(materialCostJpy)}</div>
+          <div className="w-24 text-right font-mono font-semibold text-gray-900 shrink-0">¥{fmt(baseMaterialCost)}</div>
         </div>
       </SectionBlock>
 
@@ -358,73 +389,76 @@ export function ProductCostForm({
         </div>
       </SectionBlock>
 
-      {/* ── Cost Summary ── */}
-      <SectionBlock title="Cost Summary">
-        <div className="bg-gray-50 rounded-lg p-4 text-xs font-mono">
+      {/* ── Cost Summary (per colour) ── */}
+      <SectionBlock title="Cost Summary — per colour">
+        <div className="bg-gray-50 rounded-lg p-4 text-xs">
+          {/* Shared base + EUR rate */}
+          <div className="grid grid-cols-[1fr_auto_auto] gap-x-3 gap-y-1.5 items-center font-sans mb-3">
+            <span className="text-gray-500">Total Raw Cost (JPY) — base</span>
+            <span className="text-right col-span-1">=</span>
+            <span className="text-gray-800 font-semibold text-right font-mono">¥ {fmt(baseCostJpy)}</span>
 
-          {/* JPY breakdown */}
-          <div className="space-y-1 mb-3">
-            <SumRow label="Material Cost"  value={`¥ ${fmt(materialCostJpy)}`} />
-            <SumRow label="Manufacturing"  value={`¥ ${fmt(mfgCost)}`} />
-            <div className="border-t border-gray-200 pt-1.5">
-              <SumRow label="Total Raw Cost (JPY)" value={`¥ ${fmt(costJpy)}`} bold />
-            </div>
+            <span className="text-gray-400">÷ EUR Rate</span>
+            <input type="number" min="0" step={1} value={eurRate || ""} onChange={(e) => setEurRate(Number(e.target.value))}
+              className="w-20 px-2 py-1 border border-gray-300 rounded text-xs text-right font-mono focus:outline-none focus:ring-1 focus:ring-gray-900 bg-white justify-self-end" />
+            <span className="text-gray-400 text-right">JPY / EUR</span>
           </div>
 
-          {/* EUR conversion */}
-          <div className="border-t border-gray-200 pt-3 mb-3">
-            <div className="grid grid-cols-[1fr_auto_auto] gap-x-3 gap-y-1.5 items-center">
-              <span className="text-gray-400 font-sans">÷ EUR Rate</span>
-              <RateInput value={eurRate} step={1} onChange={setEurRate} />
-              <span className="text-gray-400 font-sans text-right">JPY / EUR</span>
-
-              <span className="text-gray-600 font-sans font-semibold">Cost (EUR)</span>
-              <span className="text-gray-400 font-sans text-right col-span-1">=</span>
-              <span className="text-gray-800 font-semibold text-right">€ {fmtEur(costEur)}</span>
+          {colors.length === 0 ? (
+            <p className="border-t border-gray-200 pt-3 text-gray-400 font-sans">
+              No colours enabled — select which colours this product offers in <span className="font-medium">Basic Info</span>.
+            </p>
+          ) : (
+            <div className="border-t border-gray-200 pt-3 overflow-x-auto">
+              <table className="w-full text-xs font-mono whitespace-nowrap">
+                <thead>
+                  <tr className="text-[10px] text-gray-400 font-sans uppercase tracking-wide text-right">
+                    <th className="text-left font-medium pb-1.5 pr-3">Colour</th>
+                    <th className="font-medium pb-1.5 px-2">Raw Cost ¥</th>
+                    <th className="font-medium pb-1.5 px-2">Cost €</th>
+                    <th className="font-medium pb-1.5 px-2">× Markup</th>
+                    <th className="font-medium pb-1.5 px-2">Ideal WS €</th>
+                    <th className="font-medium pb-1.5 px-2">× Retail</th>
+                    <th className="font-medium pb-1.5 px-2">Retail (ref) €</th>
+                    <th className="font-medium pb-1.5 pl-2">Retail Price €</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {colors.map((c, i) => {
+                    const e = colorEdits[i] ?? { markup: 3.0, retailRate: 3.5, retailPrice: 0 };
+                    const calc = colorCalc(i);
+                    return (
+                      <tr key={c.productColorId} className="text-right">
+                        <td className="text-left py-1.5 pr-3 font-sans font-medium text-gray-800">{c.color}</td>
+                        <td className="px-2 text-gray-500">¥{fmt(calc.costJpy)}</td>
+                        <td className="px-2 text-gray-500">€{fmtEur(calc.costEur)}</td>
+                        <td className="px-2">
+                          <input type="number" min="0" step={0.1} value={e.markup || ""} onChange={(ev) => setColorField(i, "markup", Number(ev.target.value))}
+                            className="w-14 px-1.5 py-1 border border-gray-300 rounded text-xs text-right focus:outline-none focus:ring-1 focus:ring-gray-900 bg-white" />
+                        </td>
+                        <td className="px-2 text-gray-400">€{fmtEur(calc.idealWs)}</td>
+                        <td className="px-2">
+                          <input type="number" min="0" step={0.1} value={e.retailRate || ""} onChange={(ev) => setColorField(i, "retailRate", Number(ev.target.value))}
+                            className="w-14 px-1.5 py-1 border border-gray-300 rounded text-xs text-right focus:outline-none focus:ring-1 focus:ring-gray-900 bg-white" />
+                        </td>
+                        <td className="px-2 text-gray-400">€{fmtEur(calc.ref)}</td>
+                        <td className="pl-2">
+                          <div className="flex items-center gap-1 justify-end">
+                            <button type="button" onClick={() => setColorField(i, "retailPrice", Number(calc.ref.toFixed(2)))}
+                              className="text-[10px] text-blue-600 hover:underline">use ref</button>
+                            <input type="number" min="0" step={0.01} value={e.retailPrice || ""} placeholder="0.00"
+                              onChange={(ev) => setColorField(i, "retailPrice", Number(ev.target.value))}
+                              className="w-20 px-1.5 py-1 border border-gray-400 rounded text-xs text-right font-bold focus:outline-none focus:ring-1 focus:ring-gray-900 bg-white" />
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+              <p className="text-[11px] text-gray-400 font-sans mt-2">Retail Price (EUR) per colour is the price Orders adopt. Raw Cost differs by colour only when the main material has a per-colour price override.</p>
             </div>
-          </div>
-
-          {/* Markup / Ideal WS */}
-          <div className="border-t border-gray-200 pt-3 mb-3">
-            <div className="grid grid-cols-[1fr_auto_auto] gap-x-3 gap-y-1.5 items-center">
-              <span className="text-gray-400 font-sans">× Markup Rate</span>
-              <RateInput value={markupRate} step={0.1} onChange={setMarkupRate} />
-              <span className="text-gray-400 font-sans text-right">×</span>
-
-              <span className="text-gray-400 font-sans">Ideal WS (EUR)</span>
-              <span className="text-gray-400 font-sans text-right col-span-1">=</span>
-              <span className="text-gray-400 text-right">€ {fmtEur(idealWsEur)}</span>
-            </div>
-          </div>
-
-          {/* Retail Margin Rate → reference, then the manual order price */}
-          <div className="border-t border-gray-200 pt-3">
-            <div className="grid grid-cols-[1fr_auto_auto] gap-x-3 gap-y-1.5 items-center">
-              <span className="text-gray-400 font-sans">× Retail Margin Rate</span>
-              <RateInput value={retailRate} step={0.1} onChange={setRetailRate} />
-              <span className="text-gray-400 font-sans text-right">×</span>
-
-              <span className="text-gray-400 font-sans">Retail (ref)</span>
-              <span className="text-gray-400 font-sans text-right col-span-1">=</span>
-              <span className="text-gray-400 text-right">€ {fmtEur(retailRef)}</span>
-            </div>
-
-            <div className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1.5 items-center mt-2 pt-2 border-t border-gray-200">
-              <span className="text-gray-900 font-sans font-bold text-sm">
-                Retail Price (EUR)
-                <span className="block text-[10px] font-normal text-gray-400">used in Orders</span>
-              </span>
-              <div className="flex items-center gap-1.5 justify-self-end">
-                <button type="button" onClick={() => setRetailPrice(Number(retailRef.toFixed(2)))}
-                  className="text-[10px] text-blue-600 hover:underline whitespace-nowrap">use ref</button>
-                <input type="number" min="0" step="0.01" value={retailPrice || ""} placeholder="0.00"
-                  onChange={(e) => setRetailPrice(Number(e.target.value))}
-                  className="w-24 px-2 py-1.5 border border-gray-400 rounded text-sm text-right font-mono font-bold focus:outline-none focus:ring-1 focus:ring-gray-900 bg-white" />
-                <span className="text-gray-400 font-sans text-xs">EUR</span>
-              </div>
-            </div>
-          </div>
-
+          )}
         </div>
       </SectionBlock>
 
@@ -436,22 +470,5 @@ export function ProductCostForm({
         />
       )}
     </div>
-  );
-}
-
-function SumRow({ label, value, bold }: { label: string; value: string; bold?: boolean }) {
-  return (
-    <div className={`flex justify-between font-sans ${bold ? "font-semibold text-gray-900" : "text-gray-500"}`}>
-      <span>{label}</span>
-      <span className="font-mono">{value}</span>
-    </div>
-  );
-}
-
-function RateInput({ value, step, onChange }: { value: number; step: number; onChange: (v: number) => void }) {
-  return (
-    <input type="number" min="0" step={step} value={value || ""}
-      onChange={(e) => onChange(Number(e.target.value))}
-      className="w-20 px-2 py-1 border border-gray-300 rounded text-xs text-right font-mono focus:outline-none focus:ring-1 focus:ring-gray-900 bg-white" />
   );
 }

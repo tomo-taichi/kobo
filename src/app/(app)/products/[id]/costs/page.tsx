@@ -11,14 +11,14 @@ export default async function ProductCostsPage({ params }: { params: Promise<{ i
   const { id } = await params;
   const supabase = await createClient();
 
-  const [productResult, allMaterialsResult, productMaterialsResult] = await Promise.all([
+  const [productResult, allMaterialsResult, productMaterialsResult, productColorsResult] = await Promise.all([
     supabase
       .from("products")
       .select(
         "id, product_category, " +
         "main_material_id, main_m_name, main_m_color, main_m_quantity, " +
         "lining_material_id, lining_m_name, lining_m_color, lining_m_quantity, " +
-        "cost_eur_rate, markup_rate, retail_rate, retail_price_eur, " +
+        "cost_eur_rate, " +
         "cutting_cost_jpy, sewing_cost_jpy, knitting_cost_jpy, " +
         "thread_cost_jpy, finish_cost_jpy, packing_cost_jpy, " +
         "main_mat:materials!main_material_id(material_number, set_price_jpy, unit_type), " +
@@ -28,10 +28,25 @@ export default async function ProductCostsPage({ params }: { params: Promise<{ i
       .single(),
     supabase.from("materials").select(MATERIAL_SELECT).order("name"),
     supabase.from("product_materials").select("material_id, usage_amount, material_group").eq("product_id", id),
+    supabase
+      .from("product_colors")
+      .select("id, material_color_id, markup_rate, retail_rate, retail_price_eur, sort_order, material_colors(color, set_price_jpy)")
+      .eq("product_id", id)
+      .order("sort_order"),
   ]);
 
   const p = productResult.data as any;
   if (!p?.id) notFound();
+  const mainBaseSetPrice = Number(p.main_mat?.set_price_jpy ?? 0);
+  const colors = (productColorsResult.data ?? []).map((pc: any) => ({
+    productColorId:  pc.id as string,
+    materialColorId: pc.material_color_id as string,
+    color:           pc.material_colors?.color ?? "—",
+    mainSetPriceJpy: pc.material_colors?.set_price_jpy != null ? Number(pc.material_colors.set_price_jpy) : mainBaseSetPrice,
+    markupRate:      Number(pc.markup_rate ?? 3.0),
+    retailRate:      Number(pc.retail_rate ?? 3.5),
+    retailPriceEur:  Number(pc.retail_price_eur ?? 0),
+  }));
 
   const mainMat = p.main_material_id && p.main_m_name
     ? {
@@ -82,9 +97,7 @@ export default async function ProductCostsPage({ params }: { params: Promise<{ i
             packing:  Number(p.packing_cost_jpy),
           }}
           initialCostEurRate={Number(p.cost_eur_rate) || 160}
-          initialMarkupRate={Number(p.markup_rate) || 3.0}
-          initialRetailRate={Number(p.retail_rate) || 3.5}
-          initialRetailPriceEur={Number(p.retail_price_eur)}
+          colors={colors}
         />
       </div>
 
