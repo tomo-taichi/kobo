@@ -5,6 +5,54 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { MATERIAL_CATEGORIES, UNIT_TYPES, MAX_COMPOSITIONS } from "@/lib/material-constants";
 
+type ColorInput = { color: string; set_price_jpy: number | null };
+
+function parseColors(formData: FormData): ColorInput[] {
+  try {
+    const raw = formData.get("colors_json") as string;
+    const arr = raw ? JSON.parse(raw) : [];
+    if (!Array.isArray(arr)) return [];
+    return arr
+      .filter((c: any) => c && typeof c.color === "string" && c.color.trim())
+      .map((c: any) => ({
+        color: c.color.trim(),
+        set_price_jpy: c.set_price_jpy == null || c.set_price_jpy === "" ? null : Number(c.set_price_jpy),
+      }));
+  } catch {
+    return [];
+  }
+}
+
+// Upsert the material's colours; delete colours the user removed (unless a product
+// still references them, in which case keep them and surface a friendly error).
+async function syncMaterialColors(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  materialId: string,
+  colors: ColorInput[]
+): Promise<string | null> {
+  const { data: existing } = await supabase
+    .from("material_colors")
+    .select("id, color")
+    .eq("material_id", materialId);
+  const keep = new Set(colors.map((c) => c.color));
+  const toDelete = (existing ?? []).filter((r: any) => !keep.has(r.color)).map((r: any) => r.id);
+  if (toDelete.length > 0) {
+    const { error } = await supabase.from("material_colors").delete().in("id", toDelete);
+    if (error) return "Cannot remove a colour that is already used by a product.";
+  }
+  if (colors.length > 0) {
+    const rows = colors.map((c, i) => ({
+      material_id: materialId,
+      color: c.color,
+      set_price_jpy: c.set_price_jpy,
+      sort_order: i,
+    }));
+    const { error } = await supabase.from("material_colors").upsert(rows, { onConflict: "material_id,color" });
+    if (error) return error.message;
+  }
+  return null;
+}
+
 function extractCompositions(formData: FormData) {
   const result: Record<string, string | number | null> = {};
   for (let i = 1; i <= MAX_COMPOSITIONS; i++) {
@@ -41,11 +89,12 @@ export async function createMaterial(
   const unit_price_jpy = Number(formData.get("unit_price_jpy"));
   const unit_type = formData.get("unit_type") as string;
   const supplier_id = (formData.get("supplier_id") as string) || null;
-  const color = (formData.get("color") as string)?.trim() || null;
+  const colors = parseColors(formData);
+  const color = colors[0]?.color ?? null;  // legacy primary colour
   const season_id = (formData.get("season_id") as string) || null;
   const set_price_jpy = Number(formData.get("set_price_jpy") ?? 0);
 
-  if (!color) return "Colour is required";
+  if (colors.length === 0) return "At least one colour is required";
   if (!season_id) return "Season is required";
   if (!MATERIAL_CATEGORIES.includes(category as typeof MATERIAL_CATEGORIES[number])) return "Please select a category";
   if (!UNIT_TYPES.includes(unit_type as typeof UNIT_TYPES[number])) return "Please select a unit";
@@ -53,10 +102,12 @@ export async function createMaterial(
 
   const material_number = await nextMaterialNumber(supabase);
   const compositions = extractCompositions(formData);
-  const { error } = await supabase.from("materials").insert({
+  const { data: inserted, error } = await supabase.from("materials").insert({
     name, category, unit_price_jpy, set_price_jpy, unit_type, supplier_id, color, season_id, material_number, ...compositions,
-  });
+  }).select("id").single();
   if (error) return error.message;
+  const syncErr = await syncMaterialColors(supabase, (inserted as { id: string }).id, colors);
+  if (syncErr) return syncErr;
   revalidatePath("/materials");
   redirect("/materials");
 }
@@ -76,6 +127,21 @@ export async function duplicateMaterial(id: string): Promise<string | null> {
     .select("id")
     .single();
   if (insertError || !newRow) return insertError?.message ?? "Insert failed";
+  // Copy the source material's colours to the duplicate
+  const { data: srcColors } = await supabase
+    .from("material_colors")
+    .select("color, set_price_jpy, sort_order")
+    .eq("material_id", id);
+  if (srcColors && srcColors.length > 0) {
+    await supabase.from("material_colors").insert(
+      srcColors.map((c: any) => ({
+        material_id: (newRow as { id: string }).id,
+        color: c.color,
+        set_price_jpy: c.set_price_jpy,
+        sort_order: c.sort_order,
+      }))
+    );
+  }
   revalidatePath("/materials");
   redirect(`/materials/${newRow.id}/edit`);
 }
@@ -119,15 +185,20 @@ export async function updateMaterial(
   const unit_price_jpy = Number(formData.get("unit_price_jpy"));
   const unit_type = formData.get("unit_type") as string;
   const supplier_id = (formData.get("supplier_id") as string) || null;
-  const color = (formData.get("color") as string)?.trim() || null;
+  const colors = parseColors(formData);
+  const color = colors[0]?.color ?? null;  // legacy primary colour
   const season_id = (formData.get("season_id") as string) || null;
   const set_price_jpy = Number(formData.get("set_price_jpy") ?? 0);
+
+  if (colors.length === 0) return "At least one colour is required";
 
   const compositions = extractCompositions(formData);
   const { error } = await supabase.from("materials").update({
     name, category, unit_price_jpy, set_price_jpy, unit_type, supplier_id, color, season_id, ...compositions,
   }).eq("id", id);
   if (error) return error.message;
+  const syncErr = await syncMaterialColors(supabase, id, colors);
+  if (syncErr) return syncErr;
   revalidatePath("/materials");
   redirect("/materials");
 }

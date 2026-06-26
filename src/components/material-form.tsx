@@ -15,6 +15,7 @@ type Action = (_state: string | null, formData: FormData) => Promise<string | nu
 type Supplier = { id: string; name: string };
 type Season   = { id: string; name: string };
 type CompRow  = { label: string; pct: string };
+type ColorRow = { color: string; setPrice: string };
 
 type Props = {
   action: Action;
@@ -30,6 +31,7 @@ type Props = {
     supplier_id?: string | null;
     season_id?: string | null;
     color?: string;
+    colors?: { color: string; set_price_jpy: number | null }[];
     comp_1_label?: string; comp_1_pct?: number | null;
     comp_2_label?: string; comp_2_pct?: number | null;
     comp_3_label?: string; comp_3_pct?: number | null;
@@ -52,6 +54,14 @@ function buildInitialComps(d: Props["initialData"]): CompRow[] {
   return rows.length > 0 ? rows : [{ label: "", pct: "" }];
 }
 
+function buildInitialColors(d: Props["initialData"]): ColorRow[] {
+  if (d?.colors && d.colors.length > 0) {
+    return d.colors.map((c) => ({ color: c.color, setPrice: c.set_price_jpy != null ? String(c.set_price_jpy) : "" }));
+  }
+  if (d?.color) return [{ color: d.color, setPrice: "" }];
+  return [{ color: "", setPrice: "" }];
+}
+
 function SectionHeading({ children }: { children: React.ReactNode }) {
   return (
     <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider border-b border-gray-100 pb-1 mb-3">
@@ -64,8 +74,16 @@ export function MaterialForm({ action, suppliers, seasons = [], pastColors = [],
   const [error, formAction, pending] = useActionState(action, null);
   const [comps, setComps] = useState<CompRow[]>(() => buildInitialComps(initialData));
   const [compError, setCompError] = useState<string | null>(null);
+  const [colors, setColors] = useState<ColorRow[]>(() => buildInitialColors(initialData));
+  const [colorError, setColorError] = useState<string | null>(null);
 
   const total = comps.reduce((sum, r) => sum + (Number(r.pct) || 0), 0);
+
+  const colorsPayload = JSON.stringify(
+    colors
+      .filter((c) => c.color.trim())
+      .map((c) => ({ color: c.color.trim(), set_price_jpy: c.setPrice.trim() === "" ? null : Number(c.setPrice) }))
+  );
 
   function handleCompChange(i: number, field: "label" | "pct", value: string) {
     setComps((prev) => prev.map((r, idx) => idx === i ? { ...r, [field]: value } : r));
@@ -80,7 +98,26 @@ export function MaterialForm({ action, suppliers, seasons = [], pastColors = [],
     if (comps.length > 1) setComps((prev) => prev.filter((_, idx) => idx !== i));
   }
 
+  function handleColorChange(i: number, field: "color" | "setPrice", value: string) {
+    setColors((prev) => prev.map((r, idx) => idx === i ? { ...r, [field]: value } : r));
+    setColorError(null);
+  }
+  function addColor() { setColors((prev) => [...prev, { color: "", setPrice: "" }]); }
+  function removeColor(i: number) { if (colors.length > 1) setColors((prev) => prev.filter((_, idx) => idx !== i)); }
+
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    if (colors.filter((c) => c.color.trim()).length === 0) {
+      e.preventDefault();
+      setColorError("At least one colour is required");
+      return;
+    }
+    const seen = new Set<string>();
+    for (const c of colors) {
+      const key = c.color.trim().toLowerCase();
+      if (!key) continue;
+      if (seen.has(key)) { e.preventDefault(); setColorError(`Duplicate colour: ${c.color.trim()}`); return; }
+      seen.add(key);
+    }
     const filled = comps.filter((r) => r.label && r.pct);
     if (filled.length === 0) {
       e.preventDefault();
@@ -97,52 +134,35 @@ export function MaterialForm({ action, suppliers, seasons = [], pastColors = [],
   return (
     <form action={formAction} onSubmit={handleSubmit} className="flex flex-col gap-5">
       {id && <input type="hidden" name="id" value={id} />}
+      <input type="hidden" name="colors_json" value={colorsPayload} />
+      {pastColors.length > 0 && (
+        <datalist id="past-colours">
+          {pastColors.map((c) => <option key={c} value={c} />)}
+        </datalist>
+      )}
       {error && <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded">{error}</p>}
 
       {/* ── Group 1: Material Info ── */}
       <div>
         <SectionHeading>Material Info</SectionHeading>
         <div className="flex flex-col gap-3">
-          <div className="grid grid-cols-2 gap-3">
-            <div className="col-span-2">
-              <label className="block text-xs font-medium text-gray-600 mb-1">
-                Material Name <span className="text-red-500">*</span>
-                <span className="ml-1 text-gray-400 font-normal">(English)</span>
-              </label>
-              <input
-                name="name"
-                defaultValue={initialData.name ?? ""}
-                required
-                lang="en-GB"
-                spellCheck
-                placeholder="e.g. Wool Gabardine"
-                className={inputCls}
-              />
-            </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">
+              Material Name <span className="text-red-500">*</span>
+              <span className="ml-1 text-gray-400 font-normal">(English)</span>
+            </label>
+            <input
+              name="name"
+              defaultValue={initialData.name ?? ""}
+              required
+              lang="en-GB"
+              spellCheck
+              placeholder="e.g. Wool Gabardine"
+              className={inputCls}
+            />
           </div>
 
           <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">
-                Colour <span className="text-red-500">*</span>
-                <span className="ml-1 text-gray-400 font-normal">(English)</span>
-              </label>
-              {pastColors.length > 0 && (
-                <datalist id="past-colours">
-                  {pastColors.map((c) => <option key={c} value={c} />)}
-                </datalist>
-              )}
-              <input
-                name="color"
-                defaultValue={initialData.color ?? ""}
-                list={pastColors.length > 0 ? "past-colours" : undefined}
-                required
-                lang="en-GB"
-                spellCheck
-                placeholder="e.g. Navy Blue"
-                className={inputCls}
-              />
-            </div>
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">Category <span className="text-red-500">*</span></label>
               <select name="category" defaultValue={initialData.category ?? ""} required className={inputCls + " bg-white"}>
@@ -159,21 +179,62 @@ export function MaterialForm({ action, suppliers, seasons = [], pastColors = [],
                 </optgroup>
               </select>
             </div>
-          </div>
-
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Season <span className="text-red-500">*</span></label>
-            <select name="season_id" defaultValue={initialData.season_id ?? ""} required className={inputCls + " bg-white"}>
-              <option value="">— Select —</option>
-              {seasons.map((s) => (
-                <option key={s.id} value={s.id}>{s.name}</option>
-              ))}
-            </select>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Season <span className="text-red-500">*</span></label>
+              <select name="season_id" defaultValue={initialData.season_id ?? ""} required className={inputCls + " bg-white"}>
+                <option value="">— Select —</option>
+                {seasons.map((s) => (
+                  <option key={s.id} value={s.id}>{s.name}</option>
+                ))}
+              </select>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* ── Group 2: Sourcing & Pricing ── */}
+      {/* ── Group 2: Colours ── */}
+      <div>
+        <SectionHeading>Colours <span className="normal-case font-normal tracking-normal text-gray-400">(at least one)</span></SectionHeading>
+        {colorError && <p className="text-xs text-red-600 mb-2">{colorError}</p>}
+        <div className="flex flex-col gap-2">
+          <div className="flex gap-2 items-center text-[11px] text-gray-400">
+            <span className="flex-1">Colour (English)</span>
+            <span className="w-28 text-right">Price override (¥)</span>
+            <span className="w-4" />
+          </div>
+          {colors.map((row, i) => (
+            <div key={i} className="flex gap-2 items-center">
+              <input
+                list={pastColors.length > 0 ? "past-colours" : undefined}
+                value={row.color}
+                onChange={(e) => handleColorChange(i, "color", e.target.value)}
+                lang="en-GB"
+                spellCheck
+                placeholder="e.g. Navy Blue"
+                className="flex-1 px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
+              />
+              <input
+                type="number" min="0" step="0.01"
+                value={row.setPrice}
+                onChange={(e) => handleColorChange(i, "setPrice", e.target.value)}
+                placeholder="base"
+                title="Per-colour price override (leave blank to use the base Set Price)"
+                className="w-28 px-2 py-2 border border-gray-300 rounded-md text-sm text-right focus:outline-none focus:ring-2 focus:ring-gray-900"
+              />
+              {colors.length > 1 && (
+                <button type="button" onClick={() => removeColor(i)} className="text-gray-300 hover:text-red-500 text-lg leading-none w-4">×</button>
+              )}
+              {colors.length <= 1 && <span className="w-4" />}
+            </div>
+          ))}
+          <button type="button" onClick={addColor} className="text-xs text-gray-500 hover:text-gray-900 border border-gray-200 rounded px-2 py-1 w-fit hover:bg-gray-50 mt-1">
+            + Add colour
+          </button>
+        </div>
+        <p className="text-[11px] text-gray-400 mt-1.5">Leave the ¥ blank to use the base Set Price. Set a value only when a colour costs differently (e.g. special dyeing).</p>
+      </div>
+
+      {/* ── Group 3: Sourcing & Pricing ── */}
       <div>
         <SectionHeading>Sourcing &amp; Pricing</SectionHeading>
         <div className="flex flex-col gap-3">
@@ -208,7 +269,7 @@ export function MaterialForm({ action, suppliers, seasons = [], pastColors = [],
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Set Price (¥)</label>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Set Price (¥) <span className="text-gray-400 font-normal">— base</span></label>
               <input
                 name="set_price_jpy"
                 type="number" min="0" step="0.01"
@@ -220,7 +281,7 @@ export function MaterialForm({ action, suppliers, seasons = [], pastColors = [],
         </div>
       </div>
 
-      {/* ── Group 3: Composition ── */}
+      {/* ── Group 4: Composition ── */}
       <div>
         <SectionHeading>
           Composition
