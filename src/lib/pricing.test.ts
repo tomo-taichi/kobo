@@ -4,6 +4,7 @@ import {
   calcCostJpy,
   calcCostEur,
   calcWholesaleEur,
+  calcRetailRefEur,
   calcRetailPriceEur,
   calcCustomerWholesaleEur,
   calcDepositAmountEur,
@@ -72,7 +73,14 @@ describe("calcWholesaleEur", () => {
   });
 });
 
-// ─── 5. Retail price (EUR) ───────────────────────────────────
+// ─── 5. Retail reference (EUR) = Ideal WS × Retail Margin Rate ─
+describe("calcRetailRefEur", () => {
+  it("multiplies ideal WS (EUR) by retail margin rate", () => {
+    expect(calcRetailRefEur(300, 3.5)).toBeCloseTo(1050);
+  });
+});
+
+// ─── 5b. Legacy retail price (EUR) = cost_eur × retail_rate ───
 describe("calcRetailPriceEur", () => {
   it("multiplies cost_eur by retail_rate", () => {
     expect(calcRetailPriceEur(100, 3.5)).toBeCloseTo(350);
@@ -107,19 +115,19 @@ describe("calcDepositAmountEur", () => {
   });
 });
 
-// ─── 8. Deposit amount (JPY) — floor to nearest 10¥ ─────────
+// ─── 8. Deposit amount (JPY) — floor to nearest 1,000¥ (ADR-0003) ─
 describe("calcDepositAmountJpy", () => {
-  it("floors to nearest 10 JPY", () => {
-    // 13334.12 × 1.0 → floor to 10 → 13330
-    expect(calcDepositAmountJpy(13334.12, 1.0)).toBe(13330);
+  it("floors to nearest 1,000 JPY", () => {
+    // 13334.12 × 1.0 → floor to 1,000 → 13000
+    expect(calcDepositAmountJpy(13334.12, 1.0)).toBe(13000);
   });
 
-  it("applies deposit rate then floors to 10", () => {
-    // 44447.07 × 0.3 = 13334.121 → floor to 10 → 13330
-    expect(calcDepositAmountJpy(44447.07, 0.3)).toBe(13330);
+  it("applies deposit rate then floors to 1,000", () => {
+    // 44447.07 × 0.3 = 13334.121 → floor to 1,000 → 13000
+    expect(calcDepositAmountJpy(44447.07, 0.3)).toBe(13000);
   });
 
-  it("floors cleanly when result is already a multiple of 10", () => {
+  it("floors cleanly when result is already a multiple of 1,000", () => {
     expect(calcDepositAmountJpy(10000, 0.3)).toBe(3000);
   });
 });

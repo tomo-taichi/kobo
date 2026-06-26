@@ -18,7 +18,7 @@ export default async function ProductCostsPage({ params }: { params: Promise<{ i
         "id, product_category, " +
         "main_material_id, main_m_name, main_m_color, main_m_quantity, " +
         "lining_material_id, lining_m_name, lining_m_color, lining_m_quantity, " +
-        "cost_eur_rate, markup_rate, set_ws_price_eur, retail_rate, " +
+        "cost_eur_rate, markup_rate, retail_rate, retail_price_eur, " +
         "cutting_cost_jpy, sewing_cost_jpy, knitting_cost_jpy, " +
         "thread_cost_jpy, finish_cost_jpy, packing_cost_jpy, " +
         "main_mat:materials!main_material_id(material_number, set_price_jpy, unit_type), " +
@@ -83,8 +83,8 @@ export default async function ProductCostsPage({ params }: { params: Promise<{ i
           }}
           initialCostEurRate={Number(p.cost_eur_rate) || 160}
           initialMarkupRate={Number(p.markup_rate) || 3.0}
-          initialSetWsPriceEur={Number(p.set_ws_price_eur)}
           initialRetailRate={Number(p.retail_rate) || 3.5}
+          initialRetailPriceEur={Number(p.retail_price_eur)}
         />
       </div>
 

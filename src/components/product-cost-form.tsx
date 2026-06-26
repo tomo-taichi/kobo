@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useRef, useEffect } from "react";
 import { MaterialPickerModal, type PickableMaterial } from "@/components/material-picker";
-import { calcCostJpy, calcCostEur, calcWholesaleEur } from "@/lib/pricing";
+import { calcCostJpy, calcCostEur, calcWholesaleEur, calcRetailRefEur } from "@/lib/pricing";
 import { fmtEur } from "@/lib/format";
 import {
   GARMENT_TYPES,
@@ -48,7 +48,7 @@ type Props = {
   initialAdditionalRows: { materialId: string; quantity: number; role: string }[];
   initialManufacturing: MfgState;
   initialCostEurRate: number; initialMarkupRate: number;
-  initialSetWsPriceEur: number; initialRetailRate: number;
+  initialRetailRate: number; initialRetailPriceEur: number;
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -132,7 +132,7 @@ export function ProductCostForm({
   initialMainQuantity, initialLiningQuantity,
   allMaterials, initialAdditionalRows,
   initialManufacturing,
-  initialCostEurRate, initialMarkupRate, initialSetWsPriceEur, initialRetailRate,
+  initialCostEurRate, initialMarkupRate, initialRetailRate, initialRetailPriceEur,
 }: Props) {
   const [mainQty,    setMainQty]    = useState(initialMainQuantity);
   const [liningQty,  setLiningQty]  = useState(initialLiningQuantity);
@@ -143,8 +143,8 @@ export function ProductCostForm({
   const [mfg,        setMfg]        = useState<MfgState>(initialManufacturing);
   const [eurRate,    setEurRate]    = useState(initialCostEurRate);
   const [markupRate, setMarkupRate] = useState(initialMarkupRate);
-  const [setWsPrice, setSetWsPrice] = useState(initialSetWsPriceEur);
   const [retailRate, setRetailRate] = useState(initialRetailRate);
+  const [retailPrice, setRetailPrice] = useState(initialRetailPriceEur);
 
   type SaveStatus = "idle" | "saving" | "saved" | "error";
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
@@ -164,7 +164,7 @@ export function ProductCostForm({
   const costJpy         = calcCostJpy(materialCostJpy, mfg);
   const costEur         = calcCostEur(costJpy, eurRate || 1);
   const idealWsEur      = calcWholesaleEur(costEur, markupRate);
-  const retailEur       = setWsPrice * retailRate;
+  const retailRef       = calcRetailRefEur(idealWsEur, retailRate);  // suggestion only
 
   // Autofill
   const autofillType = productCategory ? (CATEGORY_TO_GARMENT[productCategory] ?? null) : null;
@@ -183,8 +183,8 @@ export function ProductCostForm({
   // Auto-save: debounce 800ms, skip initial mount
   const isFirstRender = useRef(true);
   const saveTimer     = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const latestRef     = useRef({ mainQty, liningQty, additional, mfg, eurRate, markupRate, setWsPrice, retailRate });
-  latestRef.current   = { mainQty, liningQty, additional, mfg, eurRate, markupRate, setWsPrice, retailRate };
+  const latestRef     = useRef({ mainQty, liningQty, additional, mfg, eurRate, markupRate, retailRate, retailPrice });
+  latestRef.current   = { mainQty, liningQty, additional, mfg, eurRate, markupRate, retailRate, retailPrice };
 
   useEffect(() => {
     if (isFirstRender.current) { isFirstRender.current = false; return; }
@@ -197,14 +197,14 @@ export function ProductCostForm({
       const result = await updateProductCosts(
         productId, v.mainQty, v.liningQty,
         v.additional.filter((r) => r.materialId),
-        v.mfg, v.eurRate, v.markupRate, v.setWsPrice, v.retailRate
+        v.mfg, v.eurRate, v.markupRate, v.retailRate, v.retailPrice
       );
       if (result) { setSaveStatus("error"); setSaveError(result); }
       else { setSaveStatus("saved"); }
     }, 800);
     return () => { if (saveTimer.current) clearTimeout(saveTimer.current); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mainQty, liningQty, additional, mfg, eurRate, markupRate, setWsPrice, retailRate]);
+  }, [mainQty, liningQty, additional, mfg, eurRate, markupRate, retailRate, retailPrice]);
 
   const handlePickerSelect = useCallback((m: PickableMaterial) => {
     if (!pickerRole) return;
@@ -367,7 +367,7 @@ export function ProductCostForm({
             <SumRow label="Material Cost"  value={`¥ ${fmt(materialCostJpy)}`} />
             <SumRow label="Manufacturing"  value={`¥ ${fmt(mfgCost)}`} />
             <div className="border-t border-gray-200 pt-1.5">
-              <SumRow label="Total Cost (JPY)" value={`¥ ${fmt(costJpy)}`} bold />
+              <SumRow label="Total Raw Cost (JPY)" value={`¥ ${fmt(costJpy)}`} bold />
             </div>
           </div>
 
@@ -391,28 +391,37 @@ export function ProductCostForm({
               <RateInput value={markupRate} step={0.1} onChange={setMarkupRate} />
               <span className="text-gray-400 font-sans text-right">×</span>
 
-              <span className="text-gray-400 font-sans">Ideal WS (ref)</span>
+              <span className="text-gray-400 font-sans">Ideal WS (EUR)</span>
               <span className="text-gray-400 font-sans text-right col-span-1">=</span>
               <span className="text-gray-400 text-right">€ {fmtEur(idealWsEur)}</span>
             </div>
           </div>
 
-          {/* Set WS + Retail */}
+          {/* Retail Margin Rate → reference, then the manual order price */}
           <div className="border-t border-gray-200 pt-3">
             <div className="grid grid-cols-[1fr_auto_auto] gap-x-3 gap-y-1.5 items-center">
-              <span className="text-gray-600 font-sans font-semibold">Set WS Price (EUR)</span>
-              <input type="number" min="0" step="0.01" value={setWsPrice || ""} placeholder="0.00"
-                onChange={(e) => setSetWsPrice(Number(e.target.value))}
-                className="w-20 px-2 py-1 border border-gray-400 rounded text-xs text-right font-mono focus:outline-none focus:ring-1 focus:ring-gray-900 bg-white font-semibold" />
-              <span className="text-gray-400 font-sans text-right">EUR</span>
-
-              <span className="text-gray-400 font-sans">× Retail Rate</span>
+              <span className="text-gray-400 font-sans">× Retail Margin Rate</span>
               <RateInput value={retailRate} step={0.1} onChange={setRetailRate} />
               <span className="text-gray-400 font-sans text-right">×</span>
 
-              <span className="text-gray-800 font-sans font-bold text-sm col-span-1">Retail (EUR)</span>
-              <span className="text-gray-600 font-sans text-right col-span-1">=</span>
-              <span className="text-gray-900 font-bold text-sm text-right">€ {fmtEur(retailEur)}</span>
+              <span className="text-gray-400 font-sans">Retail (ref)</span>
+              <span className="text-gray-400 font-sans text-right col-span-1">=</span>
+              <span className="text-gray-400 text-right">€ {fmtEur(retailRef)}</span>
+            </div>
+
+            <div className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1.5 items-center mt-2 pt-2 border-t border-gray-200">
+              <span className="text-gray-900 font-sans font-bold text-sm">
+                Retail Price (EUR)
+                <span className="block text-[10px] font-normal text-gray-400">used in Orders</span>
+              </span>
+              <div className="flex items-center gap-1.5 justify-self-end">
+                <button type="button" onClick={() => setRetailPrice(Number(retailRef.toFixed(2)))}
+                  className="text-[10px] text-blue-600 hover:underline whitespace-nowrap">use ref</button>
+                <input type="number" min="0" step="0.01" value={retailPrice || ""} placeholder="0.00"
+                  onChange={(e) => setRetailPrice(Number(e.target.value))}
+                  className="w-24 px-2 py-1.5 border border-gray-400 rounded text-sm text-right font-mono font-bold focus:outline-none focus:ring-1 focus:ring-gray-900 bg-white" />
+                <span className="text-gray-400 font-sans text-xs">EUR</span>
+              </div>
             </div>
           </div>
 

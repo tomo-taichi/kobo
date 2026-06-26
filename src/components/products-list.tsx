@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useTransition } from "react";
 import Link from "next/link";
-import { duplicateProduct, updateProductRetailRate } from "@/app/actions/products";
+import { duplicateProduct, updateProductRetailPrice } from "@/app/actions/products";
 
 export type ProductRow = {
   id: string;
@@ -14,8 +14,6 @@ export type ProductRow = {
   is_sample: boolean;
   is_invalid: boolean;
   wholesale_eur: number | null;
-  set_ws_price_eur: number | null;
-  retail_rate: number | null;
   retail_price_eur: number | null;
   main_m_name: string | null;
   main_m_color: string | null;
@@ -83,24 +81,22 @@ function DupButton({ productId }: { productId: string }) {
   );
 }
 
-// ─── Retail Rate inline editor ───────────────────────────────────────
-function RetailRateEditor({
-  productId, rate, setWsPrice, onSave,
+// ─── Retail Price inline editor (the Order-adopted price, set manually) ───
+function RetailPriceEditor({
+  productId, retail, onSave,
 }: {
   productId: string;
-  rate: number | null;
-  setWsPrice: number | null;
-  onSave: (productId: string, rate: number, retail: number) => void;
+  retail: number | null;
+  onSave: (productId: string, retail: number) => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft,   setDraft]   = useState("");
 
   function commit() {
     const v = parseFloat(draft);
-    if (!isNaN(v) && v > 0) {
-      const ws = setWsPrice ?? 0;
-      onSave(productId, v, ws * v);
-      updateProductRetailRate(productId, v, ws);
+    if (!isNaN(v) && v >= 0) {
+      onSave(productId, v);
+      updateProductRetailPrice(productId, v);
     }
     setEditing(false);
   }
@@ -108,14 +104,14 @@ function RetailRateEditor({
   if (editing) {
     return (
       <input
-        type="number" step="0.1" min="0" value={draft} autoFocus
+        type="number" step="1" min="0" value={draft} autoFocus
         onChange={(e) => setDraft(e.target.value)}
         onBlur={commit}
         onKeyDown={(e) => {
           if (e.key === "Enter") { e.preventDefault(); commit(); }
           if (e.key === "Escape") setEditing(false);
         }}
-        className="w-14 text-xs text-right font-mono border border-blue-400 rounded px-1 focus:outline-none"
+        className="w-16 text-xs text-right font-mono border border-blue-400 rounded px-1 focus:outline-none"
       />
     );
   }
@@ -123,24 +119,23 @@ function RetailRateEditor({
   return (
     <span
       title="Double-click to edit"
-      onDoubleClick={() => { setDraft(String(rate ?? "")); setEditing(true); }}
-      className="cursor-default select-none hover:bg-gray-100 rounded px-0.5 tabular-nums"
+      onDoubleClick={() => { setDraft(String(retail ?? "")); setEditing(true); }}
+      className="cursor-default select-none hover:bg-gray-100 rounded px-0.5 tabular-nums font-mono font-semibold text-gray-700"
     >
-      {rate ? <span className="text-gray-600">×{rate}</span> : <span className="text-gray-300">—</span>}
+      {retail ? `€${retail.toLocaleString("en-US", { maximumFractionDigits: 0 })}` : <span className="text-gray-300">—</span>}
     </span>
   );
 }
 
 // ─── Compact row (grouped modes) ─────────────────────────────────────
 function CompactRow({
-  p, rateOverride, onRateSave,
+  p, retailOverride, onRetailSave,
 }: {
   p: ProductRow;
-  rateOverride?: { retail_rate: number; retail_price_eur: number };
-  onRateSave: (productId: string, rate: number, retail: number) => void;
+  retailOverride?: number;
+  onRetailSave: (productId: string, retail: number) => void;
 }) {
-  const rate   = rateOverride?.retail_rate      ?? p.retail_rate;
-  const retail = rateOverride?.retail_price_eur ?? p.retail_price_eur;
+  const retail = retailOverride ?? p.retail_price_eur;
 
   return (
     <div className={`flex items-center gap-2 px-4 py-1.5 hover:bg-gray-50 transition-colors text-xs ${p.is_invalid ? "opacity-40" : ""}`}>
@@ -172,21 +167,14 @@ function CompactRow({
 
       <div className="w-px self-stretch bg-gray-200 mx-1" />
 
-      <span className="w-12 text-right font-mono text-gray-400 shrink-0">
+      {/* Ideal WS (reference, read-only) */}
+      <span className="w-14 text-right font-mono text-gray-400 shrink-0">
         {p.wholesale_eur ? `€${p.wholesale_eur.toLocaleString("en-US", { maximumFractionDigits: 0 })}` : "—"}
       </span>
-      <span className="w-12 text-right font-mono font-semibold text-gray-700 shrink-0">
-        {p.set_ws_price_eur ? `€${p.set_ws_price_eur.toLocaleString("en-US", { maximumFractionDigits: 0 })}` : "—"}
-      </span>
-      <div className="w-14 text-right shrink-0">
-        <RetailRateEditor
-          productId={p.id} rate={rate}
-          setWsPrice={p.set_ws_price_eur} onSave={onRateSave}
-        />
+      {/* Retail (EUR) — Order-adopted price, editable inline */}
+      <div className="w-20 text-right shrink-0">
+        <RetailPriceEditor productId={p.id} retail={retail} onSave={onRetailSave} />
       </div>
-      <span className="w-14 text-right font-mono font-semibold text-gray-700 shrink-0">
-        {retail ? `€${retail.toLocaleString("en-US", { maximumFractionDigits: 0 })}` : "—"}
-      </span>
 
       <div className="w-px self-stretch bg-gray-200 mx-1" />
 
@@ -227,10 +215,8 @@ function CompactColHeader() {
       <span className="w-16 text-center shrink-0">Category</span>
       <span className="w-6  text-center shrink-0">Sex</span>
       <div className="w-px mx-1" />
-      <span className="w-12 text-right shrink-0">Ideal WS</span>
-      <span className="w-12 text-right shrink-0">Final WS</span>
-      <span className="w-14 text-right shrink-0">Ret. Rate</span>
-      <span className="w-14 text-right shrink-0">Retail</span>
+      <span className="w-14 text-right shrink-0">Ideal WS</span>
+      <span className="w-20 text-right shrink-0">Retail (EUR)</span>
       <div className="w-px mx-1" />
       <span className="w-[4.5rem] shrink-0" />
     </div>
@@ -265,15 +251,15 @@ export function ProductsList({ products, seasons }: { products: ProductRow[]; se
   const [filterCategory, setFilterCategory] = useState("");
   const [sortBy,         setSortBy]         = useState<SortKey>("name");
   const [layoutMode,     setLayoutMode]     = useState<LayoutMode>("flat");
-  const [rateOverrides,  setRateOverrides]  = useState<Record<string, { retail_rate: number; retail_price_eur: number }>>({});
+  const [retailOverrides, setRetailOverrides] = useState<Record<string, number>>({});
 
   const categories = useMemo(
     () => Array.from(new Set(products.map((p) => p.product_category).filter(Boolean))).sort() as string[],
     [products]
   );
 
-  function handleRateSave(productId: string, rate: number, retail: number) {
-    setRateOverrides((prev) => ({ ...prev, [productId]: { retail_rate: rate, retail_price_eur: retail } }));
+  function handleRetailSave(productId: string, retail: number) {
+    setRetailOverrides((prev) => ({ ...prev, [productId]: retail }));
   }
 
   const filtered = useMemo(() => {
@@ -314,7 +300,7 @@ export function ProductsList({ products, seasons }: { products: ProductRow[]; se
           <div key={model}>
             <GroupHeader label={model} count={rows.length} />
             {rows.map((p) => (
-              <CompactRow key={p.id} p={p} rateOverride={rateOverrides[p.id]} onRateSave={handleRateSave} />
+              <CompactRow key={p.id} p={p} retailOverride={retailOverrides[p.id]} onRetailSave={handleRetailSave} />
             ))}
           </div>
         ))}
@@ -336,7 +322,7 @@ export function ProductsList({ products, seasons }: { products: ProductRow[]; se
                 <div key={mat}>
                   <GroupHeader label={mat} count={matRows.length} level={1} />
                   {matRows.map((p) => (
-                    <CompactRow key={p.id} p={p} rateOverride={rateOverrides[p.id]} onRateSave={handleRateSave} />
+                    <CompactRow key={p.id} p={p} retailOverride={retailOverrides[p.id]} onRetailSave={handleRetailSave} />
                   ))}
                 </div>
               ))}
@@ -356,7 +342,7 @@ export function ProductsList({ products, seasons }: { products: ProductRow[]; se
           <div key={mat}>
             <GroupHeader label={mat} count={rows.length} />
             {rows.map((p) => (
-              <CompactRow key={p.id} p={p} rateOverride={rateOverrides[p.id]} onRateSave={handleRateSave} />
+              <CompactRow key={p.id} p={p} retailOverride={retailOverrides[p.id]} onRetailSave={handleRetailSave} />
             ))}
           </div>
         ))}
@@ -370,8 +356,7 @@ export function ProductsList({ products, seasons }: { products: ProductRow[]; se
     return (
       <div className="divide-y divide-gray-100">
         {items.map((p) => {
-          const rate   = rateOverrides[p.id]?.retail_rate      ?? p.retail_rate;
-          const retail = rateOverrides[p.id]?.retail_price_eur ?? p.retail_price_eur;
+          const retail = retailOverrides[p.id] ?? p.retail_price_eur;
           return (
             <div key={p.id} className={`px-4 py-3 hover:bg-gray-50 transition-colors ${p.is_invalid ? "opacity-40" : ""}`}>
               {/* Row 1: Model Name + badges + actions */}
@@ -409,15 +394,10 @@ export function ProductsList({ products, seasons }: { products: ProductRow[]; se
                 </div>
                 <div className="border-l border-gray-200 self-stretch" />
                 <div className="grid grid-cols-2 gap-x-5 gap-y-0.5">
-                  <PriceCell label="Ideal WS"  value={fmtEur(p.wholesale_eur)} muted />
-                  <PriceCell label="Final WS"  value={fmtEur(p.set_ws_price_eur, true)} />
-                  <PriceCell label="Ret. Rate" value={
-                    <RetailRateEditor
-                      productId={p.id} rate={rate}
-                      setWsPrice={p.set_ws_price_eur} onSave={handleRateSave}
-                    />
+                  <PriceCell label="Ideal WS" value={fmtEur(p.wholesale_eur)} muted />
+                  <PriceCell label="Retail (EUR)" value={
+                    <RetailPriceEditor productId={p.id} retail={retail} onSave={handleRetailSave} />
                   } />
-                  <PriceCell label="Retail" value={fmtEur(retail, true)} />
                 </div>
               </div>
             </div>

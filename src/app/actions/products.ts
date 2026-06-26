@@ -155,7 +155,7 @@ const DUPLICATE_FIELDS = [
   "lining_m_comp5_label", "lining_m_comp5_pct",
   "lining_m_quantity",
   "accessory_composition",
-  "cost_eur_rate", "markup_rate", "set_ws_price_eur", "retail_rate",
+  "cost_eur_rate", "markup_rate", "retail_rate", "retail_price_eur",
   "cutting_cost_jpy", "sewing_cost_jpy", "knitting_cost_jpy",
   "thread_cost_jpy", "finish_cost_jpy", "packing_cost_jpy",
 ] as const;
@@ -214,15 +214,15 @@ export async function duplicateProduct(sourceId: string) {
   redirect(`/products/${newId}/edit`);
 }
 
-export async function updateProductRetailRate(
+// Inline edit of the manual retail price (the Order-adopted price) from the
+// products list. retail_price_eur is set directly — no rate-based recompute.
+export async function updateProductRetailPrice(
   productId: string,
-  retailRate: number,
-  setWsPriceEur: number
+  retailPriceEur: number
 ): Promise<string | null> {
   const supabase = await createClient();
   const { error } = await supabase.from("products").update({
-    retail_rate:      retailRate,
-    retail_price_eur: setWsPriceEur * retailRate,
+    retail_price_eur: retailPriceEur,
   }).eq("id", productId);
   if (error) return error.message;
   revalidatePath("/products");

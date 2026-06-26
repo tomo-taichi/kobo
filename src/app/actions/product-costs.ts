@@ -19,8 +19,8 @@ export async function updateProductCosts(
   manufacturingCosts: ManufacturingCosts,
   costEurRate: number,
   markupRate: number,
-  setWsPriceEur: number,
-  retailRate: number
+  retailRate: number,
+  retailPriceEur: number
 ): Promise<string | null> {
   const supabase = await createClient();
 
@@ -56,8 +56,8 @@ export async function updateProductCosts(
 
   const costJpy      = calcCostJpy(materialCostJpy, manufacturingCosts);
   const costEur      = calcCostEur(costJpy, costEurRate || 1);
-  const wholesaleEur = calcWholesaleEur(costEur, markupRate);          // ideal WS (reference)
-  const retailPriceEur = setWsPriceEur * retailRate;                   // actual retail from set WS
+  const wholesaleEur = calcWholesaleEur(costEur, markupRate);          // ideal WS (EUR), reference
+  // retailPriceEur is entered manually on the form (the Order-adopted price).
 
   // Replace additional product_materials
   await supabase.from("product_materials").delete().eq("product_id", productId);
@@ -84,7 +84,6 @@ export async function updateProductCosts(
       cost_eur_rate:     costEurRate,
       markup_rate:       markupRate,
       wholesale_eur:     wholesaleEur,
-      set_ws_price_eur:  setWsPriceEur,
       retail_rate:       retailRate,
       retail_price_eur:  retailPriceEur,
       cutting_cost_jpy:  manufacturingCosts.cutting,

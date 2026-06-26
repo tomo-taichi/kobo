@@ -42,6 +42,13 @@ export function calcWholesaleEur(costEur: number, markupRate: number): number {
   return costEur * markupRate;
 }
 
+// Reference retail price = Ideal WS (EUR) × Retail Margin Rate. This is only a
+// suggestion shown next to the manually-set retail price; the actual
+// products.retail_price_eur is entered by hand and is the price Orders adopt.
+export function calcRetailRefEur(idealWsEur: number, retailRate: number): number {
+  return idealWsEur * retailRate;
+}
+
 export function calcRetailPriceEur(costEur: number, retailRate: number): number {
   return costEur * retailRate;
 }
