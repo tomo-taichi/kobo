@@ -49,6 +49,8 @@ type InitialData = {
   accessory_composition?: string | null;
   main_material_number?: string | null;
   lining_material_number?: string | null;
+  lining_material_color_id?: string | null;
+  enabled_color_ids?: string[];
 };
 
 type Props = {
@@ -160,6 +162,12 @@ export function ProductForm({ action, seasons, materials, pastModelNames = [], i
   const [noLining,  setNoLining]  = useState(!initialData.lining_material_id);
   const [showMain,  setShowMain]  = useState(false);
   const [showLining, setShowLining] = useState(false);
+  const [enabledColorIds, setEnabledColorIds] = useState<Set<string>>(() => new Set(initialData.enabled_color_ids ?? []));
+  const [liningColorId, setLiningColorId] = useState<string | null>(initialData.lining_material_color_id ?? null);
+
+  // The selected materials' colour lists (looked up from the materials catalogue)
+  const mainColors   = (mainMat   ? materials.find((m) => m.id === mainMat.id)?.colors   : null) ?? [];
+  const liningColors = (liningMat ? materials.find((m) => m.id === liningMat.id)?.colors : null) ?? [];
 
   // flushSync forces React to commit the state update to the DOM synchronously,
   // so requestSubmit() captures the new hidden-input values before any navigation.
@@ -185,13 +193,24 @@ export function ProductForm({ action, seasons, materials, pastModelNames = [], i
   }
 
   function selectMain(m: PickableMaterial) {
-    saveAfterStateChange(() => setMainMat(toSelected(m)), true);  // will have main after
+    // Colours belong to the main material — reset the enabled set when it changes.
+    saveAfterStateChange(() => { setMainMat(toSelected(m)); setEnabledColorIds(new Set()); }, true);
   }
   function selectLining(m: PickableMaterial) {
-    saveAfterStateChange(() => { setLiningMat(toSelected(m)); setNoLining(false); }, !!mainMat);
+    const cols = m.colors ?? [];
+    const auto = cols.length === 1 ? cols[0].id : null;  // auto-pick when single-colour; pinned
+    saveAfterStateChange(() => { setLiningMat(toSelected(m)); setNoLining(false); setLiningColorId(auto); }, !!mainMat);
   }
   function removeLining() {
-    saveAfterStateChange(() => { setLiningMat(null); setNoLining(true); }, !!mainMat);
+    saveAfterStateChange(() => { setLiningMat(null); setNoLining(true); setLiningColorId(null); }, !!mainMat);
+  }
+  function toggleColor(mcId: string) {
+    setEnabledColorIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(mcId)) next.delete(mcId); else next.add(mcId);
+      return next;
+    });
+    scheduleSubmit(200);
   }
 
   const isError = result && result !== "ok";
@@ -215,6 +234,8 @@ export function ProductForm({ action, seasons, materials, pastModelNames = [], i
 
       <form action={formAction} ref={formRef} onChange={handleFormChange} className="flex flex-col gap-6">
         {id && <input type="hidden" name="id" value={id} />}
+        <input type="hidden" name="enabled_color_ids" value={JSON.stringify([...enabledColorIds])} />
+        <input type="hidden" name="lining_material_color_id" value={liningColorId ?? ""} />
         {isError && <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded">{result}</p>}
 
         {/* ── 1. Product Info ── */}
@@ -288,6 +309,31 @@ export function ProductForm({ action, seasons, materials, pastModelNames = [], i
             <>
               <MaterialSummary mat={mainMat} prefix="main" />
               <button type="button" onClick={() => setShowMain(true)} className="text-xs text-gray-500 hover:text-gray-900 underline w-fit">Change material</button>
+
+              <div className="mt-1">
+                <p className="text-xs font-medium text-gray-600 mb-1.5">
+                  Colours offered <span className="text-gray-400 font-normal">(select which colours can be ordered)</span>
+                </p>
+                {mainColors.length === 0 ? (
+                  <p className="text-[11px] text-gray-400">This material has no colours — add colours on the material first.</p>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {mainColors.map((c) => {
+                      const on = enabledColorIds.has(c.id);
+                      return (
+                        <label key={c.id}
+                          className={`flex items-center gap-1.5 px-2.5 py-1 rounded border text-xs cursor-pointer select-none transition-colors ${on ? "bg-gray-900 text-white border-gray-900" : "bg-white text-gray-600 border-gray-300 hover:border-gray-500"}`}>
+                          <input type="checkbox" checked={on} onChange={() => toggleColor(c.id)} className="sr-only" />
+                          {c.color}
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
+                {mainColors.length > 0 && enabledColorIds.size === 0 && (
+                  <p className="text-[11px] text-amber-600 mt-1.5">No colours selected — this product can&apos;t be ordered until at least one is selected.</p>
+                )}
+              </div>
             </>
           ) : (
             <>
@@ -316,6 +362,17 @@ export function ProductForm({ action, seasons, materials, pastModelNames = [], i
           ) : liningMat ? (
             <>
               <MaterialSummary mat={liningMat} prefix="lining" />
+              {liningColors.length > 1 ? (
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Lining colour</label>
+                  <select value={liningColorId ?? ""} onChange={(e) => setLiningColorId(e.target.value || null)} className={selectCls}>
+                    <option value="">— Select —</option>
+                    {liningColors.map((c) => <option key={c.id} value={c.id}>{c.color}</option>)}
+                  </select>
+                </div>
+              ) : liningColors.length === 1 ? (
+                <p className="text-xs text-gray-400">Lining colour: <span className="text-gray-600">{liningColors[0].color}</span></p>
+              ) : null}
               <div className="flex gap-3">
                 <button type="button" onClick={() => setShowLining(true)} className="text-xs text-gray-500 hover:text-gray-900 underline">Change</button>
                 <button type="button" onClick={removeLining} className="text-xs text-red-400 hover:text-red-600 underline">Remove</button>

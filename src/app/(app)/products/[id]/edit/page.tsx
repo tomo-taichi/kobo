@@ -10,9 +10,10 @@ export default async function ProductEditPage({ params }: { params: Promise<{ id
   const MATERIAL_SELECT =
     "id, name, color, category, material_number, set_price_jpy, unit_type, " +
     "comp_1_label, comp_1_pct, comp_2_label, comp_2_pct, comp_3_label, comp_3_pct, " +
-    "comp_4_label, comp_4_pct, comp_5_label, comp_5_pct, seasons(name)";
+    "comp_4_label, comp_4_pct, comp_5_label, comp_5_pct, " +
+    "colors:material_colors(id, color), seasons(name)";
 
-  const [productResult, seasonsResult, pastModelsResult, materialsResult] = await Promise.all([
+  const [productResult, seasonsResult, pastModelsResult, materialsResult, productColorsResult] = await Promise.all([
     supabase
       .from("products")
       .select(
@@ -22,7 +23,7 @@ export default async function ProductEditPage({ params }: { params: Promise<{ id
         "main_m_comp1_label, main_m_comp1_pct, main_m_comp2_label, main_m_comp2_pct, " +
         "main_m_comp3_label, main_m_comp3_pct, main_m_comp4_label, main_m_comp4_pct, " +
         "main_m_comp5_label, main_m_comp5_pct, " +
-        "lining_material_id, lining_m_category, lining_m_name, lining_m_color, " +
+        "lining_material_id, lining_m_category, lining_m_name, lining_m_color, lining_material_color_id, " +
         "lining_m_comp1_label, lining_m_comp1_pct, lining_m_comp2_label, lining_m_comp2_pct, " +
         "lining_m_comp3_label, lining_m_comp3_pct, lining_m_comp4_label, lining_m_comp4_pct, " +
         "lining_m_comp5_label, lining_m_comp5_pct, " +
@@ -33,6 +34,7 @@ export default async function ProductEditPage({ params }: { params: Promise<{ id
     supabase.from("seasons").select("id, name").order("name"),
     supabase.from("products").select("model_name").not("model_name", "is", null),
     supabase.from("materials").select(MATERIAL_SELECT).order("name"),
+    supabase.from("product_colors").select("material_color_id, sort_order").eq("product_id", id).order("sort_order"),
   ]);
 
   const p = productResult.data as any;
@@ -93,6 +95,8 @@ export default async function ProductEditPage({ params }: { params: Promise<{ id
           accessory_composition:  p.accessory_composition ?? undefined,
           main_material_number:   findMaterialNumber(p.main_material_id),
           lining_material_number: findMaterialNumber(p.lining_material_id),
+          lining_material_color_id: p.lining_material_color_id ?? null,
+          enabled_color_ids:      (productColorsResult.data ?? []).map((r: any) => r.material_color_id as string),
         }}
         id={p.id}
       />

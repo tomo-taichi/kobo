@@ -16,6 +16,7 @@ export type PickableMaterial = {
   comp_3_label: string | null; comp_3_pct: number | null;
   comp_4_label: string | null; comp_4_pct: number | null;
   comp_5_label: string | null; comp_5_pct: number | null;
+  colors?: { id: string; color: string }[];
   seasons: { name: string } | null;
 };
 

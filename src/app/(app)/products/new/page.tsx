@@ -6,7 +6,8 @@ import { createProduct } from "@/app/actions/products";
 const MATERIAL_SELECT =
   "id, material_number, name, color, category, set_price_jpy, unit_type, " +
   "comp_1_label, comp_1_pct, comp_2_label, comp_2_pct, comp_3_label, comp_3_pct, " +
-  "comp_4_label, comp_4_pct, comp_5_label, comp_5_pct, seasons(name)";
+  "comp_4_label, comp_4_pct, comp_5_label, comp_5_pct, " +
+  "colors:material_colors(id, color), seasons(name)";
 
 export default async function NewProductPage() {
   const supabase = await createClient();

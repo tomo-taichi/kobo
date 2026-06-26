@@ -15,6 +15,63 @@ function computeName(modelName: string | null, mainMName: string | null, mainMCo
   return [modelName, mainMName, mainMColor].filter(Boolean).join(" / ");
 }
 
+function parseEnabledColorIds(formData: FormData): string[] {
+  try {
+    const raw = formData.get("enabled_color_ids") as string;
+    const arr = raw ? JSON.parse(raw) : [];
+    return Array.isArray(arr) ? arr.filter((x: any) => typeof x === "string" && x) : [];
+  } catch {
+    return [];
+  }
+}
+
+// Sync the product's enabled MAIN-material colours (product_colors). New colours copy
+// the product's current price stack as a starting point (the cost form refines them
+// per colour). Disabled colours are removed unless an order references them.
+async function syncProductColors(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  productId: string,
+  enabledColorIds: string[]
+): Promise<string | null> {
+  const { data: existing } = await supabase
+    .from("product_colors")
+    .select("id, material_color_id")
+    .eq("product_id", productId);
+  const existingIds = new Set((existing ?? []).map((r: any) => r.material_color_id));
+  const enabled = new Set(enabledColorIds);
+
+  const toDelete = (existing ?? []).filter((r: any) => !enabled.has(r.material_color_id)).map((r: any) => r.id);
+  if (toDelete.length > 0) {
+    const { error } = await supabase.from("product_colors").delete().in("id", toDelete);
+    if (error) return "Cannot remove a colour that is already used by an order.";
+  }
+
+  const toAdd = enabledColorIds.filter((mcId) => !existingIds.has(mcId));
+  if (toAdd.length > 0) {
+    const { data: p } = await supabase
+      .from("products")
+      .select("material_cost_jpy, cost_jpy, cost_eur, markup_rate, wholesale_eur, retail_rate, retail_price_eur")
+      .eq("id", productId)
+      .single();
+    const s: any = p ?? {};
+    const rows = toAdd.map((mcId, i) => ({
+      product_id: productId,
+      material_color_id: mcId,
+      material_cost_jpy: Number(s.material_cost_jpy ?? 0),
+      cost_jpy: Number(s.cost_jpy ?? 0),
+      cost_eur: Number(s.cost_eur ?? 0),
+      markup_rate: Number(s.markup_rate ?? 3.0),
+      wholesale_eur: Number(s.wholesale_eur ?? 0),
+      retail_rate: Number(s.retail_rate ?? 3.5),
+      retail_price_eur: Number(s.retail_price_eur ?? 0),
+      sort_order: existingIds.size + i,
+    }));
+    const { error } = await supabase.from("product_colors").insert(rows);
+    if (error) return error.message;
+  }
+  return null;
+}
+
 function extractProductFields(formData: FormData) {
   const model_name     = (formData.get("model_name") as string)?.trim() || null;
   const main_m_name    = (formData.get("main_m_name") as string)?.trim() || null;
@@ -57,6 +114,7 @@ function extractProductFields(formData: FormData) {
     lining_m_comp4_pct:   num(formData.get("lining_m_comp4_pct")),
     lining_m_comp5_label: (formData.get("lining_m_comp5_label") as string) || null,
     lining_m_comp5_pct:   num(formData.get("lining_m_comp5_pct")),
+    lining_material_color_id: (formData.get("lining_material_color_id") as string) || null,
     // Accessory
     accessory_composition: (formData.get("accessory_composition") as string) || null,
     // Logistics
@@ -87,6 +145,8 @@ export async function createProduct(
   const productNumber = await nextProductNumber(supabase);
   const { data, error } = await supabase.from("products").insert({ ...fields, product_number: productNumber }).select("id").single();
   if (error) return error.message;
+  const syncErr = await syncProductColors(supabase, data.id, parseEnabledColorIds(formData));
+  if (syncErr) return syncErr;
   revalidatePath("/products");
   redirect(`/products/${data.id}/edit`);
 }
@@ -103,6 +163,8 @@ export async function updateProduct(
   if (!fields.main_material_id) return "Main material is required";
   const { error } = await supabase.from("products").update(fields).eq("id", id);
   if (error) return error.message;
+  const syncErr = await syncProductColors(supabase, id, parseEnabledColorIds(formData));
+  if (syncErr) return syncErr;
   revalidatePath(`/products/${id}/edit`);
   revalidatePath("/products");
   return "ok";
@@ -153,7 +215,7 @@ const DUPLICATE_FIELDS = [
   "lining_m_comp1_label", "lining_m_comp1_pct", "lining_m_comp2_label", "lining_m_comp2_pct",
   "lining_m_comp3_label", "lining_m_comp3_pct", "lining_m_comp4_label", "lining_m_comp4_pct",
   "lining_m_comp5_label", "lining_m_comp5_pct",
-  "lining_m_quantity",
+  "lining_m_quantity", "lining_material_color_id",
   "accessory_composition",
   "cost_eur_rate", "markup_rate", "retail_rate", "retail_price_eur",
   "cutting_cost_jpy", "sewing_cost_jpy", "knitting_cost_jpy",
