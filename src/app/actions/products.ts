@@ -229,6 +229,22 @@ export async function updateProductRetailPrice(
   return null;
 }
 
+// Inline edit of the Retail Margin Rate from the products list. Only retail_rate
+// is updated — it drives the Retail (ref) suggestion and does NOT overwrite the
+// manually-set retail_price_eur.
+export async function updateProductRetailRate(
+  productId: string,
+  retailRate: number
+): Promise<string | null> {
+  const supabase = await createClient();
+  const { error } = await supabase.from("products").update({
+    retail_rate: retailRate,
+  }).eq("id", productId);
+  if (error) return error.message;
+  revalidatePath("/products");
+  return null;
+}
+
 export async function deleteProduct(productId: string): Promise<string | null> {
   const supabase = await createClient();
   // product_materials cascade-deletes automatically (ON DELETE CASCADE)
