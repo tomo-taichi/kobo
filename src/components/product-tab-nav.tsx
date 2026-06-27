@@ -4,9 +4,10 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 const TABS = [
-  { seg: "edit",  label: "Basic Info" },
-  { seg: "costs", label: "Materials & Cost" },
-  { seg: "care",  label: "Care & Logistics" },
+  { seg: "edit",   label: "Basic Info" },
+  { seg: "costs",  label: "Materials & Cost" },
+  { seg: "photos", label: "Photos" },
+  { seg: "care",   label: "Care & Logistics" },
 ];
 
 export function ProductTabNav({ id }: { id: string }) {

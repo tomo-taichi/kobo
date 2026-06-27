@@ -20,6 +20,8 @@ export type ProductRow = {
   seasons: { id: string; name: string } | null;
   // Enabled colours with per-colour pricing (product_colors)
   product_colors?: { retail_price_eur: number | null; wholesale_eur: number | null; material_colors: { color: string } | null }[];
+  // Up to 2 main-photo thumbnail URLs (sort order)
+  main_thumbs?: string[];
 };
 
 type Season = { id: string; name: string };
@@ -363,7 +365,20 @@ export function ProductsList({ products, seasons }: { products: ProductRow[]; se
     return (
       <div className="divide-y divide-gray-100">
         {items.map((p) => (
-          <div key={p.id} className={`px-4 py-3 hover:bg-gray-50 transition-colors ${p.is_invalid ? "opacity-40" : ""}`}>
+          <div key={p.id} className={`px-4 py-3 hover:bg-gray-50 transition-colors flex gap-3 ${p.is_invalid ? "opacity-40" : ""}`}>
+            {/* Main-photo thumbnails (up to 2) */}
+            <div className="flex gap-1 shrink-0">
+              {(p.main_thumbs ?? []).length > 0 ? (
+                (p.main_thumbs ?? []).map((url, i) => (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img key={i} src={url} alt="" className="w-12 h-12 rounded object-cover border border-gray-200 bg-gray-50" />
+                ))
+              ) : (
+                <div className="w-12 h-12 rounded border border-dashed border-gray-200 flex items-center justify-center text-gray-300 text-base">🖼</div>
+              )}
+            </div>
+
+            <div className="flex-1 min-w-0">
             {/* Row 1: Model Name + badges + actions */}
             <div className="flex items-start justify-between gap-4 mb-1.5">
               <div className="flex items-center gap-2 flex-wrap min-w-0">
@@ -403,6 +418,7 @@ export function ProductsList({ products, seasons }: { products: ProductRow[]; se
                 <PriceCell label="Ideal WS" value={idealWsOf(p)} />
                 <PriceCell label="Retail (EUR)" value={retailOf(p)} bold />
               </div>
+            </div>
             </div>
           </div>
         ))}
