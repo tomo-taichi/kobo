@@ -25,6 +25,17 @@ function parseEnabledColorIds(formData: FormData): string[] {
   }
 }
 
+// Orderable sizes are a JSON array of size strings (subset of SIZES). Stored as text[].
+function parseOrderableSizes(formData: FormData): string[] {
+  try {
+    const raw = formData.get("orderable_sizes") as string;
+    const arr = raw ? JSON.parse(raw) : [];
+    return Array.isArray(arr) ? arr.filter((x: any) => typeof x === "string" && x) : [];
+  } catch {
+    return [];
+  }
+}
+
 // Sync the product's enabled MAIN-material colours (product_colors). New colours copy
 // the product's current price stack as a starting point (the cost form refines them
 // per colour). Disabled colours are removed unless an order references them.
@@ -84,6 +95,7 @@ function extractProductFields(formData: FormData) {
     product_sex:          (formData.get("product_sex") as string) || null,
     is_sample:            formData.get("is_sample") === "true",
     is_invalid:           formData.get("is_invalid") === "true",
+    orderable_sizes:      parseOrderableSizes(formData),
     // Main material
     main_material_id:     (formData.get("main_material_id") as string) || null,
     main_m_category:      (formData.get("main_m_category") as string) || null,
@@ -205,7 +217,7 @@ export async function saveProductCare(
 
 const DUPLICATE_FIELDS = [
   "season_id", "model_name", "product_category", "product_sex",
-  "is_sample", "is_invalid", "cleaning_instruction", "weight_g", "hs_code",
+  "is_sample", "is_invalid", "orderable_sizes", "cleaning_instruction", "weight_g", "hs_code",
   "main_material_id", "main_m_category", "main_m_name", "main_m_color",
   "main_m_comp1_label", "main_m_comp1_pct", "main_m_comp2_label", "main_m_comp2_pct",
   "main_m_comp3_label", "main_m_comp3_pct", "main_m_comp4_label", "main_m_comp4_pct",

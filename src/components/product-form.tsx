@@ -2,7 +2,8 @@
 
 import { useActionState, useState, useRef } from "react";
 import { flushSync } from "react-dom";
-import { PRODUCT_CATEGORIES, PRODUCT_SEXES, ACCESSORY_COMPOSITIONS } from "@/lib/product-constants";
+import { PRODUCT_CATEGORIES, PRODUCT_SEXES, ACCESSORY_COMPOSITIONS, defaultOrderableSizes } from "@/lib/product-constants";
+import { SIZES } from "@/lib/order-constants";
 import { MaterialPickerModal, type PickableMaterial } from "@/components/material-picker";
 
 type Action = (_state: string | null, formData: FormData) => Promise<string | null>;
@@ -51,6 +52,7 @@ type InitialData = {
   lining_material_number?: string | null;
   lining_material_color_id?: string | null;
   enabled_color_ids?: string[];
+  orderable_sizes?: string[] | null;
 };
 
 type Props = {
@@ -165,6 +167,27 @@ export function ProductForm({ action, seasons, materials, pastModelNames = [], i
   const [enabledColorIds, setEnabledColorIds] = useState<Set<string>>(() => new Set(initialData.enabled_color_ids ?? []));
   const [liningColorId, setLiningColorId] = useState<string | null>(initialData.lining_material_color_id ?? null);
 
+  // Orderable sizes: stored value if present, else the category default. Changing the
+  // category re-applies its default unless the user has manually edited the selection.
+  const [orderableSizes, setOrderableSizes] = useState<Set<string>>(
+    () => new Set(initialData.orderable_sizes ?? defaultOrderableSizes(initialData.product_category))
+  );
+  const [sizesTouched, setSizesTouched] = useState(false);
+
+  function handleCategoryChange(category: string) {
+    if (!sizesTouched) setOrderableSizes(new Set(defaultOrderableSizes(category)));
+    scheduleSubmit(200);
+  }
+  function toggleSize(size: string) {
+    setSizesTouched(true);
+    setOrderableSizes((prev) => {
+      const next = new Set(prev);
+      if (next.has(size)) next.delete(size); else next.add(size);
+      return next;
+    });
+    scheduleSubmit(200);
+  }
+
   // The selected materials' colour lists (looked up from the materials catalogue)
   const mainColors   = (mainMat   ? materials.find((m) => m.id === mainMat.id)?.colors   : null) ?? [];
   const liningColors = (liningMat ? materials.find((m) => m.id === liningMat.id)?.colors : null) ?? [];
@@ -236,6 +259,7 @@ export function ProductForm({ action, seasons, materials, pastModelNames = [], i
         {id && <input type="hidden" name="id" value={id} />}
         <input type="hidden" name="enabled_color_ids" value={JSON.stringify([...enabledColorIds])} />
         <input type="hidden" name="lining_material_color_id" value={liningColorId ?? ""} />
+        <input type="hidden" name="orderable_sizes" value={JSON.stringify(SIZES.filter((s) => orderableSizes.has(s)))} />
         {isError && <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded">{result}</p>}
 
         {/* ── 1. Product Info ── */}
@@ -250,7 +274,8 @@ export function ProductForm({ action, seasons, materials, pastModelNames = [], i
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">Product Category <span className="text-red-500">*</span></label>
-              <select name="product_category" defaultValue={initialData.product_category ?? ""} required className={selectCls}>
+              <select name="product_category" defaultValue={initialData.product_category ?? ""} required className={selectCls}
+                onChange={(e) => handleCategoryChange(e.target.value)}>
                 <option value="">Select...</option>
                 {PRODUCT_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
               </select>
@@ -301,6 +326,28 @@ export function ProductForm({ action, seasons, materials, pastModelNames = [], i
               Invalid
             </label>
           </div>
+        </Section>
+
+        {/* ── 1b. Orderable Sizes ── */}
+        <Section title="Orderable Sizes">
+          <p className="text-xs text-gray-400 -mt-1">
+            Which sizes this product can be ordered in. Auto-filled from the category — adjust as needed.
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {SIZES.map((s) => {
+              const on = orderableSizes.has(s);
+              return (
+                <label key={s}
+                  className={`flex items-center justify-center min-w-[2.25rem] px-2 py-1 rounded border text-xs cursor-pointer select-none transition-colors ${on ? "bg-gray-900 text-white border-gray-900" : "bg-white text-gray-500 border-gray-300 hover:border-gray-500"}`}>
+                  <input type="checkbox" checked={on} onChange={() => toggleSize(s)} className="sr-only" />
+                  {s}
+                </label>
+              );
+            })}
+          </div>
+          {orderableSizes.size === 0 && (
+            <p className="text-[11px] text-amber-600">No sizes selected — this product can&apos;t be ordered until at least one is selected.</p>
+          )}
         </Section>
 
         {/* ── 2. Main Material ── */}

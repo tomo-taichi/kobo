@@ -18,6 +18,7 @@ type Props = {
   retailPriceEur:       number;
   customerWholesaleEur: number;
   initialSizes:         SizeEntry[];
+  orderableSizes:       string[] | null;  // null = all sizes orderable (legacy products)
 };
 
 function fmtId(raw: string | null): string {
@@ -38,7 +39,10 @@ export function OrderSizeGrid({
   mainMColor,
   retailPriceEur,
   initialSizes,
+  orderableSizes,
 }: Props) {
+  const orderableSet = orderableSizes ? new Set(orderableSizes) : null;
+  const isOrderable = (s: string) => !orderableSet || orderableSet.has(s);
   const sizeMap = new Map(initialSizes.map((s) => [s.size, s.quantity]));
   const [quantities, setQuantities] = useState<Record<string, number>>(
     Object.fromEntries(SIZES.map((s) => [s, sizeMap.get(s) ?? 0]))
@@ -59,7 +63,7 @@ export function OrderSizeGrid({
       await updateOrderItemSizes(
         orderId,
         orderItemId,
-        SIZES.map((s) => ({ size: s, quantity: latestRef.current[s] ?? 0 }))
+        SIZES.map((s) => ({ size: s, quantity: isOrderable(s) ? (latestRef.current[s] ?? 0) : 0 }))
       );
       setSaving(false);
       setSaved(true);
@@ -85,8 +89,15 @@ export function OrderSizeGrid({
       <td className="px-3 py-2 text-xs text-gray-400 whitespace-nowrap">{mainMColor ?? "—"}</td>
       <td className="px-3 py-2 text-xs font-mono text-gray-700 text-right whitespace-nowrap">€ {fmtEur(retailPriceEur, 0)}</td>
 
-      {/* Size inputs */}
+      {/* Size inputs — non-orderable sizes for this product render as a dimmed, non-editable dash */}
       {SIZES.map((size) => {
+        if (!isOrderable(size)) {
+          return (
+            <td key={size} className="px-0.5 py-2 text-center">
+              <span className="inline-flex w-9 h-7 items-center justify-center text-gray-200 select-none" title="Not orderable in this size">–</span>
+            </td>
+          );
+        }
         const qty = quantities[size] ?? 0;
         return (
           <td key={size} className="px-0.5 py-2">

@@ -17,7 +17,7 @@ export default async function ProductEditPage({ params }: { params: Promise<{ id
     supabase
       .from("products")
       .select(
-        "id, season_id, model_name, is_sample, is_invalid, " +
+        "id, season_id, model_name, is_sample, is_invalid, orderable_sizes, " +
         "product_category, product_sex, " +
         "main_material_id, main_m_category, main_m_name, main_m_color, " +
         "main_m_comp1_label, main_m_comp1_pct, main_m_comp2_label, main_m_comp2_pct, " +
@@ -64,6 +64,7 @@ export default async function ProductEditPage({ params }: { params: Promise<{ id
           product_sex:          p.product_sex ?? undefined,
           is_sample:            p.is_sample,
           is_invalid:           p.is_invalid,
+          orderable_sizes:      p.orderable_sizes ?? null,
           main_material_id:     p.main_material_id ?? undefined,
           main_m_category:      p.main_m_category ?? undefined,
           main_m_name:          p.main_m_name ?? undefined,

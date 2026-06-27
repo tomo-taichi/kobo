@@ -66,6 +66,34 @@ export const PRODUCT_CATEGORIES = [
 
 export const PRODUCT_SEXES = ["Men", "Women", "Unisex", "Kids"] as const;
 
+// Default orderable sizes per category (overridable per product on the product form).
+// Apparel → numeric 1–10; footwear/bags/jewellery/eyewear → Free; Other → everything.
+// Sizes here must stay a subset of order-constants SIZES.
+const NUMERIC_SIZES = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"];
+const FREE_ONLY = ["Free"];
+const ALL_SIZES = [...NUMERIC_SIZES, ...FREE_ONLY];
+
+const ORDERABLE_SIZE_DEFAULTS: Record<string, string[]> = {
+  Coat: NUMERIC_SIZES,
+  Jacket: NUMERIC_SIZES,
+  Trousers: NUMERIC_SIZES,
+  Knitwear: NUMERIC_SIZES,
+  Shirt: NUMERIC_SIZES,
+  "T-shirt": NUMERIC_SIZES,
+  Shoes: FREE_ONLY,
+  Bag: FREE_ONLY,
+  Watch: FREE_ONLY,
+  Accessories: FREE_ONLY,
+  Eyewear: FREE_ONLY,
+  Other: ALL_SIZES,
+};
+
+// The default orderable-size set for a category. Unknown/empty category → all sizes.
+export function defaultOrderableSizes(category: string | null | undefined): string[] {
+  if (!category) return [...ALL_SIZES];
+  return [...(ORDERABLE_SIZE_DEFAULTS[category] ?? ALL_SIZES)];
+}
+
 export const ACCESSORY_COMPOSITIONS = [
   "銀925-SILVER925",
   "錫-TIN + 銀925-SILVER925",

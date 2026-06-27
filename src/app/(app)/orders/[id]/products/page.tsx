@@ -24,7 +24,7 @@ export default async function OrderProductsPage({ params }: { params: Promise<{ 
   const [itemsResult, allProductsResult, seasonsResult] = await Promise.all([
     supabase
       .from("order_items")
-      .select("id, product_id, product_color_id, retail_price_eur, customer_wholesale_eur, products(name, product_number, model_name, main_m_name, main_m_color, product_category), product_colors(material_colors(color)), order_item_sizes(size, quantity)")
+      .select("id, product_id, product_color_id, retail_price_eur, customer_wholesale_eur, products(name, product_number, model_name, main_m_name, main_m_color, product_category, orderable_sizes), product_colors(material_colors(color)), order_item_sizes(size, quantity)")
       .eq("order_id", id)
       .order("created_at"),
     supabase
@@ -156,6 +156,7 @@ export default async function OrderProductsPage({ params }: { params: Promise<{ 
                           retailPriceEur={Number(item.retail_price_eur)}
                           customerWholesaleEur={Number(item.customer_wholesale_eur)}
                           initialSizes={sizes}
+                          orderableSizes={p.orderable_sizes ?? null}
                         />
                       );
                     })}
