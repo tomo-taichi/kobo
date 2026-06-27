@@ -9,7 +9,7 @@ export default async function MaterialsPage() {
   const [materialsResult, suppliersResult, seasonsResult] = await Promise.all([
     supabase
       .from("materials")
-      .select("id, name, category, unit_price_jpy, set_price_jpy, unit_type, color, supplier_id, season_id, suppliers(name), seasons(name), comp_1_label, comp_1_pct, comp_2_label, comp_2_pct, comp_3_label, comp_3_pct, comp_4_label, comp_4_pct, comp_5_label, comp_5_pct")
+      .select("id, name, category, unit_price_jpy, set_price_jpy, unit_type, color, supplier_id, season_id, suppliers(name), seasons(name), comp_1_label, comp_1_pct, comp_2_label, comp_2_pct, comp_3_label, comp_3_pct, comp_4_label, comp_4_pct, comp_5_label, comp_5_pct, material_colors(color, unit_price_jpy, set_price_jpy, sort_order)")
       .order("name"),
     supabase.from("suppliers").select("id, name").order("name"),
     supabase.from("seasons").select("id, name").order("name"),
@@ -19,9 +19,9 @@ export default async function MaterialsPage() {
   const suppliers = suppliersResult.data ?? [];
   const seasons   = seasonsResult.data ?? [];
 
-  // Unique list of colors used in the past
+  // Unique list of colours used in the past (across all material_colors)
   const pastColors = Array.from(
-    new Set(rawMaterials.map((m: any) => m.color).filter(Boolean))
+    new Set(rawMaterials.flatMap((m: any) => (m.material_colors ?? []).map((c: any) => c.color)).filter(Boolean))
   ) as string[];
 
   const materials = rawMaterials.map((m: any) => ({
@@ -36,6 +36,14 @@ export default async function MaterialsPage() {
     season_id:      m.season_id,
     suppliers:      m.suppliers,
     seasons:        m.seasons,
+    colors: ((m.material_colors ?? []) as any[])
+      .slice()
+      .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+      .map((c: any) => ({
+        color: c.color as string,
+        unitPrice: c.unit_price_jpy != null ? Number(c.unit_price_jpy) : null,
+        setPrice: c.set_price_jpy != null ? Number(c.set_price_jpy) : null,
+      })),
     comps: [
       { label: m.comp_1_label, pct: m.comp_1_pct },
       { label: m.comp_2_label, pct: m.comp_2_pct },

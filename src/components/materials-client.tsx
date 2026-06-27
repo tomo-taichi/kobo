@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useRef, useCallback } from "react";
+import { Fragment, useState, useMemo, useRef, useCallback } from "react";
 import Link from "next/link";
 import {
   MATERIAL_CATEGORIES,
@@ -12,6 +12,7 @@ import {
 import { updateMaterialField, duplicateMaterial } from "@/app/actions/materials";
 
 type CompEntry = { label: string | null; pct: number | null };
+type ColorEntry = { color: string; unitPrice: number | null; setPrice: number | null };
 
 type Material = {
   id: string;
@@ -26,12 +27,20 @@ type Material = {
   suppliers: { name: string } | null;
   seasons: { name: string } | null;
   comps: CompEntry[];
+  colors: ColorEntry[];
 };
 
 type Supplier = { id: string; name: string };
 type Season   = { id: string; name: string };
 type SortKey  = "name_asc" | "name_desc" | "category_asc";
+type GroupMode = "none" | "category" | "season";
 type EditCell = { id: string; field: string } | null;
+
+const GROUP_OPTIONS: { value: GroupMode; label: string }[] = [
+  { value: "none",     label: "Flat" },
+  { value: "category", label: "Category" },
+  { value: "season",   label: "Season" },
+];
 
 function formatComps(comps: CompEntry[]) {
   return comps
@@ -44,7 +53,6 @@ export function MaterialsClient({
   materials: initialMaterials,
   suppliers,
   seasons,
-  pastColors = [],
 }: {
   materials: Material[];
   suppliers: Supplier[];
@@ -60,8 +68,9 @@ export function MaterialsClient({
   const [fSupplier, setFSupplier] = useState("");
   const [fComp, setFComp]         = useState("");
   const [sort, setSort]           = useState<SortKey>("name_asc");
+  const [groupMode, setGroupMode] = useState<GroupMode>("none");
 
-  // inline editing state
+  // inline editing state (name / category / season only — colour & price are per-colour, edited in the form)
   const [editCell, setEditCell]   = useState<EditCell>(null);
   const [editValue, setEditValue] = useState("");
   const [saving, setSaving]       = useState(false);
@@ -83,12 +92,9 @@ export function MaterialsClient({
     setMaterials((prev) => prev.map((m) => {
       if (m.id !== editCell.id) return m;
       const field = editCell.field;
-      if (field === "name")           return { ...m, name: editValue };
-      if (field === "color")          return { ...m, color: editValue || null };
-      if (field === "category")       return { ...m, category: editValue };
-      if (field === "season_id")      return { ...m, season_id: editValue || null, seasons: seasons.find((s) => s.id === editValue) ?? null };
-      if (field === "unit_price_jpy") return { ...m, unit_price_jpy: Number(editValue) };
-      if (field === "set_price_jpy")  return { ...m, set_price_jpy: Number(editValue) };
+      if (field === "name")      return { ...m, name: editValue };
+      if (field === "category")  return { ...m, category: editValue };
+      if (field === "season_id") return { ...m, season_id: editValue || null, seasons: seasons.find((s) => s.id === editValue) ?? null };
       return m;
     }));
     setSaving(false);
@@ -101,7 +107,7 @@ export function MaterialsClient({
     let list = materials;
     if (search.trim()) {
       const q = search.trim().toLowerCase();
-      list = list.filter((m) => m.name.toLowerCase().includes(q));
+      list = list.filter((m) => m.name.toLowerCase().includes(q) || m.colors.some((c) => c.color.toLowerCase().includes(q)));
     }
     if (fCat)      list = list.filter((m) => m.category === fCat);
     if (fSeason)   list = list.filter((m) => m.season_id === fSeason);
@@ -116,6 +122,17 @@ export function MaterialsClient({
     return sorted;
   }, [materials, search, fCat, fSeason, fSupplier, fComp, sort]);
 
+  const grouped = useMemo(() => {
+    if (groupMode === "none") return [] as [string, Material[]][];
+    const map = new Map<string, Material[]>();
+    for (const m of filtered) {
+      const key = groupMode === "category" ? (CATEGORY_LABELS[m.category] ?? m.category) : (m.seasons?.name ?? "—");
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(m);
+    }
+    return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0]));
+  }, [filtered, groupMode]);
+
   const hasFilter = search || fCat || fSeason || fSupplier || fComp;
 
   const cellCls = "px-3 py-2.5 cursor-default select-none";
@@ -126,15 +143,10 @@ export function MaterialsClient({
     return editCell?.id === id && editCell?.field === field;
   }
 
-  function textCell(m: Material, field: "name" | "color", display: string | null) {
+  function textCell(m: Material, field: "name", display: string | null) {
     const editing = isEditing(m.id, field);
     return editing ? (
       <td className="px-3 py-1.5">
-        {field === "color" && pastColors.length > 0 && (
-          <datalist id={`dc-colours-${m.id}`}>
-            {pastColors.map((c) => <option key={c} value={c} />)}
-          </datalist>
-        )}
         <input
           ref={inputRef as React.RefObject<HTMLInputElement>}
           type="text"
@@ -142,7 +154,6 @@ export function MaterialsClient({
           onChange={(e) => setEditValue(e.target.value)}
           onBlur={commitEdit}
           onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); if (e.key === "Escape") cancelEdit(); }}
-          list={field === "color" && pastColors.length > 0 ? `dc-colours-${m.id}` : undefined}
           lang="en-GB"
           spellCheck
           disabled={saving}
@@ -182,25 +193,81 @@ export function MaterialsClient({
     );
   }
 
-  function numberCell(m: Material, field: "unit_price_jpy" | "set_price_jpy", value: number) {
-    const editing = isEditing(m.id, field);
-    return editing ? (
-      <td className="px-3 py-1.5 text-right">
-        <input
-          ref={inputRef as React.RefObject<HTMLInputElement>}
-          type="number" min="0" step="1"
-          value={editValue}
-          onChange={(e) => setEditValue(e.target.value)}
-          onBlur={commitEdit}
-          onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); if (e.key === "Escape") cancelEdit(); }}
-          disabled={saving}
-          className={inputBaseCls + " text-right w-28"}
-        />
-      </td>
-    ) : (
-      <td className={editableCls + " text-right"} onDoubleClick={() => startEdit(m.id, field, String(value))}>
-        {value.toLocaleString("en-GB")}
-      </td>
+  function renderRow(m: Material) {
+    const status = getMaterialStatus({
+      set_price_jpy: m.set_price_jpy,
+      comp_1_pct: m.comps[0]?.pct,
+      comp_2_pct: m.comps[1]?.pct,
+      comp_3_pct: m.comps[2]?.pct,
+      comp_4_pct: m.comps[3]?.pct,
+      comp_5_pct: m.comps[4]?.pct,
+    });
+    const categoryOptions = MATERIAL_CATEGORIES.map((c) => ({ value: c, label: CATEGORY_LABELS[c] }));
+    const seasonOptions = seasons.map((s) => ({ value: s.id, label: s.name }));
+    const firstUnit = m.colors[0]?.unitPrice ?? m.unit_price_jpy;
+    const firstSet  = m.colors[0]?.setPrice ?? m.set_price_jpy;
+
+    return (
+      <tr key={m.id} className="hover:bg-gray-50/50">
+        {/* ID — not editable */}
+        <td className={`${cellCls} font-mono text-gray-400 text-xs`}>{m.id.slice(0, 8)}</td>
+
+        {/* Season — select */}
+        {selectCell(m, "season_id",
+          <span className="text-gray-500 text-xs">{m.seasons?.name ?? <span className="text-gray-300">—</span>}</span>,
+          seasonOptions
+        )}
+
+        {/* Category — select */}
+        {selectCell(m, "category",
+          <span className={`text-xs px-2 py-0.5 rounded-full ${isFabric(m.category) ? "bg-blue-50 text-blue-700" : "bg-orange-50 text-orange-700"}`}>
+            {CATEGORY_LABELS[m.category] ?? m.category}
+          </span>,
+          categoryOptions
+        )}
+
+        {/* Name — text */}
+        {textCell(m, "name", m.name)}
+
+        {/* Colour — all colours (first bold, as its price is shown). Read-only; edit per colour in the form */}
+        <td className={`${cellCls} text-xs`}>
+          {m.colors.length > 0
+            ? m.colors.map((c, i) => (
+                <span key={i} className={i === 0 ? "text-gray-800 font-medium" : "text-gray-500"}>
+                  {i > 0 ? ", " : ""}{c.color}
+                </span>
+              ))
+            : (m.color ?? <span className="text-gray-300">—</span>)}
+        </td>
+
+        {/* Composition — not editable */}
+        <td className={`${cellCls} text-gray-500 text-xs max-w-xs`}>
+          {formatComps(m.comps) || <span className="text-gray-300">—</span>}
+        </td>
+
+        {/* Unit Price — first colour's (read-only) */}
+        <td className={`${cellCls} text-right`}>{firstUnit.toLocaleString("en-GB")}</td>
+
+        {/* Set Price — first colour's (read-only) */}
+        <td className={`${cellCls} text-right`}>{firstSet.toLocaleString("en-GB")}</td>
+
+        {/* Status — derived, not editable */}
+        <td className={`${cellCls} text-center`}>
+          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${status === "Complete" ? "bg-green-50 text-green-700" : "bg-yellow-50 text-yellow-700"}`}>
+            {status}
+          </span>
+        </td>
+
+        {/* Actions */}
+        <td className={`${cellCls} text-right whitespace-nowrap`}>
+          <div className="flex items-center justify-end gap-3">
+            <form action={duplicateMaterial.bind(null, m.id)}>
+              <button type="submit" className="text-gray-400 hover:text-blue-600 text-xs underline">Duplicate</button>
+            </form>
+            <Link href={`/materials/${m.id}/edit`} className="text-gray-400 hover:text-gray-900 text-xs underline">Edit</Link>
+          </div>
+        </td>
+      </tr>
     );
   }
 
@@ -210,7 +277,7 @@ export function MaterialsClient({
       <div className="px-4 py-3 border-b border-gray-100 space-y-2">
         <input
           type="text"
-          placeholder="Search by name..."
+          placeholder="Search by name or colour..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="w-full px-3 py-1.5 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
@@ -240,7 +307,21 @@ export function MaterialsClient({
               </optgroup>
             ))}
           </select>
+
           <div className="flex items-center gap-1 ml-auto">
+            <span className="text-xs text-gray-500">Group:</span>
+            {GROUP_OPTIONS.map((g) => (
+              <button key={g.value} type="button" onClick={() => setGroupMode(g.value)}
+                className={`px-2.5 py-1 text-xs rounded border transition-colors ${
+                  groupMode === g.value
+                    ? "bg-gray-900 text-white border-gray-900"
+                    : "bg-white text-gray-500 border-gray-300 hover:border-gray-500 hover:text-gray-800"
+                }`}>
+                {g.label}
+              </button>
+            ))}
+          </div>
+          <div className="flex items-center gap-1">
             <span className="text-xs text-gray-500">Sort:</span>
             <select value={sort} onChange={(e) => setSort(e.target.value as SortKey)} className="px-2 py-1.5 border border-gray-300 rounded-md text-sm bg-white">
               <option value="name_asc">Name A→Z</option>
@@ -262,7 +343,7 @@ export function MaterialsClient({
             <th className="text-left px-3 py-3 font-medium text-gray-600">Season</th>
             <th className="text-left px-3 py-3 font-medium text-gray-600">Category</th>
             <th className="text-left px-3 py-3 font-medium text-gray-600 min-w-64">Name</th>
-            <th className="text-left px-3 py-3 font-medium text-gray-600">Colour</th>
+            <th className="text-left px-3 py-3 font-medium text-gray-600">Colours</th>
             <th className="text-left px-3 py-3 font-medium text-gray-600">Composition</th>
             <th className="text-right px-3 py-3 font-medium text-gray-600">Unit Price (¥)</th>
             <th className="text-right px-3 py-3 font-medium text-gray-600">Set Price (¥)</th>
@@ -271,77 +352,18 @@ export function MaterialsClient({
           </tr>
         </thead>
         <tbody className="divide-y divide-gray-100">
-          {filtered.map((m) => {
-            const status = getMaterialStatus({
-              set_price_jpy: m.set_price_jpy,
-              comp_1_pct: m.comps[0]?.pct,
-              comp_2_pct: m.comps[1]?.pct,
-              comp_3_pct: m.comps[2]?.pct,
-              comp_4_pct: m.comps[3]?.pct,
-              comp_5_pct: m.comps[4]?.pct,
-            });
-
-            const categoryOptions = MATERIAL_CATEGORIES.map((c) => ({
-              value: c,
-              label: CATEGORY_LABELS[c],
-            }));
-            const seasonOptions = seasons.map((s) => ({ value: s.id, label: s.name }));
-
-            return (
-              <tr key={m.id} className="hover:bg-gray-50/50">
-                {/* ID — not editable */}
-                <td className={`${cellCls} font-mono text-gray-400 text-xs`}>{m.id.slice(0, 8)}</td>
-
-                {/* Season — select */}
-                {selectCell(m, "season_id",
-                  <span className="text-gray-500 text-xs">{m.seasons?.name ?? <span className="text-gray-300">—</span>}</span>,
-                  seasonOptions
-                )}
-
-                {/* Category — select */}
-                {selectCell(m, "category",
-                  <span className={`text-xs px-2 py-0.5 rounded-full ${isFabric(m.category) ? "bg-blue-50 text-blue-700" : "bg-orange-50 text-orange-700"}`}>
-                    {CATEGORY_LABELS[m.category] ?? m.category}
-                  </span>,
-                  categoryOptions
-                )}
-
-                {/* Name — text */}
-                {textCell(m, "name", m.name)}
-
-                {/* Colour — text with datalist */}
-                {textCell(m, "color", m.color)}
-
-                {/* Composition — not editable */}
-                <td className={`${cellCls} text-gray-500 text-xs max-w-xs`}>
-                  {formatComps(m.comps) || <span className="text-gray-300">—</span>}
-                </td>
-
-                {/* Unit Price — number */}
-                {numberCell(m, "unit_price_jpy", m.unit_price_jpy)}
-
-                {/* Set Price — number */}
-                {numberCell(m, "set_price_jpy", m.set_price_jpy)}
-
-                {/* Status — derived, not editable */}
-                <td className={`${cellCls} text-center`}>
-                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${status === "Complete" ? "bg-green-50 text-green-700" : "bg-yellow-50 text-yellow-700"}`}>
-                    {status}
-                  </span>
-                </td>
-
-                {/* Actions */}
-                <td className={`${cellCls} text-right whitespace-nowrap`}>
-                  <div className="flex items-center justify-end gap-3">
-                    <form action={duplicateMaterial.bind(null, m.id)}>
-                      <button type="submit" className="text-gray-400 hover:text-blue-600 text-xs underline">Duplicate</button>
-                    </form>
-                    <Link href={`/materials/${m.id}/edit`} className="text-gray-400 hover:text-gray-900 text-xs underline">Edit</Link>
-                  </div>
-                </td>
-              </tr>
-            );
-          })}
+          {groupMode === "none"
+            ? filtered.map(renderRow)
+            : grouped.map(([key, rows]) => (
+                <Fragment key={key}>
+                  <tr className="bg-gray-50/80 border-t border-b border-gray-200">
+                    <td colSpan={10} className="px-3 py-1.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                      {key} <span className="text-gray-400 font-normal">({rows.length})</span>
+                    </td>
+                  </tr>
+                  {rows.map(renderRow)}
+                </Fragment>
+              ))}
           {!filtered.length && (
             <tr>
               <td colSpan={10} className="px-4 py-8 text-center text-gray-400 text-sm">
@@ -354,7 +376,7 @@ export function MaterialsClient({
 
       <div className="px-4 py-2 text-xs text-gray-400 border-t border-gray-100">
         {filtered.length} / {materials.length} items
-        <span className="ml-3 text-gray-300">— double-click any cell to edit</span>
+        <span className="ml-3 text-gray-300">— prices shown are the first colour&apos;s; double-click Name / Season / Category to edit, or open Edit for all colours</span>
       </div>
     </div>
   );
