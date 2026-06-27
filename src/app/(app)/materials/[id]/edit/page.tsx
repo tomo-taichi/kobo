@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { MaterialForm } from "@/components/material-form";
-import { updateMaterial } from "@/app/actions/materials";
+import { autosaveMaterial } from "@/app/actions/materials";
 
 export default async function MaterialEditPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -42,7 +42,8 @@ export default async function MaterialEditPage({ params }: { params: Promise<{ i
       <h1 className="text-2xl font-semibold text-gray-900">Edit: {m.name}</h1>
       <div className="bg-white border border-gray-200 rounded-lg p-5 max-w-lg">
         <MaterialForm
-          action={updateMaterial}
+          action={autosaveMaterial}
+          autoSave
           suppliers={suppliers}
           seasons={seasons}
           pastColors={pastColors}

@@ -175,10 +175,8 @@ export async function updateMaterialSetPrice(id: string, set_price_jpy: number):
   return updateMaterialField(id, "set_price_jpy", String(set_price_jpy));
 }
 
-export async function updateMaterial(
-  _state: string | null,
-  formData: FormData
-): Promise<string | null> {
+// Shared update logic (no redirect/revalidate). Returns an error message, or null on success.
+async function applyMaterialUpdate(formData: FormData): Promise<string | null> {
   const supabase = await createClient();
   const id = formData.get("id") as string;
   const name = (formData.get("name") as string)?.trim();
@@ -199,8 +197,26 @@ export async function updateMaterial(
     name, category, unit_price_jpy, set_price_jpy, unit_type, supplier_id, color, season_id, ...compositions,
   }).eq("id", id);
   if (error) return error.message;
-  const syncErr = await syncMaterialColors(supabase, id, colors);
-  if (syncErr) return syncErr;
+  return await syncMaterialColors(supabase, id, colors);
+}
+
+export async function updateMaterial(
+  _state: string | null,
+  formData: FormData
+): Promise<string | null> {
+  const err = await applyMaterialUpdate(formData);
+  if (err) return err;
   revalidatePath("/materials");
   redirect("/materials");
+}
+
+// Auto-save variant for the edit page: persists without navigating away.
+export async function autosaveMaterial(
+  _state: string | null,
+  formData: FormData
+): Promise<string | null> {
+  const err = await applyMaterialUpdate(formData);
+  if (err) return err;
+  revalidatePath("/materials");
+  return "ok";
 }

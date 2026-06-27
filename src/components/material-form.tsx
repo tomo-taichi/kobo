@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useState, useRef } from "react";
 import {
   FABRIC_CATEGORIES,
   ACCESSORY_CATEGORIES,
@@ -40,6 +40,7 @@ type Props = {
   };
   id?: string;
   onCancel?: () => void;
+  autoSave?: boolean;
 };
 
 const inputCls = "w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-gray-900";
@@ -74,8 +75,18 @@ function SectionHeading({ children }: { children: React.ReactNode }) {
   );
 }
 
-export function MaterialForm({ action, suppliers, seasons = [], pastColors = [], initialData = {}, id, onCancel }: Props) {
+export function MaterialForm({ action, suppliers, seasons = [], pastColors = [], initialData = {}, id, onCancel, autoSave = false }: Props) {
   const [error, formAction, pending] = useActionState(action, null);
+  const formRef = useRef<HTMLFormElement>(null);
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Auto-save (edit page): debounce-submit on change. Validation in handleSubmit blocks
+  // invalid saves; the action returns "ok" without navigating away.
+  function scheduleSave() {
+    if (!autoSave || !id) return;
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => formRef.current?.requestSubmit(), 700);
+  }
   const [comps, setComps] = useState<CompRow[]>(() => buildInitialComps(initialData));
   const [compError, setCompError] = useState<string | null>(null);
   const [colors, setColors] = useState<ColorRow[]>(() => buildInitialColors(initialData));
@@ -103,7 +114,7 @@ export function MaterialForm({ action, suppliers, seasons = [], pastColors = [],
   }
 
   function removeRow(i: number) {
-    if (comps.length > 1) setComps((prev) => prev.filter((_, idx) => idx !== i));
+    if (comps.length > 1) { setComps((prev) => prev.filter((_, idx) => idx !== i)); scheduleSave(); }
   }
 
   function handleColorChange(i: number, field: "color" | "unitPrice" | "setPrice", value: string) {
@@ -111,36 +122,38 @@ export function MaterialForm({ action, suppliers, seasons = [], pastColors = [],
     setColorError(null);
   }
   function addColor() { setColors((prev) => [...prev, { color: "", unitPrice: "", setPrice: "" }]); }
-  function removeColor(i: number) { if (colors.length > 1) setColors((prev) => prev.filter((_, idx) => idx !== i)); }
+  function removeColor(i: number) { if (colors.length > 1) { setColors((prev) => prev.filter((_, idx) => idx !== i)); scheduleSave(); } }
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    // In auto-save mode, block invalid saves silently (the on-screen indicators already
+    // show colour count / composition total) rather than flashing error text while typing.
     if (colors.filter((c) => c.color.trim()).length === 0) {
       e.preventDefault();
-      setColorError("At least one colour is required");
+      if (!autoSave) setColorError("At least one colour is required");
       return;
     }
     const seen = new Set<string>();
     for (const c of colors) {
       const key = c.color.trim().toLowerCase();
       if (!key) continue;
-      if (seen.has(key)) { e.preventDefault(); setColorError(`Duplicate colour: ${c.color.trim()}`); return; }
+      if (seen.has(key)) { e.preventDefault(); if (!autoSave) setColorError(`Duplicate colour: ${c.color.trim()}`); return; }
       seen.add(key);
     }
     const filled = comps.filter((r) => r.label && r.pct);
     if (filled.length === 0) {
       e.preventDefault();
-      setCompError("At least one composition entry is required");
+      if (!autoSave) setCompError("At least one composition entry is required");
       return;
     }
     if (total !== 100) {
       e.preventDefault();
-      setCompError(`Total is ${total}%. Must equal 100%`);
+      if (!autoSave) setCompError(`Total is ${total}%. Must equal 100%`);
       return;
     }
   }
 
   return (
-    <form action={formAction} onSubmit={handleSubmit} className="flex flex-col gap-5">
+    <form ref={formRef} action={formAction} onChange={scheduleSave} onSubmit={handleSubmit} className="flex flex-col gap-5">
       {id && <input type="hidden" name="id" value={id} />}
       <input type="hidden" name="colors_json" value={colorsPayload} />
       {pastColors.length > 0 && (
@@ -148,7 +161,14 @@ export function MaterialForm({ action, suppliers, seasons = [], pastColors = [],
           {pastColors.map((c) => <option key={c} value={c} />)}
         </datalist>
       )}
-      {error && <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded">{error}</p>}
+      {error && error !== "ok" && <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded">{error}</p>}
+      {autoSave && (
+        <div className="flex justify-end h-4 -mt-2">
+          {pending ? <span className="text-xs text-gray-400">Saving…</span>
+            : error === "ok" ? <span className="text-xs text-green-600">✓ Saved</span>
+            : null}
+        </div>
+      )}
 
       {/* ── Group 1: Material Info ── */}
       <div>
@@ -329,16 +349,18 @@ export function MaterialForm({ action, suppliers, seasons = [], pastColors = [],
         </div>
       </div>
 
-      <div className="flex gap-2 pt-1">
-        <button type="submit" disabled={pending} className="px-4 py-2 bg-gray-900 text-white text-sm rounded-md hover:bg-gray-700 disabled:opacity-50">
-          {pending ? "Saving..." : id ? "Update" : "Create"}
-        </button>
-        {onCancel && (
-          <button type="button" onClick={onCancel} className="px-4 py-2 text-sm text-gray-600 border border-gray-300 rounded-md hover:bg-gray-50">
-            Cancel
+      {!autoSave && (
+        <div className="flex gap-2 pt-1">
+          <button type="submit" disabled={pending} className="px-4 py-2 bg-gray-900 text-white text-sm rounded-md hover:bg-gray-700 disabled:opacity-50">
+            {pending ? "Saving..." : id ? "Update" : "Create"}
           </button>
-        )}
-      </div>
+          {onCancel && (
+            <button type="button" onClick={onCancel} className="px-4 py-2 text-sm text-gray-600 border border-gray-300 rounded-md hover:bg-gray-50">
+              Cancel
+            </button>
+          )}
+        </div>
+      )}
     </form>
   );
 }
