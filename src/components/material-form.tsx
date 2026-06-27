@@ -226,7 +226,7 @@ export function MaterialForm({ action, suppliers, seasons = [], pastColors = [],
                 type="number" min="0" step="0.01"
                 value={row.unitPrice}
                 onChange={(e) => handleColorChange(i, "unitPrice", e.target.value)}
-                placeholder="base"
+                placeholder="0"
                 title="Actual Unit Price for this colour (blank = base)"
                 className="w-24 px-2 py-2 border border-gray-300 rounded-md text-sm text-right focus:outline-none focus:ring-2 focus:ring-gray-900"
               />
@@ -234,7 +234,7 @@ export function MaterialForm({ action, suppliers, seasons = [], pastColors = [],
                 type="number" min="0" step="0.01"
                 value={row.setPrice}
                 onChange={(e) => handleColorChange(i, "setPrice", e.target.value)}
-                placeholder="base"
+                placeholder="0"
                 title="Set Price for this colour — used in the product's Raw Cost (blank = base)"
                 className="w-24 px-2 py-2 border border-gray-300 rounded-md text-sm text-right focus:outline-none focus:ring-2 focus:ring-gray-900"
               />
@@ -248,7 +248,7 @@ export function MaterialForm({ action, suppliers, seasons = [], pastColors = [],
             + Add colour
           </button>
         </div>
-        <p className="text-[11px] text-gray-400 mt-1.5">Leave a ¥ blank to use the base price. <span className="font-medium">Set ¥</span> drives the product&apos;s Raw Cost; set values only when a colour costs differently (e.g. special dyeing).</p>
+        <p className="text-[11px] text-gray-400 mt-1.5"><span className="font-medium">Set ¥</span> per colour drives the product&apos;s Raw Cost; Actual ¥ is the real purchase price. Enter each colour&apos;s prices (they can differ, e.g. special dyeing).</p>
       </div>
 
       {/* ── Group 3: Sourcing & Pricing ── */}
@@ -274,27 +274,7 @@ export function MaterialForm({ action, suppliers, seasons = [], pastColors = [],
               ))}
             </select>
           </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Actual Unit Price (¥)</label>
-              <input
-                name="unit_price_jpy"
-                type="number" min="0" step="0.01"
-                defaultValue={initialData.unit_price_jpy ?? 0}
-                className={inputCls}
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Set Price (¥) <span className="text-gray-400 font-normal">— base</span></label>
-              <input
-                name="set_price_jpy"
-                type="number" min="0" step="0.01"
-                defaultValue={initialData.set_price_jpy ?? 0}
-                className={inputCls}
-              />
-            </div>
-          </div>
+          <p className="text-[11px] text-gray-400">Prices are set per colour above (Actual ¥ / Set ¥).</p>
         </div>
       </div>
 

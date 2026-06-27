@@ -88,19 +88,18 @@ export async function createMaterial(
   const name = (formData.get("name") as string)?.trim();
   if (!name) return "Please enter a material name";
   const category = formData.get("category") as string;
-  const unit_price_jpy = Number(formData.get("unit_price_jpy"));
   const unit_type = formData.get("unit_type") as string;
   const supplier_id = (formData.get("supplier_id") as string) || null;
   const colors = parseColors(formData);
-  const color = colors[0]?.color ?? null;  // legacy primary colour
+  const color = colors[0]?.color ?? null;                   // legacy primary colour
+  const unit_price_jpy = colors[0]?.unit_price_jpy ?? 0;    // base = first colour (per-colour is authoritative)
+  const set_price_jpy  = colors[0]?.set_price_jpy ?? 0;
   const season_id = (formData.get("season_id") as string) || null;
-  const set_price_jpy = Number(formData.get("set_price_jpy") ?? 0);
 
   if (colors.length === 0) return "At least one colour is required";
   if (!season_id) return "Season is required";
   if (!MATERIAL_CATEGORIES.includes(category as typeof MATERIAL_CATEGORIES[number])) return "Please select a category";
   if (!UNIT_TYPES.includes(unit_type as typeof UNIT_TYPES[number])) return "Please select a unit";
-  if (isNaN(unit_price_jpy) || unit_price_jpy < 0) return "Please enter a valid unit price";
 
   const material_number = await nextMaterialNumber(supabase);
   const compositions = extractCompositions(formData);
@@ -185,13 +184,13 @@ export async function updateMaterial(
   const name = (formData.get("name") as string)?.trim();
   if (!name) return "Please enter a material name";
   const category = formData.get("category") as string;
-  const unit_price_jpy = Number(formData.get("unit_price_jpy"));
   const unit_type = formData.get("unit_type") as string;
   const supplier_id = (formData.get("supplier_id") as string) || null;
   const colors = parseColors(formData);
-  const color = colors[0]?.color ?? null;  // legacy primary colour
+  const color = colors[0]?.color ?? null;                   // legacy primary colour
+  const unit_price_jpy = colors[0]?.unit_price_jpy ?? 0;    // base = first colour (per-colour is authoritative)
+  const set_price_jpy  = colors[0]?.set_price_jpy ?? 0;
   const season_id = (formData.get("season_id") as string) || null;
-  const set_price_jpy = Number(formData.get("set_price_jpy") ?? 0);
 
   if (colors.length === 0) return "At least one colour is required";
 
