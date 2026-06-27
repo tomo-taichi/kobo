@@ -77,63 +77,9 @@ function PhotoTile({
   );
 }
 
-// ─── Upload control (auto-uploads on file pick) ───────────────────────
-function UploadTile({
-  productId,
-  productColorId,
-  disabled,
-  onChanged,
-}: {
-  productId: string;
-  productColorId: string | null;
-  disabled: boolean;
-  onChanged: () => void;
-}) {
-  const inputRef = useRef<HTMLInputElement>(null);
-  const [pending, startTransition] = useTransition();
-  const [error, setError] = useState<string | null>(null);
-
-  function handlePick(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (file.size > MAX_UPLOAD_MB * 1024 * 1024) {
-      setError(`Image too large (max ${MAX_UPLOAD_MB} MB)`);
-      if (inputRef.current) inputRef.current.value = "";
-      return;
-    }
-    const fd = new FormData();
-    fd.append("file", file);
-    startTransition(async () => {
-      const err = await uploadProductImage(productId, productColorId, fd);
-      if (inputRef.current) inputRef.current.value = "";
-      if (err) { setError(err); return; }
-      setError(null);
-      onChanged();
-    });
-  }
-
-  if (disabled) {
-    return (
-      <div className="w-28 h-28 rounded-lg border border-dashed border-gray-200 flex items-center justify-center text-[11px] text-gray-300 text-center px-2">
-        Max reached
-      </div>
-    );
-  }
-
-  return (
-    <div>
-      <button type="button" onClick={() => inputRef.current?.click()} disabled={pending}
-        className="w-28 h-28 rounded-lg border-2 border-dashed border-gray-300 hover:border-gray-500 flex flex-col items-center justify-center text-gray-400 hover:text-gray-600 disabled:opacity-50 transition-colors">
-        <span className="text-2xl leading-none">＋</span>
-        <span className="text-[11px] mt-1">{pending ? "Processing…" : "Add photo"}</span>
-      </button>
-      <input ref={inputRef} type="file" accept="image/*" onChange={handlePick} className="hidden" />
-      {error && <p className="text-[11px] text-red-600 mt-1 w-28">{error}</p>}
-    </div>
-  );
-}
-
 // ─── A labelled gallery row (main set or one colour) ──────────────────
+// The tile grid is a drop zone: drop one or many images onto it, or click the
+// add tile to pick multiple. Files upload sequentially up to the remaining slots.
 function Gallery({
   title,
   subtitle,
@@ -154,6 +100,38 @@ function Gallery({
   onChanged: () => void;
 }) {
   const sorted = [...images].sort((a, b) => a.sort_order - b.sort_order);
+  const remaining = max - sorted.length;
+  const full = remaining <= 0;
+
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [pending, startTransition] = useTransition();
+  const [dragOver, setDragOver] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  function uploadFiles(fileList: FileList | File[]) {
+    const picked = Array.from(fileList);
+    const imageFiles = picked.filter((f) => f.type.startsWith("image/"));
+    const errs: string[] = [];
+    if (imageFiles.length < picked.length) errs.push("Some files were skipped (not images)");
+
+    let slots = remaining;
+    startTransition(async () => {
+      let uploadedAny = false;
+      for (const file of imageFiles) {
+        if (slots <= 0) { errs.push(`Only ${remaining} more could be added (max ${max})`); break; }
+        if (file.size > MAX_UPLOAD_MB * 1024 * 1024) { errs.push(`${file.name}: too large (max ${MAX_UPLOAD_MB} MB)`); continue; }
+        const fd = new FormData();
+        fd.append("file", file);
+        const err = await uploadProductImage(productId, productColorId, fd);
+        if (err) { errs.push(`${file.name}: ${err}`); continue; }
+        slots--; uploadedAny = true;
+      }
+      if (inputRef.current) inputRef.current.value = "";
+      setError(errs.length ? errs.join(" · ") : null);
+      if (uploadedAny) onChanged();
+    });
+  }
+
   return (
     <div>
       <div className="flex items-baseline justify-between mb-2">
@@ -162,12 +140,38 @@ function Gallery({
       </div>
       {subtitle && <p className="text-xs text-gray-400 -mt-1 mb-2">{subtitle}</p>}
       {warn && <p className="text-[11px] text-amber-600 mb-2">{warn}</p>}
-      <div className="flex flex-wrap gap-2">
+
+      <div
+        onDragOver={(e) => { if (!full) { e.preventDefault(); setDragOver(true); } }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDragOver(false);
+          if (full) { setError(`Max ${max} photos reached`); return; }
+          uploadFiles(e.dataTransfer.files);
+        }}
+        className={`flex flex-wrap gap-2 rounded-lg p-1 transition-colors ${dragOver ? "ring-2 ring-gray-900 bg-gray-50" : ""}`}
+      >
         {sorted.map((img, i) => (
           <PhotoTile key={img.id} img={img} productId={productId} isPrimary={i === 0} onChanged={onChanged} />
         ))}
-        <UploadTile productId={productId} productColorId={productColorId} disabled={sorted.length >= max} onChanged={onChanged} />
+
+        {full ? (
+          <div className="w-28 h-28 rounded-lg border border-dashed border-gray-200 flex items-center justify-center text-[11px] text-gray-300 text-center px-2">
+            Max reached
+          </div>
+        ) : (
+          <button type="button" onClick={() => inputRef.current?.click()} disabled={pending}
+            className="w-28 h-28 rounded-lg border-2 border-dashed border-gray-300 hover:border-gray-500 flex flex-col items-center justify-center text-gray-400 hover:text-gray-600 disabled:opacity-50 transition-colors">
+            <span className="text-2xl leading-none">＋</span>
+            <span className="text-[11px] mt-1 px-1 text-center leading-tight">{pending ? "Processing…" : "Add / drop photos"}</span>
+          </button>
+        )}
       </div>
+
+      <input ref={inputRef} type="file" accept="image/*" multiple className="hidden"
+        onChange={(e) => { if (e.target.files) uploadFiles(e.target.files); }} />
+      {error && <p className="text-[11px] text-red-600 mt-1.5">{error}</p>}
     </div>
   );
 }
