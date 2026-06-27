@@ -340,7 +340,7 @@ export function MaterialsClient({
         {/* Actions */}
         <td className={`${cellCls} text-right whitespace-nowrap`}>
           <div className="flex items-center justify-end gap-3">
-            <form action={duplicateMaterial.bind(null, m.id)}>
+            <form action={async () => { await duplicateMaterial(m.id); }}>
               <button type="submit" className="text-gray-400 hover:text-blue-600 text-xs underline">Duplicate</button>
             </form>
             <Link href={`/materials/${m.id}/edit`} className="text-gray-400 hover:text-gray-900 text-xs underline">Edit</Link>

@@ -25,7 +25,7 @@ export default async function CustomerPaymentsPage({ params }: { params: Promise
   const orderMap = new Map(
     (orders ?? []).map((o) => [
       o.id,
-      `${o.order_date ?? ""} ${((o.seasons as { name: string } | null)?.name ?? "")}`.trim(),
+      `${o.order_date ?? ""} ${((o.seasons as unknown as { name: string } | null)?.name ?? "")}`.trim(),
     ])
   );
 

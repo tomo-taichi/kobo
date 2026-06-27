@@ -96,6 +96,6 @@ type MaterialForStatus = {
 export function getMaterialStatus(m: MaterialForStatus): "Complete" | "Incomplete" {
   if (!m.set_price_jpy || Number(m.set_price_jpy) <= 0) return "Incomplete";
   const total = [m.comp_1_pct, m.comp_2_pct, m.comp_3_pct, m.comp_4_pct, m.comp_5_pct]
-    .reduce((sum, p) => sum + (p ?? 0), 0);
+    .reduce<number>((sum, p) => sum + (p ?? 0), 0);
   return total === 100 ? "Complete" : "Incomplete";
 }

@@ -42,7 +42,7 @@ export default async function CustomerProductsPage({ params }: { params: Promise
   }[] = orders
     .map((o) => ({
       order: o,
-      items: (items ?? []).filter((it) => it.order_id === o.id) as Item[],
+      items: (items ?? []).filter((it) => it.order_id === o.id) as unknown as Item[],
     }))
     .filter((g) => g.items.length > 0);
 
@@ -61,7 +61,7 @@ export default async function CustomerProductsPage({ params }: { params: Promise
       )}
 
       {byOrder.map(({ order, items: orderItems }) => {
-        const season = (order.seasons as { id: string; name: string } | null);
+        const season = (order.seasons as unknown as { id: string; name: string } | null);
         return (
           <div key={order.id} className="bg-white border border-gray-200 rounded-lg overflow-hidden">
             <div className="px-4 py-2 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
