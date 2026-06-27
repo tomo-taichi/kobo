@@ -17,7 +17,7 @@ export default async function MaterialEditPage({ params }: { params: Promise<{ i
     supabase.from("suppliers").select("id, name").order("name"),
     supabase.from("seasons").select("id, name").order("name"),
     supabase.from("material_colors").select("color"),
-    supabase.from("material_colors").select("color, set_price_jpy, sort_order").eq("material_id", id).order("sort_order"),
+    supabase.from("material_colors").select("color, unit_price_jpy, set_price_jpy, sort_order").eq("material_id", id).order("sort_order"),
   ]);
 
   if (!materialResult.data) notFound();
@@ -30,6 +30,7 @@ export default async function MaterialEditPage({ params }: { params: Promise<{ i
   ) as string[];
   const colors = (materialColorsResult.data ?? []).map((c: any) => ({
     color: c.color as string,
+    unit_price_jpy: c.unit_price_jpy != null ? Number(c.unit_price_jpy) : null,
     set_price_jpy: c.set_price_jpy != null ? Number(c.set_price_jpy) : null,
   }));
 

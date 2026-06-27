@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { MATERIAL_CATEGORIES, UNIT_TYPES, MAX_COMPOSITIONS } from "@/lib/material-constants";
 
-type ColorInput = { color: string; set_price_jpy: number | null };
+type ColorInput = { color: string; unit_price_jpy: number | null; set_price_jpy: number | null };
 
 function parseColors(formData: FormData): ColorInput[] {
   try {
@@ -16,6 +16,7 @@ function parseColors(formData: FormData): ColorInput[] {
       .filter((c: any) => c && typeof c.color === "string" && c.color.trim())
       .map((c: any) => ({
         color: c.color.trim(),
+        unit_price_jpy: c.unit_price_jpy == null || c.unit_price_jpy === "" ? null : Number(c.unit_price_jpy),
         set_price_jpy: c.set_price_jpy == null || c.set_price_jpy === "" ? null : Number(c.set_price_jpy),
       }));
   } catch {
@@ -44,6 +45,7 @@ async function syncMaterialColors(
     const rows = colors.map((c, i) => ({
       material_id: materialId,
       color: c.color,
+      unit_price_jpy: c.unit_price_jpy,
       set_price_jpy: c.set_price_jpy,
       sort_order: i,
     }));
@@ -130,13 +132,14 @@ export async function duplicateMaterial(id: string): Promise<string | null> {
   // Copy the source material's colours to the duplicate
   const { data: srcColors } = await supabase
     .from("material_colors")
-    .select("color, set_price_jpy, sort_order")
+    .select("color, unit_price_jpy, set_price_jpy, sort_order")
     .eq("material_id", id);
   if (srcColors && srcColors.length > 0) {
     await supabase.from("material_colors").insert(
       srcColors.map((c: any) => ({
         material_id: (newRow as { id: string }).id,
         color: c.color,
+        unit_price_jpy: c.unit_price_jpy,
         set_price_jpy: c.set_price_jpy,
         sort_order: c.sort_order,
       }))

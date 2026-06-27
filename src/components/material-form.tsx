@@ -15,7 +15,7 @@ type Action = (_state: string | null, formData: FormData) => Promise<string | nu
 type Supplier = { id: string; name: string };
 type Season   = { id: string; name: string };
 type CompRow  = { label: string; pct: string };
-type ColorRow = { color: string; setPrice: string };
+type ColorRow = { color: string; unitPrice: string; setPrice: string };
 
 type Props = {
   action: Action;
@@ -31,7 +31,7 @@ type Props = {
     supplier_id?: string | null;
     season_id?: string | null;
     color?: string;
-    colors?: { color: string; set_price_jpy: number | null }[];
+    colors?: { color: string; unit_price_jpy: number | null; set_price_jpy: number | null }[];
     comp_1_label?: string; comp_1_pct?: number | null;
     comp_2_label?: string; comp_2_pct?: number | null;
     comp_3_label?: string; comp_3_pct?: number | null;
@@ -56,10 +56,14 @@ function buildInitialComps(d: Props["initialData"]): CompRow[] {
 
 function buildInitialColors(d: Props["initialData"]): ColorRow[] {
   if (d?.colors && d.colors.length > 0) {
-    return d.colors.map((c) => ({ color: c.color, setPrice: c.set_price_jpy != null ? String(c.set_price_jpy) : "" }));
+    return d.colors.map((c) => ({
+      color: c.color,
+      unitPrice: c.unit_price_jpy != null ? String(c.unit_price_jpy) : "",
+      setPrice: c.set_price_jpy != null ? String(c.set_price_jpy) : "",
+    }));
   }
-  if (d?.color) return [{ color: d.color, setPrice: "" }];
-  return [{ color: "", setPrice: "" }];
+  if (d?.color) return [{ color: d.color, unitPrice: "", setPrice: "" }];
+  return [{ color: "", unitPrice: "", setPrice: "" }];
 }
 
 function SectionHeading({ children }: { children: React.ReactNode }) {
@@ -82,7 +86,11 @@ export function MaterialForm({ action, suppliers, seasons = [], pastColors = [],
   const colorsPayload = JSON.stringify(
     colors
       .filter((c) => c.color.trim())
-      .map((c) => ({ color: c.color.trim(), set_price_jpy: c.setPrice.trim() === "" ? null : Number(c.setPrice) }))
+      .map((c) => ({
+        color: c.color.trim(),
+        unit_price_jpy: c.unitPrice.trim() === "" ? null : Number(c.unitPrice),
+        set_price_jpy: c.setPrice.trim() === "" ? null : Number(c.setPrice),
+      }))
   );
 
   function handleCompChange(i: number, field: "label" | "pct", value: string) {
@@ -98,11 +106,11 @@ export function MaterialForm({ action, suppliers, seasons = [], pastColors = [],
     if (comps.length > 1) setComps((prev) => prev.filter((_, idx) => idx !== i));
   }
 
-  function handleColorChange(i: number, field: "color" | "setPrice", value: string) {
+  function handleColorChange(i: number, field: "color" | "unitPrice" | "setPrice", value: string) {
     setColors((prev) => prev.map((r, idx) => idx === i ? { ...r, [field]: value } : r));
     setColorError(null);
   }
-  function addColor() { setColors((prev) => [...prev, { color: "", setPrice: "" }]); }
+  function addColor() { setColors((prev) => [...prev, { color: "", unitPrice: "", setPrice: "" }]); }
   function removeColor(i: number) { if (colors.length > 1) setColors((prev) => prev.filter((_, idx) => idx !== i)); }
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -199,7 +207,8 @@ export function MaterialForm({ action, suppliers, seasons = [], pastColors = [],
         <div className="flex flex-col gap-2">
           <div className="flex gap-2 items-center text-[11px] text-gray-400">
             <span className="flex-1">Colour (English)</span>
-            <span className="w-28 text-right">Price override (¥)</span>
+            <span className="w-24 text-right">Actual ¥</span>
+            <span className="w-24 text-right">Set ¥</span>
             <span className="w-4" />
           </div>
           {colors.map((row, i) => (
@@ -215,11 +224,19 @@ export function MaterialForm({ action, suppliers, seasons = [], pastColors = [],
               />
               <input
                 type="number" min="0" step="0.01"
+                value={row.unitPrice}
+                onChange={(e) => handleColorChange(i, "unitPrice", e.target.value)}
+                placeholder="base"
+                title="Actual Unit Price for this colour (blank = base)"
+                className="w-24 px-2 py-2 border border-gray-300 rounded-md text-sm text-right focus:outline-none focus:ring-2 focus:ring-gray-900"
+              />
+              <input
+                type="number" min="0" step="0.01"
                 value={row.setPrice}
                 onChange={(e) => handleColorChange(i, "setPrice", e.target.value)}
                 placeholder="base"
-                title="Per-colour price override (leave blank to use the base Set Price)"
-                className="w-28 px-2 py-2 border border-gray-300 rounded-md text-sm text-right focus:outline-none focus:ring-2 focus:ring-gray-900"
+                title="Set Price for this colour — used in the product's Raw Cost (blank = base)"
+                className="w-24 px-2 py-2 border border-gray-300 rounded-md text-sm text-right focus:outline-none focus:ring-2 focus:ring-gray-900"
               />
               {colors.length > 1 && (
                 <button type="button" onClick={() => removeColor(i)} className="text-gray-300 hover:text-red-500 text-lg leading-none w-4">×</button>
@@ -231,7 +248,7 @@ export function MaterialForm({ action, suppliers, seasons = [], pastColors = [],
             + Add colour
           </button>
         </div>
-        <p className="text-[11px] text-gray-400 mt-1.5">Leave the ¥ blank to use the base Set Price. Set a value only when a colour costs differently (e.g. special dyeing).</p>
+        <p className="text-[11px] text-gray-400 mt-1.5">Leave a ¥ blank to use the base price. <span className="font-medium">Set ¥</span> drives the product&apos;s Raw Cost; set values only when a colour costs differently (e.g. special dyeing).</p>
       </div>
 
       {/* ── Group 3: Sourcing & Pricing ── */}
