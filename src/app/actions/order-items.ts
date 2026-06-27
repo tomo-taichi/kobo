@@ -5,31 +5,33 @@ import { createClient } from "@/lib/supabase/server";
 import { calcCustomerWholesaleEur } from "@/lib/pricing";
 import { SIZES } from "@/lib/order-constants";
 
-export async function addProductToOrder(orderId: string, productId: string): Promise<string | null> {
+// Add one order line = a product in a specific colour (product_colors). Price is
+// snapshotted from that colour's stack.
+export async function addProductColorToOrder(orderId: string, productColorId: string): Promise<string | null> {
   const supabase = await createClient();
 
-  const [productResult, orderResult] = await Promise.all([
-    supabase.from("products").select("wholesale_eur, retail_price_eur").eq("id", productId).single(),
+  const [pcResult, orderResult] = await Promise.all([
+    supabase.from("product_colors").select("product_id, wholesale_eur, retail_price_eur").eq("id", productColorId).single(),
     supabase.from("orders").select("discount_rate").eq("id", orderId).single(),
   ]);
 
-  const product: any = productResult.data;
+  const pc: any = pcResult.data;
   const order: any = orderResult.data;
 
-  if (!product || !order) return "Product or order not found";
+  if (!pc || !order) return "Product colour or order not found";
 
-  const wholesale_price_eur = Number(product.wholesale_eur);
-  const retail_price_eur = Number(product.retail_price_eur);
+  const wholesale_price_eur = Number(pc.wholesale_eur);
+  const retail_price_eur = Number(pc.retail_price_eur);
   const customer_wholesale_eur = calcCustomerWholesaleEur(retail_price_eur, Number(order.discount_rate));
 
   const { data: item, error } = await supabase
     .from("order_items")
-    .insert({ order_id: orderId, product_id: productId, wholesale_price_eur, retail_price_eur, customer_wholesale_eur })
+    .insert({ order_id: orderId, product_id: pc.product_id, product_color_id: productColorId, wholesale_price_eur, retail_price_eur, customer_wholesale_eur })
     .select("id")
     .single();
 
   if (error) {
-    if (error.code === "23505") return "This product has already been added to the order";
+    if (error.code === "23505") return "This product colour is already in the order";
     return error.message;
   }
 

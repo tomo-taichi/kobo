@@ -24,20 +24,34 @@ export default async function OrderProductsPage({ params }: { params: Promise<{ 
   const [itemsResult, allProductsResult, seasonsResult] = await Promise.all([
     supabase
       .from("order_items")
-      .select("id, product_id, retail_price_eur, customer_wholesale_eur, products(name, product_number, model_name, main_m_name, main_m_color, product_category), order_item_sizes(size, quantity)")
+      .select("id, product_id, product_color_id, retail_price_eur, customer_wholesale_eur, products(name, product_number, model_name, main_m_name, main_m_color, product_category), product_colors(material_colors(color)), order_item_sizes(size, quantity)")
       .eq("order_id", id)
       .order("created_at"),
     supabase
       .from("products")
-      .select("id, product_number, model_name, main_m_name, main_m_color, product_category, product_sex, retail_price_eur, seasons(id, name)")
+      .select("id, product_number, model_name, main_m_name, product_category, product_sex, seasons(id, name), product_colors(id, retail_price_eur, material_colors(color))")
       .eq("is_invalid", false)
       .order("name"),
     supabase.from("seasons").select("id, name").order("name"),
   ]);
 
-  const items: any[]      = itemsResult.data ?? [];
-  const addedIds          = new Set(items.map((i) => i.product_id));
-  const availableProducts = (allProductsResult.data ?? []).filter((p: any) => !addedIds.has(p.id));
+  const items: any[]    = itemsResult.data ?? [];
+  const addedColorIds   = new Set(items.map((i: any) => i.product_color_id).filter(Boolean));
+  // Flatten products → one picker row per enabled colour, excluding colours already on the order
+  const pickerRows = (allProductsResult.data ?? []).flatMap((p: any) =>
+    (p.product_colors ?? []).map((pc: any) => ({
+      productColorId:   pc.id,
+      productId:        p.id,
+      product_number:   p.product_number,
+      model_name:       p.model_name,
+      main_m_name:      p.main_m_name,
+      colour:           pc.material_colors?.color ?? null,
+      product_category: p.product_category,
+      product_sex:      p.product_sex,
+      retail_price_eur: pc.retail_price_eur,
+      seasons:          p.seasons,
+    }))
+  ).filter((r: any) => !addedColorIds.has(r.productColorId));
 
   // Group by product_category
   const grouped = new Map<string, typeof items>();
@@ -75,7 +89,7 @@ export default async function OrderProductsPage({ params }: { params: Promise<{ 
         </div>
         <OrderProductPicker
           orderId={id}
-          products={availableProducts as any}
+          products={pickerRows as any}
           seasons={seasonsResult.data ?? []}
         />
       </div>
@@ -137,7 +151,7 @@ export default async function OrderProductsPage({ params }: { params: Promise<{ 
                           productNumber={p.product_number ?? null}
                           modelName={p.model_name ?? null}
                           mainMName={p.main_m_name ?? null}
-                          mainMColor={p.main_m_color ?? null}
+                          mainMColor={item.product_colors?.material_colors?.color ?? p.main_m_color ?? null}
                           retailPriceEur={Number(item.retail_price_eur)}
                           customerWholesaleEur={Number(item.customer_wholesale_eur)}
                           initialSizes={sizes}

@@ -1,15 +1,17 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { addProductToOrder } from "@/app/actions/order-items";
+import { addProductColorToOrder } from "@/app/actions/order-items";
 import { fmtEur } from "@/lib/format";
 
-type Product = {
-  id: string;
+// One row per (product, enabled colour) — adding creates one order line for that colour.
+type Row = {
+  productColorId:   string;
+  productId:        string;
   product_number:   string | null;
   model_name:       string | null;
   main_m_name:      string | null;
-  main_m_color:     string | null;
+  colour:           string | null;
   product_category: string | null;
   product_sex:      string | null;
   retail_price_eur: number | null;
@@ -20,7 +22,7 @@ type Season = { id: string; name: string };
 
 type Props = {
   orderId:  string;
-  products: Product[];
+  products: Row[];
   seasons:  Season[];
 };
 
@@ -49,11 +51,12 @@ export function OrderProductPicker({ orderId, products, seasons }: Props) {
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return products.filter((p) => {
-      if (added.has(p.id)) return false;
+      if (added.has(p.productColorId)) return false;
       if (q) {
-        const matchId    = fmtId(p.product_number).toLowerCase().includes(q);
-        const matchModel = p.model_name?.toLowerCase().includes(q);
-        if (!matchId && !matchModel) return false;
+        const matchId     = fmtId(p.product_number).toLowerCase().includes(q);
+        const matchModel  = p.model_name?.toLowerCase().includes(q);
+        const matchColour = p.colour?.toLowerCase().includes(q);
+        if (!matchId && !matchModel && !matchColour) return false;
       }
       if (filterSeasonId   && p.seasons?.id        !== filterSeasonId)  return false;
       if (filterCategory   && p.product_category   !== filterCategory)  return false;
@@ -61,14 +64,14 @@ export function OrderProductPicker({ orderId, products, seasons }: Props) {
     });
   }, [products, search, filterSeasonId, filterCategory, added]);
 
-  async function handleAdd(productId: string) {
-    setPendingId(productId);
+  async function handleAdd(productColorId: string) {
+    setPendingId(productColorId);
     setError(null);
-    const result = await addProductToOrder(orderId, productId);
+    const result = await addProductColorToOrder(orderId, productColorId);
     if (result) {
       setError(result);
     } else {
-      setAdded((prev) => new Set([...prev, productId]));
+      setAdded((prev) => new Set([...prev, productColorId]));
     }
     setPendingId(null);
   }
@@ -186,24 +189,24 @@ export function OrderProductPicker({ orderId, products, seasons }: Props) {
                 </thead>
                 <tbody className="divide-y divide-gray-100">
                   {filtered.map((p) => (
-                    <tr key={p.id} className="hover:bg-gray-50 transition-colors">
+                    <tr key={p.productColorId} className="hover:bg-gray-50 transition-colors">
                       <td className="px-4 py-2 font-mono text-gray-400 whitespace-nowrap">{fmtId(p.product_number)}</td>
                       <td className="px-4 py-2 text-gray-500 whitespace-nowrap">{p.seasons?.name ?? "—"}</td>
                       <td className="px-4 py-2 text-gray-400">{p.product_sex ?? "—"}</td>
                       <td className="px-4 py-2 text-gray-800 font-medium">{p.model_name ?? "—"}</td>
                       <td className="px-4 py-2 text-gray-600">{p.main_m_name ?? "—"}</td>
-                      <td className="px-4 py-2 text-gray-500">{p.main_m_color ?? "—"}</td>
+                      <td className="px-4 py-2 text-gray-700 font-medium">{p.colour ?? "—"}</td>
                       <td className="px-4 py-2 text-right font-mono text-gray-700 whitespace-nowrap">
                         {p.retail_price_eur ? `€ ${fmtEur(Number(p.retail_price_eur), 0)}` : "—"}
                       </td>
                       <td className="px-4 py-2">
                         <button
                           type="button"
-                          disabled={pendingId === p.id}
-                          onClick={() => handleAdd(p.id)}
+                          disabled={pendingId === p.productColorId}
+                          onClick={() => handleAdd(p.productColorId)}
                           className="px-3 py-1 bg-gray-900 text-white rounded hover:bg-gray-700 disabled:opacity-50 whitespace-nowrap"
                         >
-                          {pendingId === p.id ? "…" : "+ Add"}
+                          {pendingId === p.productColorId ? "…" : "+ Add"}
                         </button>
                       </td>
                     </tr>
