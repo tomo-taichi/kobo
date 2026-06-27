@@ -10,7 +10,7 @@ import {
 } from "@/lib/pricing";
 
 type AdditionalRow = { materialId: string; quantity: number; role: string };
-type ColorEdit = { productColorId: string; markupRate: number; retailRate: number; retailPriceEur: number };
+type ColorEdit = { productColorId: string; markupRate: number; wholesaleEur: number; retailRate: number; retailPriceEur: number };
 
 // Per-colour cost model: manufacturing, usage amounts and the EUR rate are shared at the
 // product level; the MAIN material's price varies per colour (material_colors override,
@@ -100,13 +100,12 @@ export async function updateProductCosts(
     const materialCostJpy = mainPrice * mainQuantity + nonMainCostJpy;
     const costJpy = materialCostJpy + mfgCost;
     const costEur = calcCostEur(costJpy, costEurRate || 1);
-    const wholesaleEur = calcWholesaleEur(costEur, ce.markupRate);
     const { error } = await supabase.from("product_colors").update({
       material_cost_jpy: materialCostJpy,
       cost_jpy:          costJpy,
       cost_eur:          costEur,
       markup_rate:       ce.markupRate,
-      wholesale_eur:     wholesaleEur,
+      wholesale_eur:     ce.wholesaleEur,   // manual WS Price (master)
       retail_rate:       ce.retailRate,
       retail_price_eur:  ce.retailPriceEur,
     }).eq("id", ce.productColorId);
@@ -129,7 +128,7 @@ export async function updateProductCosts(
       cost_eur:          baseCostEur,
       cost_eur_rate:     costEurRate,
       markup_rate:       baseMarkup,
-      wholesale_eur:     calcWholesaleEur(baseCostEur, baseMarkup),
+      wholesale_eur:     first?.wholesaleEur ?? calcWholesaleEur(baseCostEur, baseMarkup),
       retail_rate:       first?.retailRate ?? 3.5,
       retail_price_eur:  first?.retailPriceEur ?? 0,
       cutting_cost_jpy:  manufacturingCosts.cutting,

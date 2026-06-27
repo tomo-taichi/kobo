@@ -47,10 +47,11 @@ type ColorRow = {
   color: string;
   mainSetPriceJpy: number;  // main material's price for this colour (override or base)
   markupRate: number;
+  wholesaleEur: number;     // manual WS Price (master)
   retailRate: number;
   retailPriceEur: number;
 };
-type ColorEdit = { markup: number; retailRate: number; retailPrice: number };
+type ColorEdit = { markup: number; wsPrice: number; retailRate: number; retailPrice: number };
 type Props = {
   productId: string; productCategory: string | null;
   mainMaterial: MaterialInfo | null; liningMaterial: MaterialInfo | null;
@@ -154,7 +155,7 @@ export function ProductCostForm({
   const [mfg,        setMfg]        = useState<MfgState>(initialManufacturing);
   const [eurRate,    setEurRate]    = useState(initialCostEurRate);
   const [colorEdits, setColorEdits] = useState<ColorEdit[]>(
-    () => colors.map((c) => ({ markup: c.markupRate, retailRate: c.retailRate, retailPrice: c.retailPriceEur }))
+    () => colors.map((c) => ({ markup: c.markupRate, wsPrice: c.wholesaleEur, retailRate: c.retailRate, retailPrice: c.retailPriceEur }))
   );
 
   type SaveStatus = "idle" | "saving" | "saved" | "error";
@@ -178,12 +179,12 @@ export function ProductCostForm({
   // Per-colour derived values
   const colorCalc = (i: number) => {
     const c = colors[i];
-    const e = colorEdits[i] ?? { markup: 3.0, retailRate: 3.5, retailPrice: 0 };
+    const e = colorEdits[i] ?? { markup: 3.0, wsPrice: 0, retailRate: 3.5, retailPrice: 0 };
     const materialCost = c.mainSetPriceJpy * mainQty + nonMainCostJpy;
     const costJpy = materialCost + mfgCost;
     const costEur = calcCostEur(costJpy, eurRate || 1);
-    const idealWs = calcWholesaleEur(costEur, e.markup);
-    const ref     = calcRetailRefEur(idealWs, e.retailRate);
+    const idealWs = calcWholesaleEur(costEur, e.markup);     // suggestion for WS Price
+    const ref     = calcRetailRefEur(e.wsPrice, e.retailRate); // suggestion for Retail (from manual WS)
     return { costJpy, costEur, idealWs, ref };
   };
 
@@ -222,6 +223,7 @@ export function ProductCostForm({
         colors.map((c, i) => ({
           productColorId: c.productColorId,
           markupRate:     v.colorEdits[i]?.markup ?? 3.0,
+          wholesaleEur:   v.colorEdits[i]?.wsPrice ?? 0,
           retailRate:     v.colorEdits[i]?.retailRate ?? 3.5,
           retailPriceEur: v.colorEdits[i]?.retailPrice ?? 0,
         }))
@@ -418,6 +420,7 @@ export function ProductCostForm({
                     <th className="font-medium pb-1.5 px-2">Cost €</th>
                     <th className="font-medium pb-1.5 px-2">× Markup</th>
                     <th className="font-medium pb-1.5 px-2">Ideal WS €</th>
+                    <th className="font-medium pb-1.5 px-2">WS Price €</th>
                     <th className="font-medium pb-1.5 px-2">× Retail</th>
                     <th className="font-medium pb-1.5 px-2">Retail (ref) €</th>
                     <th className="font-medium pb-1.5 pl-2">Retail Price €</th>
@@ -437,6 +440,15 @@ export function ProductCostForm({
                             className="w-14 px-1.5 py-1 border border-gray-300 rounded text-xs text-right focus:outline-none focus:ring-1 focus:ring-gray-900 bg-white" />
                         </td>
                         <td className="px-2 text-gray-400">€{fmtEur(calc.idealWs)}</td>
+                        <td className="px-2">
+                          <div className="flex items-center gap-1 justify-end">
+                            <button type="button" onClick={() => setColorField(i, "wsPrice", Number(calc.idealWs.toFixed(2)))}
+                              className="text-[10px] text-blue-600 hover:underline">use ref</button>
+                            <input type="number" min="0" step={0.01} value={e.wsPrice || ""} placeholder="0.00"
+                              onChange={(ev) => setColorField(i, "wsPrice", Number(ev.target.value))}
+                              className="w-20 px-1.5 py-1 border border-gray-400 rounded text-xs text-right font-semibold focus:outline-none focus:ring-1 focus:ring-gray-900 bg-white" />
+                          </div>
+                        </td>
                         <td className="px-2">
                           <input type="number" min="0" step={0.1} value={e.retailRate || ""} onChange={(ev) => setColorField(i, "retailRate", Number(ev.target.value))}
                             className="w-14 px-1.5 py-1 border border-gray-300 rounded text-xs text-right focus:outline-none focus:ring-1 focus:ring-gray-900 bg-white" />

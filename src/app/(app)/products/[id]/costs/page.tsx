@@ -30,7 +30,7 @@ export default async function ProductCostsPage({ params }: { params: Promise<{ i
     supabase.from("product_materials").select("material_id, usage_amount, material_group").eq("product_id", id),
     supabase
       .from("product_colors")
-      .select("id, material_color_id, markup_rate, retail_rate, retail_price_eur, sort_order, material_colors(color, set_price_jpy)")
+      .select("id, material_color_id, markup_rate, wholesale_eur, retail_rate, retail_price_eur, sort_order, material_colors(color, set_price_jpy)")
       .eq("product_id", id)
       .order("sort_order"),
   ]);
@@ -44,6 +44,7 @@ export default async function ProductCostsPage({ params }: { params: Promise<{ i
     color:           pc.material_colors?.color ?? "—",
     mainSetPriceJpy: pc.material_colors?.set_price_jpy != null ? Number(pc.material_colors.set_price_jpy) : mainBaseSetPrice,
     markupRate:      Number(pc.markup_rate ?? 3.0),
+    wholesaleEur:    Number(pc.wholesale_eur ?? 0),
     retailRate:      Number(pc.retail_rate ?? 3.5),
     retailPriceEur:  Number(pc.retail_price_eur ?? 0),
   }));
