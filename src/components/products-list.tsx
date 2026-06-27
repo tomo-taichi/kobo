@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useTransition } from "react";
 import Link from "next/link";
-import { duplicateProduct, deleteProduct, updateProductRetailPrice, updateProductRetailRate } from "@/app/actions/products";
+import { duplicateProduct, deleteProduct } from "@/app/actions/products";
 
 export type ProductRow = {
   id: string;
@@ -14,11 +14,12 @@ export type ProductRow = {
   is_sample: boolean;
   is_invalid: boolean;
   wholesale_eur: number | null;
-  retail_rate: number | null;
   retail_price_eur: number | null;
   main_m_name: string | null;
   main_m_color: string | null;
   seasons: { id: string; name: string } | null;
+  // Enabled colours with per-colour pricing (product_colors)
+  product_colors?: { retail_price_eur: number | null; wholesale_eur: number | null; material_colors: { color: string } | null }[];
 };
 
 type Season = { id: string; name: string };
@@ -47,25 +48,29 @@ function fmtId(raw: string | null): string {
   return "P" + String(n).padStart(6, "0");
 }
 
-function eurInt(v: number | null | undefined): string | null {
-  if (v == null) return null;
+function eurInt(v: number | null | undefined): string {
+  if (v == null) return "—";
   return `€${Math.round(v).toLocaleString("en-US")}`;
 }
 
-function fmtEur(v: number | null, bold = false) {
-  if (!v && v !== 0) return <span className="text-gray-300">—</span>;
-  const formatted = v.toLocaleString("en-US", { maximumFractionDigits: 0 });
-  return (
-    <span className={bold ? "font-semibold text-gray-800" : "text-gray-500"}>
-      €{formatted}
-    </span>
-  );
+// A € range across the product's enabled colours (single value if all equal), with a fallback.
+function priceRange(vals: number[], fallback: number | null): string {
+  const xs = vals.filter((v) => v > 0);
+  if (xs.length === 0) return fallback && fallback > 0 ? eurInt(fallback) : "—";
+  const min = Math.min(...xs), max = Math.max(...xs);
+  return min === max ? eurInt(min) : `${eurInt(min)}–${eurInt(max)}`;
 }
 
-// Retail (ref) = Ideal WS (EUR) × Retail Margin Rate — a suggestion, not the stored price
-function retailRef(idealWs: number | null, rate: number | null): number | null {
-  if (idealWs == null || rate == null) return null;
-  return idealWs * rate;
+function colourNamesOf(p: ProductRow): string {
+  const names = (p.product_colors ?? []).map((c) => c.material_colors?.color).filter(Boolean) as string[];
+  if (names.length > 0) return names.join(", ");
+  return p.main_m_color ?? "—";
+}
+function idealWsOf(p: ProductRow): string {
+  return priceRange((p.product_colors ?? []).map((c) => Number(c.wholesale_eur ?? 0)), p.wholesale_eur);
+}
+function retailOf(p: ProductRow): string {
+  return priceRange((p.product_colors ?? []).map((c) => Number(c.retail_price_eur ?? 0)), p.retail_price_eur);
 }
 
 function groupBy<T>(items: T[], key: (item: T) => string): [string, T[]][] {
@@ -100,98 +105,6 @@ function DupButton({ productId }: { productId: string }) {
     >
       {pending ? "…" : "Dup"}
     </button>
-  );
-}
-
-// ─── Retail Price inline editor (the Order-adopted price, set manually) ───
-function RetailPriceEditor({
-  productId, retail, onSave,
-}: {
-  productId: string;
-  retail: number | null;
-  onSave: (productId: string, retail: number) => void;
-}) {
-  const [editing, setEditing] = useState(false);
-  const [draft,   setDraft]   = useState("");
-
-  function commit() {
-    const v = parseFloat(draft);
-    if (!isNaN(v) && v >= 0) {
-      onSave(productId, v);
-      updateProductRetailPrice(productId, v);
-    }
-    setEditing(false);
-  }
-
-  if (editing) {
-    return (
-      <input
-        type="number" step="1" min="0" value={draft} autoFocus
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={commit}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") { e.preventDefault(); commit(); }
-          if (e.key === "Escape") setEditing(false);
-        }}
-        className="w-16 text-xs text-right font-mono border border-blue-400 rounded px-1 focus:outline-none"
-      />
-    );
-  }
-
-  return (
-    <span
-      title="Double-click to edit"
-      onDoubleClick={() => { setDraft(String(retail ?? "")); setEditing(true); }}
-      className="cursor-default select-none hover:bg-gray-100 rounded px-0.5 tabular-nums font-mono font-semibold text-gray-700"
-    >
-      {retail ? `€${retail.toLocaleString("en-US", { maximumFractionDigits: 0 })}` : <span className="text-gray-300">—</span>}
-    </span>
-  );
-}
-
-// ─── Retail Margin Rate inline editor (double-click; drives Retail (ref) only) ───
-function MarginRateEditor({
-  productId, rate, onSave,
-}: {
-  productId: string;
-  rate: number | null;
-  onSave: (productId: string, rate: number) => void;
-}) {
-  const [editing, setEditing] = useState(false);
-  const [draft,   setDraft]   = useState("");
-
-  function commit() {
-    const v = parseFloat(draft);
-    if (!isNaN(v) && v > 0) {
-      onSave(productId, v);
-      updateProductRetailRate(productId, v);
-    }
-    setEditing(false);
-  }
-
-  if (editing) {
-    return (
-      <input
-        type="number" step="0.1" min="0" value={draft} autoFocus
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={commit}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") { e.preventDefault(); commit(); }
-          if (e.key === "Escape") setEditing(false);
-        }}
-        className="w-12 text-xs text-right font-mono border border-blue-400 rounded px-1 focus:outline-none"
-      />
-    );
-  }
-
-  return (
-    <span
-      title="Double-click to edit"
-      onDoubleClick={() => { setDraft(String(rate ?? "")); setEditing(true); }}
-      className="cursor-default select-none hover:bg-gray-100 rounded px-0.5 tabular-nums text-gray-500 font-mono"
-    >
-      {rate ? `×${rate}` : <span className="text-gray-300">—</span>}
-    </span>
   );
 }
 
@@ -253,23 +166,9 @@ function RowDeleteButton({ productId, label }: { productId: string; label: strin
 }
 
 // ─── Compact row (grouped modes) ─────────────────────────────────────
-// Season / Sex / Model / Category live in the group header, so they are not
-// repeated per row. `showModel` is true only for "By Material" grouping, where
-// the model is not in the group header.
-function CompactRow({
-  p, showModel = false, retailOverride, onRetailSave, rateOverride, onRateSave,
-}: {
-  p: ProductRow;
-  showModel?: boolean;
-  retailOverride?: number;
-  onRetailSave: (productId: string, retail: number) => void;
-  rateOverride?: number;
-  onRateSave: (productId: string, rate: number) => void;
-}) {
-  const retail = retailOverride ?? p.retail_price_eur;
-  const rate   = rateOverride ?? p.retail_rate;
-  const ref    = retailRef(p.wholesale_eur, rate);
-
+// Season / Sex / Model / Category live in the group header. Prices are a read-only
+// per-colour summary (Ideal WS / Retail ranges); edit per colour in the cost form.
+function CompactRow({ p, showModel = false }: { p: ProductRow; showModel?: boolean }) {
   return (
     <div className={`flex items-center gap-2 px-4 py-1.5 hover:bg-gray-50 transition-colors text-xs ${p.is_invalid ? "opacity-40" : ""}`}>
       <span className="font-mono text-gray-400 w-24 shrink-0">
@@ -284,25 +183,17 @@ function CompactRow({
       )}
 
       {/* Main Material */}
-      <span className="w-44 shrink-0 truncate text-gray-600">{p.main_m_name ?? "—"}</span>
+      <span className="w-40 shrink-0 truncate text-gray-600">{p.main_m_name ?? "—"}</span>
 
-      {/* Color */}
-      <span className="w-24 shrink-0 truncate text-gray-500">{p.main_m_color ?? "—"}</span>
+      {/* Enabled colours */}
+      <span className="w-32 shrink-0 truncate text-gray-500" title={colourNamesOf(p)}>{colourNamesOf(p)}</span>
 
       <div className="w-px self-stretch bg-gray-200 mx-1" />
 
-      {/* Ideal WS (reference) */}
-      <span className="w-16 text-right font-mono text-gray-400 shrink-0">{eurInt(p.wholesale_eur) ?? "—"}</span>
-      {/* Retail Margin Rate — double-click to edit */}
-      <div className="w-12 text-right shrink-0">
-        <MarginRateEditor productId={p.id} rate={rate} onSave={onRateSave} />
-      </div>
-      {/* Retail (ref) = Ideal WS × Retail Margin Rate */}
-      <span className="w-16 text-right font-mono text-gray-400 shrink-0">{eurInt(ref) ?? "—"}</span>
-      {/* Retail (EUR) — Order-adopted price, editable inline */}
-      <div className="w-20 text-right shrink-0">
-        <RetailPriceEditor productId={p.id} retail={retail} onSave={onRetailSave} />
-      </div>
+      {/* Ideal WS (range, read-only) */}
+      <span className="w-20 text-right font-mono text-gray-400 shrink-0">{idealWsOf(p)}</span>
+      {/* Retail (range, read-only) — Order-adopted price, edited per colour in the cost form */}
+      <span className="w-24 text-right font-mono font-semibold text-gray-700 shrink-0">{retailOf(p)}</span>
 
       <div className="w-px self-stretch bg-gray-200 mx-1" />
 
@@ -339,13 +230,11 @@ function CompactColHeader({ showModel = false }: { showModel?: boolean }) {
     <div className="flex items-center gap-2 px-4 py-1 bg-white border-b border-gray-200 text-[10px] text-gray-400 uppercase tracking-wide">
       <span className="w-24 shrink-0">ID</span>
       {showModel && <span className="w-40 shrink-0">Model</span>}
-      <span className="w-44 shrink-0">Material</span>
-      <span className="w-24 shrink-0">Color</span>
+      <span className="w-40 shrink-0">Material</span>
+      <span className="w-32 shrink-0">Colours</span>
       <div className="w-px mx-1" />
-      <span className="w-16 text-right shrink-0">Ideal WS</span>
-      <span className="w-12 text-right shrink-0">Margin</span>
-      <span className="w-16 text-right shrink-0">Retail (ref)</span>
-      <span className="w-20 text-right shrink-0">Retail (EUR)</span>
+      <span className="w-20 text-right shrink-0">Ideal WS</span>
+      <span className="w-24 text-right shrink-0">Retail (EUR)</span>
       <div className="w-px mx-1" />
       <span className="w-32 shrink-0" />
     </div>
@@ -364,11 +253,11 @@ function MetaCell({ label, value, mono }: { label: string; value: string | null;
   );
 }
 
-function PriceCell({ label, value, muted }: { label: string; value: React.ReactNode; muted?: boolean }) {
+function PriceCell({ label, value, bold }: { label: string; value: string; bold?: boolean }) {
   return (
     <div className="flex items-baseline gap-1">
-      <span className={`shrink-0 ${muted ? "text-gray-400" : "text-gray-500"}`}>{label}</span>
-      <span className="font-mono">{value}</span>
+      <span className="shrink-0 text-gray-400">{label}</span>
+      <span className={`font-mono ${bold ? "font-semibold text-gray-800" : "text-gray-500"}`}>{value}</span>
     </div>
   );
 }
@@ -380,21 +269,11 @@ export function ProductsList({ products, seasons }: { products: ProductRow[]; se
   const [filterCategory, setFilterCategory] = useState("");
   const [sortBy,         setSortBy]         = useState<SortKey>("name");
   const [layoutMode,     setLayoutMode]     = useState<LayoutMode>("flat");
-  const [retailOverrides, setRetailOverrides] = useState<Record<string, number>>({});
-  const [rateOverrides,   setRateOverrides]   = useState<Record<string, number>>({});
 
   const categories = useMemo(
     () => Array.from(new Set(products.map((p) => p.product_category).filter(Boolean))).sort() as string[],
     [products]
   );
-
-  function handleRetailSave(productId: string, retail: number) {
-    setRetailOverrides((prev) => ({ ...prev, [productId]: retail }));
-  }
-
-  function handleRateSave(productId: string, rate: number) {
-    setRateOverrides((prev) => ({ ...prev, [productId]: rate }));
-  }
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -402,7 +281,7 @@ export function ProductsList({ products, seasons }: { products: ProductRow[]; se
       if (q) {
         const matchModel    = p.model_name?.toLowerCase().includes(q);
         const matchMaterial = p.main_m_name?.toLowerCase().includes(q);
-        const matchColor    = p.main_m_color?.toLowerCase().includes(q);
+        const matchColor    = colourNamesOf(p).toLowerCase().includes(q);
         const matchId       = fmtId(p.product_number).toLowerCase().includes(q);
         if (!matchModel && !matchMaterial && !matchColor && !matchId) return false;
       }
@@ -433,9 +312,7 @@ export function ProductsList({ products, seasons }: { products: ProductRow[]; se
         {groups.map(([model, rows]) => (
           <div key={model}>
             <GroupHeader label={model} count={rows.length} meta={groupMeta(rows)} />
-            {rows.map((p) => (
-              <CompactRow key={p.id} p={p} retailOverride={retailOverrides[p.id]} onRetailSave={handleRetailSave} rateOverride={rateOverrides[p.id]} onRateSave={handleRateSave} />
-            ))}
+            {rows.map((p) => <CompactRow key={p.id} p={p} />)}
           </div>
         ))}
       </>
@@ -455,9 +332,7 @@ export function ProductsList({ products, seasons }: { products: ProductRow[]; se
               {innerGroups.map(([mat, matRows]) => (
                 <div key={mat}>
                   <GroupHeader label={mat} count={matRows.length} level={1} />
-                  {matRows.map((p) => (
-                    <CompactRow key={p.id} p={p} retailOverride={retailOverrides[p.id]} onRetailSave={handleRetailSave} rateOverride={rateOverrides[p.id]} onRateSave={handleRateSave} />
-                  ))}
+                  {matRows.map((p) => <CompactRow key={p.id} p={p} />)}
                 </div>
               ))}
             </div>
@@ -475,9 +350,7 @@ export function ProductsList({ products, seasons }: { products: ProductRow[]; se
         {groups.map(([mat, rows]) => (
           <div key={mat}>
             <GroupHeader label={mat} count={rows.length} />
-            {rows.map((p) => (
-              <CompactRow key={p.id} p={p} showModel retailOverride={retailOverrides[p.id]} onRetailSave={handleRetailSave} rateOverride={rateOverrides[p.id]} onRateSave={handleRateSave} />
-            ))}
+            {rows.map((p) => <CompactRow key={p.id} p={p} showModel />)}
           </div>
         ))}
       </>
@@ -489,59 +362,50 @@ export function ProductsList({ products, seasons }: { products: ProductRow[]; se
   function renderFlat(items: ProductRow[]) {
     return (
       <div className="divide-y divide-gray-100">
-        {items.map((p) => {
-          const retail = retailOverrides[p.id] ?? p.retail_price_eur;
-          const rate   = rateOverrides[p.id] ?? p.retail_rate;
-          const ref    = retailRef(p.wholesale_eur, rate);
-          return (
-            <div key={p.id} className={`px-4 py-3 hover:bg-gray-50 transition-colors ${p.is_invalid ? "opacity-40" : ""}`}>
-              {/* Row 1: Model Name + badges + actions */}
-              <div className="flex items-start justify-between gap-4 mb-1.5">
-                <div className="flex items-center gap-2 flex-wrap min-w-0">
-                  <Link href={`/products/${p.id}/edit`}
-                    className="text-sm font-medium text-gray-900 hover:text-gray-600 hover:underline">
-                    {p.model_name ?? "—"}
-                  </Link>
-                  {p.is_sample && (
-                    <span className="text-[10px] font-medium bg-yellow-100 text-yellow-700 px-1.5 py-0.5 rounded shrink-0">SAMPLE</span>
-                  )}
-                  {p.is_invalid && (
-                    <span className="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded shrink-0">invalid</span>
-                  )}
-                </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  <Link href={`/products/${p.id}/edit`}
-                    className="text-xs text-gray-400 hover:text-gray-800 border border-gray-200 rounded px-2 py-0.5 hover:border-gray-400">
-                    Edit
-                  </Link>
-                  <DupButton productId={p.id} />
-                  <RowDeleteButton productId={p.id} label={p.model_name} />
-                </div>
+        {items.map((p) => (
+          <div key={p.id} className={`px-4 py-3 hover:bg-gray-50 transition-colors ${p.is_invalid ? "opacity-40" : ""}`}>
+            {/* Row 1: Model Name + badges + actions */}
+            <div className="flex items-start justify-between gap-4 mb-1.5">
+              <div className="flex items-center gap-2 flex-wrap min-w-0">
+                <Link href={`/products/${p.id}/edit`}
+                  className="text-sm font-medium text-gray-900 hover:text-gray-600 hover:underline">
+                  {p.model_name ?? "—"}
+                </Link>
+                {p.is_sample && (
+                  <span className="text-[10px] font-medium bg-yellow-100 text-yellow-700 px-1.5 py-0.5 rounded shrink-0">SAMPLE</span>
+                )}
+                {p.is_invalid && (
+                  <span className="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded shrink-0">invalid</span>
+                )}
               </div>
-
-              {/* Row 2: meta + pricing */}
-              <div className="flex items-start gap-5 text-xs flex-wrap">
-                <div className="grid grid-cols-2 gap-x-5 gap-y-0.5 min-w-[220px]">
-                  <MetaCell label="Material" value={p.main_m_name} />
-                  <MetaCell label="Color"    value={p.main_m_color} />
-                  <MetaCell label="Season"   value={p.seasons?.name ?? null} />
-                  <MetaCell label="Category" value={p.product_category} />
-                  <MetaCell label="Sex"      value={p.product_sex} />
-                  <MetaCell label="ID"       value={fmtId(p.product_number)} mono />
-                </div>
-                <div className="border-l border-gray-200 self-stretch" />
-                <div className="grid grid-cols-2 gap-x-5 gap-y-0.5">
-                  <PriceCell label="Ideal WS"     value={fmtEur(p.wholesale_eur)} muted />
-                  <PriceCell label="Margin"       value={<MarginRateEditor productId={p.id} rate={rate} onSave={handleRateSave} />} muted />
-                  <PriceCell label="Retail (ref)" value={fmtEur(ref)} muted />
-                  <PriceCell label="Retail (EUR)" value={
-                    <RetailPriceEditor productId={p.id} retail={retail} onSave={handleRetailSave} />
-                  } />
-                </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <Link href={`/products/${p.id}/edit`}
+                  className="text-xs text-gray-400 hover:text-gray-800 border border-gray-200 rounded px-2 py-0.5 hover:border-gray-400">
+                  Edit
+                </Link>
+                <DupButton productId={p.id} />
+                <RowDeleteButton productId={p.id} label={p.model_name} />
               </div>
             </div>
-          );
-        })}
+
+            {/* Row 2: meta + pricing */}
+            <div className="flex items-start gap-5 text-xs flex-wrap">
+              <div className="grid grid-cols-2 gap-x-5 gap-y-0.5 min-w-[220px]">
+                <MetaCell label="Material" value={p.main_m_name} />
+                <MetaCell label="Colours"  value={colourNamesOf(p)} />
+                <MetaCell label="Season"   value={p.seasons?.name ?? null} />
+                <MetaCell label="Category" value={p.product_category} />
+                <MetaCell label="Sex"      value={p.product_sex} />
+                <MetaCell label="ID"       value={fmtId(p.product_number)} mono />
+              </div>
+              <div className="border-l border-gray-200 self-stretch" />
+              <div className="grid grid-cols-2 gap-x-5 gap-y-0.5">
+                <PriceCell label="Ideal WS" value={idealWsOf(p)} />
+                <PriceCell label="Retail (EUR)" value={retailOf(p)} bold />
+              </div>
+            </div>
+          </div>
+        ))}
         {!items.length && (
           <div className="px-4 py-10 text-center text-sm text-gray-400">No products found</div>
         )}

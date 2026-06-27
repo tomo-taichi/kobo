@@ -12,8 +12,9 @@ export default async function ProductsPage() {
       .select(
         "id, product_number, name, model_name, product_category, product_sex, " +
         "is_sample, is_invalid, " +
-        "wholesale_eur, retail_rate, retail_price_eur, " +
-        "main_m_name, main_m_color, seasons(id, name)"
+        "wholesale_eur, retail_price_eur, " +
+        "main_m_name, main_m_color, seasons(id, name), " +
+        "product_colors(retail_price_eur, wholesale_eur, material_colors(color))"
       )
       .order("name"),
   ]);
