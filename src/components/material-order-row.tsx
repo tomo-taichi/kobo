@@ -5,8 +5,10 @@ import { saveMaterialOrder } from "@/app/actions/material-orders";
 
 type Props = {
   seasonId: string;
+  materialColorId: string;
   materialId: string;
   materialName: string;
+  colour: string;
   unitType: string;
   totalUsage: number;
   initialSampleRemaining: number;
@@ -16,8 +18,10 @@ type Props = {
 
 export function MaterialOrderRow({
   seasonId,
+  materialColorId,
   materialId,
   materialName,
+  colour,
   unitType,
   totalUsage,
   initialSampleRemaining,
@@ -35,7 +39,7 @@ export function MaterialOrderRow({
   async function handleSave() {
     setSaving(true);
     setSaved(false);
-    await saveMaterialOrder(seasonId, materialId, sampleRemaining, orderQty, notes || null);
+    await saveMaterialOrder(seasonId, materialColorId, materialId, sampleRemaining, orderQty, notes || null);
     setSaving(false);
     setSaved(true);
   }
@@ -43,6 +47,7 @@ export function MaterialOrderRow({
   return (
     <tr className="hover:bg-gray-50">
       <td className="px-4 py-3 text-gray-900">{materialName}</td>
+      <td className="px-4 py-3 text-gray-700">{colour}</td>
       <td className="px-4 py-3 text-right font-mono text-gray-700">
         {totalUsage.toFixed(2)} {unitType}
       </td>

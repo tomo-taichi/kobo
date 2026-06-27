@@ -12,82 +12,84 @@ export default async function MaterialOrdersPage({ params }: { params: Promise<{
   const season: any = seasonResult.data;
   if (!season) notFound();
 
-  // Fetch all products in this season with their materials
-  const productsResult = await supabase
-    .from("products")
-    .select("id")
-    .eq("season_id", seasonId)
-    .eq("is_invalid", false);
-  const productIds = (productsResult.data ?? []).map((p) => p.id);
+  // Order lines in this season: each carries its main colour (product_colors) and quantity.
+  const orderItemsResult = await supabase
+    .from("order_items")
+    .select("product_id, product_colors(material_color_id), order_item_sizes(quantity), orders!inner(season_id)")
+    .eq("orders.season_id", seasonId);
+  const orderItems: any[] = orderItemsResult.data ?? [];
+  const productIds = Array.from(new Set(orderItems.map((it) => it.product_id)));
 
-  if (productIds.length === 0) {
+  if (orderItems.length === 0) {
     return (
       <div className="space-y-6">
         <Link href="/seasons" className="text-sm text-gray-500 hover:text-gray-900">← Season List</Link>
         <h1 className="text-2xl font-semibold text-gray-900">Material Order: {season.name}</h1>
-        <p className="text-gray-400 text-sm">No products in this season</p>
+        <p className="text-gray-400 text-sm">No ordered products in this season yet</p>
       </div>
     );
   }
 
-  // Fetch product_materials for this season's products
-  const pmResult = await supabase
-    .from("product_materials")
-    .select("product_id, material_id, usage_amount, materials(id, name, unit_type, unit_price_jpy)")
-    .in("product_id", productIds);
+  const [productsResult, pmResult, materialColorsResult, moResult] = await Promise.all([
+    supabase
+      .from("products")
+      .select("id, main_material_id, main_m_quantity, lining_material_id, lining_m_quantity, lining_material_color_id")
+      .in("id", productIds),
+    supabase
+      .from("product_materials")
+      .select("product_id, material_id, usage_amount, material_color_id")
+      .in("product_id", productIds),
+    supabase.from("material_colors").select("id, color, materials(id, name, unit_type)"),
+    supabase.from("material_orders").select("material_color_id, sample_remaining, order_qty, notes").eq("season_id", seasonId),
+  ]);
 
-  // Aggregate total ordered quantity per product from orders in this season
-  const ordersResult = await supabase
-    .from("orders")
-    .select("id")
-    .eq("season_id", seasonId);
-  const orderIds = (ordersResult.data ?? []).map((o) => o.id);
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const sizesMap = new Map<string, number>(); // productId → total qty
-
-  if (orderIds.length > 0) {
-    const orderItemsResult = await supabase
-      .from("order_items")
-      .select("product_id, order_item_sizes(quantity)")
-      .in("order_id", orderIds);
-
-    for (const item of orderItemsResult.data ?? []) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const total = ((item as any).order_item_sizes ?? []).reduce(
-        (s: number, sz: { quantity: number }) => s + sz.quantity, 0
-      );
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const pid = (item as any).product_id;
-      sizesMap.set(pid, (sizesMap.get(pid) ?? 0) + total);
-    }
-  }
-
-  // Calculate total_usage per material
-  const materialUsageMap = new Map<string, { name: string; unitType: string; totalUsage: number }>();
+  const productsMap = new Map((productsResult.data ?? []).map((p: any) => [p.id, p]));
+  const pmsByProduct = new Map<string, any[]>();
   for (const pm of pmResult.data ?? []) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const mat: any = (pm as any).materials;
-    if (!mat) continue;
-    const orderedQty = sizesMap.get(pm.product_id) ?? 0;
-    const usage = Number(pm.usage_amount) * orderedQty;
-    if (!materialUsageMap.has(pm.material_id)) {
-      materialUsageMap.set(pm.material_id, { name: mat.name, unitType: mat.unit_type, totalUsage: 0 });
-    }
-    materialUsageMap.get(pm.material_id)!.totalUsage += usage;
+    const arr = pmsByProduct.get(pm.product_id) ?? [];
+    arr.push(pm);
+    pmsByProduct.set(pm.product_id, arr);
   }
 
-  // Fetch existing material_orders for this season
-  const moResult = await supabase
-    .from("material_orders")
-    .select("material_id, sample_remaining, order_qty, notes")
-    .eq("season_id", seasonId);
+  // Aggregate usage by material colour: main → the order line's colour;
+  // lining & additional materials → their pinned colour. usage = per-unit × ordered qty.
+  const usageByColor = new Map<string, number>();
+  const add = (mcId: string | null | undefined, amt: number) => {
+    if (!mcId || !amt) return;
+    usageByColor.set(mcId, (usageByColor.get(mcId) ?? 0) + amt);
+  };
+  for (const it of orderItems) {
+    const qty = (it.order_item_sizes ?? []).reduce((s: number, r: any) => s + (r.quantity ?? 0), 0);
+    if (qty <= 0) continue;
+    const p: any = productsMap.get(it.product_id);
+    if (!p) continue;
+    const mainColor = it.product_colors?.material_color_id as string | undefined;
+    if (p.main_material_id) add(mainColor, Number(p.main_m_quantity ?? 0) * qty);
+    if (p.lining_material_id) add(p.lining_material_color_id, Number(p.lining_m_quantity ?? 0) * qty);
+    for (const pm of pmsByProduct.get(it.product_id) ?? []) {
+      add(pm.material_color_id, Number(pm.usage_amount ?? 0) * qty);
+    }
+  }
 
-  const moMap = new Map((moResult.data ?? []).map((mo) => [mo.material_id, mo]));
+  const mcMap = new Map((materialColorsResult.data ?? []).map((mc: any) => [mc.id, mc]));
+  const moMap = new Map((moResult.data ?? []).map((mo: any) => [mo.material_color_id, mo]));
 
-  const materialRows = Array.from(materialUsageMap.entries())
-    .map(([materialId, data]) => ({ materialId, ...data, mo: moMap.get(materialId) }))
-    .sort((a, b) => a.name.localeCompare(b.name, "ja"));
+  const rows = Array.from(usageByColor.entries())
+    .map(([materialColorId, totalUsage]) => {
+      const mc: any = mcMap.get(materialColorId);
+      const mo: any = moMap.get(materialColorId);
+      return {
+        materialColorId,
+        materialId: mc?.materials?.id ?? null,
+        materialName: mc?.materials?.name ?? "—",
+        colour: mc?.color ?? "—",
+        unitType: mc?.materials?.unit_type ?? "",
+        totalUsage,
+        mo,
+      };
+    })
+    .filter((r) => r.materialId)
+    .sort((a, b) => (a.materialName.localeCompare(b.materialName, "ja") || a.colour.localeCompare(b.colour)));
 
   return (
     <div className="space-y-6">
@@ -96,14 +98,15 @@ export default async function MaterialOrdersPage({ params }: { params: Promise<{
       </div>
       <h1 className="text-2xl font-semibold text-gray-900">Material Order: {season.name}</h1>
 
-      {materialRows.length === 0 ? (
-        <p className="text-gray-400 text-sm">No products with materials configured</p>
+      {rows.length === 0 ? (
+        <p className="text-gray-400 text-sm">No materials with colours configured on the ordered products</p>
       ) : (
         <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Material</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">Colour</th>
                 <th className="text-right px-4 py-3 font-medium text-gray-600">Total Usage</th>
                 <th className="text-right px-4 py-3 font-medium text-gray-600">Sample Remaining</th>
                 <th className="text-right px-4 py-3 font-medium text-gray-600">Net Required</th>
@@ -113,12 +116,14 @@ export default async function MaterialOrdersPage({ params }: { params: Promise<{
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {materialRows.map((row) => (
+              {rows.map((row) => (
                 <MaterialOrderRow
-                  key={row.materialId}
+                  key={row.materialColorId}
                   seasonId={seasonId}
-                  materialId={row.materialId}
-                  materialName={row.name}
+                  materialColorId={row.materialColorId}
+                  materialId={row.materialId as string}
+                  materialName={row.materialName}
+                  colour={row.colour}
                   unitType={row.unitType}
                   totalUsage={row.totalUsage}
                   initialSampleRemaining={Number(row.mo?.sample_remaining ?? 0)}
