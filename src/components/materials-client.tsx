@@ -9,7 +9,7 @@ import {
   isFabric,
   getMaterialStatus,
 } from "@/lib/material-constants";
-import { updateMaterialField, duplicateMaterial } from "@/app/actions/materials";
+import { updateMaterialField, updateMaterialFirstColorPrice, duplicateMaterial } from "@/app/actions/materials";
 
 type CompEntry = { label: string | null; pct: number | null };
 type ColorEntry = { color: string; unitPrice: number | null; setPrice: number | null };
@@ -88,15 +88,26 @@ export function MaterialsClient({
   const commitEdit = useCallback(async () => {
     if (!editCell) return;
     setSaving(true);
-    await updateMaterialField(editCell.id, editCell.field as any, editValue);
-    setMaterials((prev) => prev.map((m) => {
-      if (m.id !== editCell.id) return m;
-      const field = editCell.field;
-      if (field === "name")      return { ...m, name: editValue };
-      if (field === "category")  return { ...m, category: editValue };
-      if (field === "season_id") return { ...m, season_id: editValue || null, seasons: seasons.find((s) => s.id === editValue) ?? null };
-      return m;
-    }));
+    const { id, field } = editCell;
+    if (field === "unit_price_jpy" || field === "set_price_jpy") {
+      const v = Number(editValue);
+      await updateMaterialFirstColorPrice(id, field, v);
+      const ck = field === "unit_price_jpy" ? "unitPrice" : "setPrice";
+      setMaterials((prev) => prev.map((m) => {
+        if (m.id !== id) return m;
+        const colors = m.colors.length > 0 ? m.colors.map((c, i) => (i === 0 ? { ...c, [ck]: v } : c)) : m.colors;
+        return { ...m, [field]: v, colors };
+      }));
+    } else {
+      await updateMaterialField(id, field as any, editValue);
+      setMaterials((prev) => prev.map((m) => {
+        if (m.id !== id) return m;
+        if (field === "name")      return { ...m, name: editValue };
+        if (field === "category")  return { ...m, category: editValue };
+        if (field === "season_id") return { ...m, season_id: editValue || null, seasons: seasons.find((s) => s.id === editValue) ?? null };
+        return m;
+      }));
+    }
     setSaving(false);
     setEditCell(null);
   }, [editCell, editValue, seasons]);
@@ -193,6 +204,28 @@ export function MaterialsClient({
     );
   }
 
+  function numberCell(m: Material, field: "unit_price_jpy" | "set_price_jpy", value: number) {
+    const editing = isEditing(m.id, field);
+    return editing ? (
+      <td className="px-3 py-1.5 text-right">
+        <input
+          ref={inputRef as React.RefObject<HTMLInputElement>}
+          type="number" min="0" step="1"
+          value={editValue}
+          onChange={(e) => setEditValue(e.target.value)}
+          onBlur={commitEdit}
+          onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); if (e.key === "Escape") cancelEdit(); }}
+          disabled={saving}
+          className={inputBaseCls + " text-right w-28"}
+        />
+      </td>
+    ) : (
+      <td className={editableCls + " text-right"} onDoubleClick={() => startEdit(m.id, field, String(value))}>
+        {value.toLocaleString("en-GB")}
+      </td>
+    );
+  }
+
   function renderRow(m: Material) {
     const status = getMaterialStatus({
       set_price_jpy: m.set_price_jpy,
@@ -245,11 +278,11 @@ export function MaterialsClient({
           {formatComps(m.comps) || <span className="text-gray-300">—</span>}
         </td>
 
-        {/* Unit Price — first colour's (read-only) */}
-        <td className={`${cellCls} text-right`}>{firstUnit.toLocaleString("en-GB")}</td>
+        {/* Unit Price — first colour's (double-click to edit) */}
+        {numberCell(m, "unit_price_jpy", firstUnit)}
 
-        {/* Set Price — first colour's (read-only) */}
-        <td className={`${cellCls} text-right`}>{firstSet.toLocaleString("en-GB")}</td>
+        {/* Set Price — first colour's (double-click to edit) */}
+        {numberCell(m, "set_price_jpy", firstSet)}
 
         {/* Status — derived, not editable */}
         <td className={`${cellCls} text-center`}>
@@ -376,7 +409,7 @@ export function MaterialsClient({
 
       <div className="px-4 py-2 text-xs text-gray-400 border-t border-gray-100">
         {filtered.length} / {materials.length} items
-        <span className="ml-3 text-gray-300">— prices shown are the first colour&apos;s; double-click Name / Season / Category to edit, or open Edit for all colours</span>
+        <span className="ml-3 text-gray-300">— prices are the first colour&apos;s; double-click Name / Season / Category / Unit / Set Price to edit, or open Edit for all colours</span>
       </div>
     </div>
   );

@@ -175,6 +175,28 @@ export async function updateMaterialSetPrice(id: string, set_price_jpy: number):
   return updateMaterialField(id, "set_price_jpy", String(set_price_jpy));
 }
 
+// Inline edit (materials list) of the FIRST colour's Unit/Set price. Updates the first
+// material_colors row and mirrors it onto the material's base column.
+export async function updateMaterialFirstColorPrice(
+  materialId: string,
+  field: "unit_price_jpy" | "set_price_jpy",
+  value: number
+): Promise<string | null> {
+  if (field !== "unit_price_jpy" && field !== "set_price_jpy") return "Invalid field";
+  if (isNaN(value) || value < 0) return "Invalid number";
+  const supabase = await createClient();
+  const { error: baseErr } = await supabase.from("materials").update({ [field]: value }).eq("id", materialId);
+  if (baseErr) return baseErr.message;
+  const { data: first } = await supabase
+    .from("material_colors").select("id").eq("material_id", materialId).order("sort_order").limit(1).maybeSingle();
+  if (first) {
+    const { error: colErr } = await supabase.from("material_colors").update({ [field]: value }).eq("id", (first as { id: string }).id);
+    if (colErr) return colErr.message;
+  }
+  revalidatePath("/materials");
+  return null;
+}
+
 // Shared update logic (no redirect/revalidate). Returns an error message, or null on success.
 async function applyMaterialUpdate(formData: FormData): Promise<string | null> {
   const supabase = await createClient();
