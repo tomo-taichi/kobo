@@ -6,6 +6,7 @@ import { uploadProductImage, deleteProductImage, setProductImagePrimary } from "
 
 const MAIN_MAX = 2;
 const COLOR_MAX = 10;
+const MAX_UPLOAD_MB = 30; // must stay below next.config serverActions.bodySizeLimit
 
 export type ProductImage = {
   id: string;
@@ -95,6 +96,11 @@ function UploadTile({
   function handlePick(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (file.size > MAX_UPLOAD_MB * 1024 * 1024) {
+      setError(`Image too large (max ${MAX_UPLOAD_MB} MB)`);
+      if (inputRef.current) inputRef.current.value = "";
+      return;
+    }
     const fd = new FormData();
     fd.append("file", file);
     startTransition(async () => {
