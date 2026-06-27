@@ -99,15 +99,16 @@ export default async function OrderProductsPage({ params }: { params: Promise<{ 
         <div className="border border-gray-200 rounded-lg overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-xs whitespace-nowrap border-collapse">
+              {/* col widths: ID / Model / Material / Color / Retail / sizes… / Qty·Total / × */}
               <colgroup>
-                <col className="w-24" />   {/* ID */}
-                <col className="w-36" />   {/* Model */}
-                <col className="w-28" />   {/* Material */}
-                <col className="w-24" />   {/* Color */}
-                <col className="w-16" />   {/* Retail */}
+                <col className="w-24" />
+                <col className="w-36" />
+                <col className="w-28" />
+                <col className="w-24" />
+                <col className="w-16" />
                 {SIZES.map((s) => <col key={s} className="w-9" />)}
-                <col className="w-32" />   {/* Qty · Total */}
-                <col className="w-10" />   {/* × */}
+                <col className="w-32" />
+                <col className="w-10" />
               </colgroup>
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-200">
