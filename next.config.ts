@@ -2,9 +2,9 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   experimental: {
-    // Product photo uploads send the full-resolution original to a Server Action,
-    // which resizes it to WebP derivatives. Raise the default 1 MB body cap to
-    // comfortably fit large camera/phone photos (client guards at 30 MB).
+    // Allow larger Server Action request bodies (e.g. customer contract uploads, which
+    // still send a File through a Server Action). Product photos no longer rely on this —
+    // their originals upload straight to Supabase Storage from the browser.
     serverActions: {
       bodySizeLimit: "40mb",
     },

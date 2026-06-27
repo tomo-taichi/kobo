@@ -2,11 +2,13 @@
 
 import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { uploadProductImage, deleteProductImage, setProductImagePrimary } from "@/app/actions/product-images";
+import { createClient } from "@/lib/supabase/client";
+import { processProductImage, deleteProductImage, setProductImagePrimary } from "@/app/actions/product-images";
 
+const BUCKET = "product-images";
 const MAIN_MAX = 2;
 const COLOR_MAX = 10;
-const MAX_UPLOAD_MB = 30; // must stay below next.config serverActions.bodySizeLimit
+const MAX_UPLOAD_MB = 40; // originals upload straight to storage; stays under the bucket's size limit
 
 export type ProductImage = {
   id: string;
@@ -104,6 +106,7 @@ function Gallery({
   const full = remaining <= 0;
 
   const inputRef = useRef<HTMLInputElement>(null);
+  const [supabase] = useState(() => createClient());
   const [pending, startTransition] = useTransition();
   const [dragOver, setDragOver] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -114,18 +117,36 @@ function Gallery({
     const errs: string[] = [];
     if (imageFiles.length < picked.length) errs.push("Some files were skipped (not images)");
 
-    let slots = remaining;
+    // Take only what fits the remaining slots; flag the overflow.
+    const batch = imageFiles.slice(0, remaining);
+    if (imageFiles.length > remaining) errs.push(`Only ${remaining} more could be added (max ${max})`);
+
     startTransition(async () => {
+      // 1. Upload originals straight to storage (parallel, no body limit / multipart).
+      const temps = await Promise.all(
+        batch.map(async (file) => {
+          if (file.size > MAX_UPLOAD_MB * 1024 * 1024) {
+            errs.push(`${file.name}: too large (max ${MAX_UPLOAD_MB} MB)`);
+            return null;
+          }
+          const tempPath = `${productId}/tmp/${crypto.randomUUID()}`;
+          const { error: upErr } = await supabase.storage
+            .from(BUCKET)
+            .upload(tempPath, file, { contentType: file.type || "application/octet-stream", upsert: true });
+          if (upErr) { errs.push(`${file.name}: ${upErr.message}`); return null; }
+          return tempPath;
+        })
+      );
+
+      // 2. Process each into WebP derivatives (sequential, tiny JSON request bodies).
       let uploadedAny = false;
-      for (const file of imageFiles) {
-        if (slots <= 0) { errs.push(`Only ${remaining} more could be added (max ${max})`); break; }
-        if (file.size > MAX_UPLOAD_MB * 1024 * 1024) { errs.push(`${file.name}: too large (max ${MAX_UPLOAD_MB} MB)`); continue; }
-        const fd = new FormData();
-        fd.append("file", file);
-        const err = await uploadProductImage(productId, productColorId, fd);
-        if (err) { errs.push(`${file.name}: ${err}`); continue; }
-        slots--; uploadedAny = true;
+      for (const tempPath of temps) {
+        if (!tempPath) continue;
+        const err = await processProductImage(productId, productColorId, tempPath);
+        if (err) { errs.push(err); continue; }
+        uploadedAny = true;
       }
+
       if (inputRef.current) inputRef.current.value = "";
       setError(errs.length ? errs.join(" · ") : null);
       if (uploadedAny) onChanged();

@@ -33,34 +33,43 @@ async function countInGroup(
   return count ?? 0;
 }
 
-export async function uploadProductImage(
+// The browser uploads the original to `tempPath` in the bucket first (no Server Action
+// body limit, no multipart). This downloads it, resizes to WebP derivatives, deletes the
+// original, and records the row. Args are plain strings — a tiny JSON request body.
+export async function processProductImage(
   productId: string,
   productColorId: string | null,
-  formData: FormData
+  tempPath: string
 ): Promise<string | null> {
-  const file = formData.get("file") as File | null;
-  if (!file || file.size === 0) return "Please select an image";
-  if (!file.type.startsWith("image/")) return "File must be an image";
-
   const supabase = await createClient();
+  const cleanupTemp = () => supabase.storage.from(BUCKET).remove([tempPath]);
 
   const limit = productColorId ? MAX_COLOR_PHOTOS : MAX_MAIN_PHOTOS;
   const existing = await countInGroup(supabase, productId, productColorId);
   if (existing >= limit) {
+    await cleanupTemp();
     return productColorId
       ? `This colour already has the maximum of ${limit} photos`
       : `A product can have at most ${limit} main photos`;
   }
 
-  const bytes = await file.arrayBuffer();
+  const { data: blob, error: dlError } = await supabase.storage.from(BUCKET).download(tempPath);
+  if (dlError || !blob) {
+    return dlError?.message ?? "Uploaded file not found";
+  }
+  const bytes = await blob.arrayBuffer();
   let web: Buffer;
   let thumb: Buffer;
   try {
     web = await toWebp(bytes, 2048, 82);
     thumb = await toWebp(bytes, 600, 80);
   } catch {
+    await cleanupTemp();
     return "Could not process this image — it may be corrupt or an unsupported format";
   }
+
+  // Original is fully consumed into the derivatives — drop it.
+  await cleanupTemp();
 
   const base = `${productId}/${productColorId ?? "main"}/${randomUUID()}`;
   const webPath = `${base}-web.webp`;
