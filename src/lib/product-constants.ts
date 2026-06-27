@@ -66,33 +66,39 @@ export const PRODUCT_CATEGORIES = [
 
 export const PRODUCT_SEXES = ["Men", "Women", "Unisex", "Kids"] as const;
 
-// Default orderable sizes per category (overridable per product on the product form).
-// Apparel → numeric 1–10; footwear/bags/jewellery/eyewear → Free; Other → everything.
-// Sizes here must stay a subset of order-constants SIZES.
+// Default orderable sizes (overridable per product on the product form). Apparel sizes
+// by sex (Men 5–10, Women 1–4, Unisex/Kids 1–10); footwear/bags/jewellery/eyewear → Free;
+// Other → everything. Sizes here must stay a subset of order-constants SIZES.
 const NUMERIC_SIZES = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"];
+const MENS_SIZES = ["5", "6", "7", "8", "9", "10"];
+const WOMENS_SIZES = ["1", "2", "3", "4"];
 const FREE_ONLY = ["Free"];
 const ALL_SIZES = [...NUMERIC_SIZES, ...FREE_ONLY];
 
-const ORDERABLE_SIZE_DEFAULTS: Record<string, string[]> = {
-  Coat: NUMERIC_SIZES,
-  Jacket: NUMERIC_SIZES,
-  Trousers: NUMERIC_SIZES,
-  Knitwear: NUMERIC_SIZES,
-  Shirt: NUMERIC_SIZES,
-  "T-shirt": NUMERIC_SIZES,
-  Shoes: FREE_ONLY,
-  Bag: FREE_ONLY,
-  Watch: FREE_ONLY,
-  Accessories: FREE_ONLY,
-  Eyewear: FREE_ONLY,
-  Other: ALL_SIZES,
-};
+const APPAREL_CATEGORIES = new Set(["Coat", "Jacket", "Trousers", "Knitwear", "Shirt", "T-shirt"]);
 
-// The default orderable-size set for a category. Unknown/empty category → all sizes.
-export function defaultOrderableSizes(category: string | null | undefined): string[] {
+// The default orderable-size set for a category + sex. Unknown/empty category → all sizes.
+export function defaultOrderableSizes(
+  category: string | null | undefined,
+  sex?: string | null | undefined
+): string[] {
   if (!category) return [...ALL_SIZES];
-  return [...(ORDERABLE_SIZE_DEFAULTS[category] ?? ALL_SIZES)];
+  if (category === "Other") return [...ALL_SIZES];
+  if (APPAREL_CATEGORIES.has(category)) {
+    if (sex === "Men") return [...MENS_SIZES];
+    if (sex === "Women") return [...WOMENS_SIZES];
+    return [...NUMERIC_SIZES]; // Unisex, Kids, or unspecified
+  }
+  return [...FREE_ONLY]; // Shoes, Bag, Watch, Accessories, Eyewear
 }
+
+// Quick-set presets surfaced as buttons on the product form.
+export const ORDERABLE_SIZE_PRESETS: { key: string; label: string; sizes: string[] }[] = [
+  { key: "mens",   label: "Mens 5–10",   sizes: MENS_SIZES },
+  { key: "womens", label: "Womens 1–4",  sizes: WOMENS_SIZES },
+  { key: "unisex", label: "Unisex 1–10", sizes: NUMERIC_SIZES },
+  { key: "free",   label: "Free",        sizes: FREE_ONLY },
+];
 
 export const ACCESSORY_COMPOSITIONS = [
   "銀925-SILVER925",

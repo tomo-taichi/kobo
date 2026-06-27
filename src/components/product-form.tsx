@@ -2,7 +2,7 @@
 
 import { useActionState, useState, useRef } from "react";
 import { flushSync } from "react-dom";
-import { PRODUCT_CATEGORIES, PRODUCT_SEXES, ACCESSORY_COMPOSITIONS, defaultOrderableSizes } from "@/lib/product-constants";
+import { PRODUCT_CATEGORIES, PRODUCT_SEXES, ACCESSORY_COMPOSITIONS, defaultOrderableSizes, ORDERABLE_SIZE_PRESETS } from "@/lib/product-constants";
 import { SIZES } from "@/lib/order-constants";
 import { MaterialPickerModal, type PickableMaterial } from "@/components/material-picker";
 
@@ -167,15 +167,28 @@ export function ProductForm({ action, seasons, materials, pastModelNames = [], i
   const [enabledColorIds, setEnabledColorIds] = useState<Set<string>>(() => new Set(initialData.enabled_color_ids ?? []));
   const [liningColorId, setLiningColorId] = useState<string | null>(initialData.lining_material_color_id ?? null);
 
-  // Orderable sizes: stored value if present, else the category default. Changing the
-  // category re-applies its default unless the user has manually edited the selection.
+  // Category + sex drive the orderable-size default. Tracked in state so changing either
+  // re-applies the default — unless the user has manually edited the selection (presets/checkboxes).
+  const [category, setCategory] = useState<string>(initialData.product_category ?? "");
+  const [sex, setSex] = useState<string>(initialData.product_sex ?? "");
   const [orderableSizes, setOrderableSizes] = useState<Set<string>>(
-    () => new Set(initialData.orderable_sizes ?? defaultOrderableSizes(initialData.product_category))
+    () => new Set(initialData.orderable_sizes ?? defaultOrderableSizes(initialData.product_category, initialData.product_sex))
   );
   const [sizesTouched, setSizesTouched] = useState(false);
 
-  function handleCategoryChange(category: string) {
-    if (!sizesTouched) setOrderableSizes(new Set(defaultOrderableSizes(category)));
+  function handleCategoryChange(nextCategory: string) {
+    setCategory(nextCategory);
+    if (!sizesTouched) setOrderableSizes(new Set(defaultOrderableSizes(nextCategory, sex)));
+    scheduleSubmit(200);
+  }
+  function handleSexChange(nextSex: string) {
+    setSex(nextSex);
+    if (!sizesTouched) setOrderableSizes(new Set(defaultOrderableSizes(category, nextSex)));
+    scheduleSubmit(200);
+  }
+  function applySizePreset(sizes: string[]) {
+    setSizesTouched(true);
+    setOrderableSizes(new Set(sizes));
     scheduleSubmit(200);
   }
   function toggleSize(size: string) {
@@ -274,7 +287,7 @@ export function ProductForm({ action, seasons, materials, pastModelNames = [], i
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">Product Category <span className="text-red-500">*</span></label>
-              <select name="product_category" defaultValue={initialData.product_category ?? ""} required className={selectCls}
+              <select name="product_category" value={category} required className={selectCls}
                 onChange={(e) => handleCategoryChange(e.target.value)}>
                 <option value="">Select...</option>
                 {PRODUCT_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
@@ -303,7 +316,8 @@ export function ProductForm({ action, seasons, materials, pastModelNames = [], i
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">Product Sex</label>
-              <select name="product_sex" defaultValue={initialData.product_sex ?? ""} className={selectCls}>
+              <select name="product_sex" value={sex} className={selectCls}
+                onChange={(e) => handleSexChange(e.target.value)}>
                 <option value="">—</option>
                 {PRODUCT_SEXES.map((s) => <option key={s} value={s}>{s}</option>)}
               </select>
@@ -331,8 +345,16 @@ export function ProductForm({ action, seasons, materials, pastModelNames = [], i
         {/* ── 1b. Orderable Sizes ── */}
         <Section title="Orderable Sizes">
           <p className="text-xs text-gray-400 -mt-1">
-            Which sizes this product can be ordered in. Auto-filled from the category — adjust as needed.
+            Which sizes this product can be ordered in. Auto-filled from category + sex — use a preset or tick sizes to override.
           </p>
+          <div className="flex flex-wrap gap-1.5">
+            {ORDERABLE_SIZE_PRESETS.map((preset) => (
+              <button key={preset.key} type="button" onClick={() => applySizePreset(preset.sizes)}
+                className="px-2.5 py-1 rounded-full border border-gray-300 text-xs text-gray-600 hover:border-gray-900 hover:text-gray-900 transition-colors">
+                {preset.label}
+              </button>
+            ))}
+          </div>
           <div className="flex flex-wrap gap-1.5">
             {SIZES.map((s) => {
               const on = orderableSizes.has(s);
