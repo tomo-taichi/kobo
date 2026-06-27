@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import { GROUP_TYPES, DEPOSIT_TERMS, GROUP_TYPE_LABELS, DEPOSIT_TERMS_LABELS, COUNTRY_GROUPS, FLAT_COUNTRIES } from "@/lib/customer-constants";
+import { CUSTOMER_TYPES, CUSTOMER_TYPE_LABELS, LANGUAGES, COUNTRY_GROUPS, FLAT_COUNTRIES } from "@/lib/customer-constants";
 
 type Action = (_state: string | null, formData: FormData) => Promise<string | null>;
 
@@ -10,7 +10,12 @@ type SnsEntry = { platform: string; url: string };
 
 type InitialData = {
   name?: string;
-  group_type?: string;
+  customer_type?: string;
+  language?: string;
+  is_vip?: boolean;
+  default_discount_rate?: number | null;
+  default_deposit_rate?: number | null;
+  portal_access?: boolean;
   deposit_terms?: string;
   currency?: string;
   tax_included?: boolean;
@@ -136,6 +141,38 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 export function CustomerForm({ action, initialData = {}, id, onCancel }: Props) {
   const [error, formAction, pending] = useActionState(action, null);
 
+  // Customer Type drives conditional fields (VIP, discount) and deposit/portal defaults.
+  const [customerType, setCustomerType] = useState(initialData.customer_type ?? "");
+  const [isVip, setIsVip] = useState(initialData.is_vip ?? false);
+  const [depositRequired, setDepositRequired] = useState(
+    (initialData.deposit_terms ?? "Deposit_and_Production") === "Deposit_and_Production"
+  );
+  const [depositPct, setDepositPct] = useState<number>(
+    initialData.default_deposit_rate != null ? Math.round(initialData.default_deposit_rate * 100) : 30
+  );
+  const [depositTouched, setDepositTouched] = useState(false);
+  const [discountPct, setDiscountPct] = useState<number>(
+    initialData.default_discount_rate != null ? Math.round(initialData.default_discount_rate * 100) : 0
+  );
+  const [portalAccess, setPortalAccess] = useState<boolean>(initialData.portal_access ?? false);
+  const [portalTouched, setPortalTouched] = useState(false);
+
+  const clampPct = (v: string) => Math.max(0, Math.min(100, Number(v) || 0));
+
+  function handleTypeChange(next: string) {
+    setCustomerType(next);
+    const vipAfter = next === "B2B" ? false : isVip;
+    if (next === "B2B") setIsVip(false);
+    if (!depositTouched) setDepositPct(next === "B2C" ? 100 : 30);
+    if (!portalTouched) setPortalAccess(next === "B2B" || vipAfter);
+  }
+  function handleVipChange(v: boolean) {
+    setIsVip(v);
+    if (!portalTouched) setPortalAccess(customerType === "B2B" || v);
+  }
+
+  const numCls = "w-20 px-2 py-1 border border-gray-300 rounded-md text-sm text-right focus:outline-none focus:ring-2 focus:ring-gray-900";
+
   const [shippingSame, setShippingSame] = useState(initialData.shipping_same ?? false);
   const [shops, setShops] = useState<Shop[]>(initialData.shops?.length ? initialData.shops : []);
   const [snsEntries, setSnsEntries] = useState<SnsEntry[]>(
@@ -177,6 +214,11 @@ export function CustomerForm({ action, initialData = {}, id, onCancel }: Props) 
       <input type="hidden" name="shipping_same" value={shippingSame ? "true" : "false"} />
       <input type="hidden" name="shops" value={JSON.stringify(shops)} />
       <input type="hidden" name="sns" value={JSON.stringify(snsEntries)} />
+      <input type="hidden" name="is_vip" value={customerType === "B2C" && isVip ? "true" : "false"} />
+      <input type="hidden" name="deposit_terms" value={depositRequired ? "Deposit_and_Production" : "Production_Only"} />
+      <input type="hidden" name="portal_access" value={portalAccess ? "true" : "false"} />
+      <input type="hidden" name="default_deposit_pct" value={depositRequired ? depositPct : 0} />
+      <input type="hidden" name="default_discount_pct" value={customerType === "B2C" && isVip ? discountPct : 0} />
       {error && <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded">{error}</p>}
 
       {/* ── 1. Client Name ── */}
@@ -191,19 +233,20 @@ export function CustomerForm({ action, initialData = {}, id, onCancel }: Props) 
       <Section title="Must Info">
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Customer Group <span className="text-red-500">*</span></label>
-            <select name="group_type" defaultValue={initialData.group_type ?? ""} required className={selectCls}>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Customer Type <span className="text-red-500">*</span></label>
+            <select name="customer_type" value={customerType} onChange={(e) => handleTypeChange(e.target.value)} required className={selectCls}>
               <option value="">Select...</option>
-              {GROUP_TYPES.map((t) => <option key={t} value={t}>{GROUP_TYPE_LABELS[t]}</option>)}
+              {CUSTOMER_TYPES.map((t) => <option key={t} value={t}>{CUSTOMER_TYPE_LABELS[t]}</option>)}
             </select>
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Deposit Terms <span className="text-red-500">*</span></label>
-            <select name="deposit_terms" defaultValue={initialData.deposit_terms ?? "Deposit_and_Production"} required className={selectCls}>
-              {DEPOSIT_TERMS.map((t) => <option key={t} value={t}>{DEPOSIT_TERMS_LABELS[t]}</option>)}
+            <label className="block text-xs font-medium text-gray-600 mb-1">Document Language <span className="text-red-500">*</span></label>
+            <select name="language" defaultValue={initialData.language ?? "en"} required className={selectCls}>
+              {LANGUAGES.map((l) => <option key={l.value} value={l.value}>{l.label}</option>)}
             </select>
           </div>
         </div>
+
         <div className="grid grid-cols-3 gap-3">
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Currency <span className="text-red-500">*</span></label>
@@ -228,6 +271,51 @@ export function CustomerForm({ action, initialData = {}, id, onCancel }: Props) 
             </select>
           </div>
         </div>
+
+        {/* B2C: VIP flag + preset discount */}
+        {customerType === "B2C" && (
+          <div className="flex items-center gap-5 flex-wrap bg-gray-50 border border-gray-100 rounded-lg px-3 py-2">
+            <label className="flex items-center gap-2 cursor-pointer text-xs text-gray-700 select-none">
+              <input type="checkbox" checked={isVip} onChange={(e) => handleVipChange(e.target.checked)} className="w-4 h-4" />
+              VIP
+            </label>
+            {isVip ? (
+              <div className="flex items-center gap-2">
+                <label className="text-xs text-gray-600">VIP Discount Rate</label>
+                <input type="number" min="0" max="100" value={discountPct} onChange={(e) => setDiscountPct(clampPct(e.target.value))} className={numCls} />
+                <span className="text-xs text-gray-400">% off retail (pre-fills orders)</span>
+              </div>
+            ) : (
+              <span className="text-xs text-gray-400">Non-VIP B2C: retail price, 0% discount</span>
+            )}
+          </div>
+        )}
+
+        {/* Deposit on/off + default rate */}
+        <div className="flex items-center gap-5 flex-wrap">
+          <label className="flex items-center gap-2 cursor-pointer text-xs text-gray-700 select-none">
+            <input type="checkbox" checked={depositRequired} onChange={(e) => setDepositRequired(e.target.checked)} className="w-4 h-4" />
+            Deposit required
+          </label>
+          {depositRequired ? (
+            <div className="flex items-center gap-2">
+              <label className="text-xs text-gray-600">Default Deposit Rate</label>
+              <input type="number" min="0" max="100" value={depositPct}
+                onChange={(e) => { setDepositPct(clampPct(e.target.value)); setDepositTouched(true); }} className={numCls} />
+              <span className="text-xs text-gray-400">% of total (pre-fills orders)</span>
+            </div>
+          ) : (
+            <span className="text-xs text-gray-400">No deposit — full payment on delivery</span>
+          )}
+        </div>
+
+        {/* B2B Portal access */}
+        <label className="flex items-center gap-2 cursor-pointer text-xs text-gray-700 select-none">
+          <input type="checkbox" checked={portalAccess}
+            onChange={(e) => { setPortalAccess(e.target.checked); setPortalTouched(true); }} className="w-4 h-4" />
+          B2B Portal access
+          <span className="text-gray-400 font-normal">(default: B2B, or B2C marked VIP)</span>
+        </label>
 
         {/* Contract */}
         <div className="grid grid-cols-3 gap-3">

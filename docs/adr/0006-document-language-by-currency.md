@@ -1,5 +1,7 @@
 # 顧客向け書類の言語・出荷書類種別は customer currency で決める
 
+> **状態: Superseded by [ADR-0007](0007-explicit-document-language-and-customer-type.md)。** 言語は currency 導出から **明示の `language` 設定**に変更。currency は **金額表示＋出荷書類フォーマット（納品書/Commercial Invoice）** の判定に限定する。以下は歴史的経緯として残す。
+
 ## 決定
 
 顧客向け PDF（OC・Advance Invoice・Final Invoice・納品書/Commercial Invoice）の **言語** と、出荷書類の **種別**（納品書 か Commercial Invoice か）を、`customers.currency` で判定する:

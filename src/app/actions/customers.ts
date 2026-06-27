@@ -8,6 +8,20 @@ function str(formData: FormData, key: string) {
   return (formData.get(key) as string)?.trim() || null;
 }
 
+// Percent field (0–100) → fraction (0–1), clamped.
+function pctFraction(formData: FormData, key: string): number {
+  const n = Number(formData.get(key));
+  if (isNaN(n)) return 0;
+  return Math.max(0, Math.min(100, n)) / 100;
+}
+
+// Legacy group_type written-through from the new model so the Phase-2 PDF code keeps
+// working: B2B → Domestic (JPY) / Overseas (EUR); B2C → Customer.
+function legacyGroupType(customerType: string | null, currency: string): string {
+  if (customerType === "B2B") return currency === "JPY" ? "Domestic" : "Overseas";
+  return "Customer";
+}
+
 function extractFields(formData: FormData) {
   const shippingSame = formData.get("shipping_same") === "true";
 
@@ -17,11 +31,20 @@ function extractFields(formData: FormData) {
   let sns: { platform: string; url: string }[] = [];
   try { sns = JSON.parse((formData.get("sns") as string) || "[]"); } catch {}
 
+  const customer_type = str(formData, "customer_type");
+  const currency      = str(formData, "currency") ?? "JPY";
+
   return {
     name:             str(formData, "name"),
-    group_type:       str(formData, "group_type"),
+    customer_type,
+    group_type:       legacyGroupType(customer_type, currency),
+    language:         str(formData, "language") ?? "en",
+    is_vip:           formData.get("is_vip") === "true",
+    default_discount_rate: pctFraction(formData, "default_discount_pct"),
+    default_deposit_rate:  pctFraction(formData, "default_deposit_pct"),
+    portal_access:    formData.get("portal_access") === "true",
     deposit_terms:    str(formData, "deposit_terms") ?? "Deposit_and_Production",
-    currency:         str(formData, "currency") ?? "JPY",
+    currency,
     tax_included:     formData.get("tax_included") === "true",
     bank:             str(formData, "bank"),
     contract_status:     str(formData, "contract_status") ?? "Active",
@@ -64,7 +87,7 @@ export async function createCustomer(
   const supabase = await createClient();
   const fields = extractFields(formData);
   if (!fields.name)       return "Client name is required";
-  if (!fields.group_type) return "Customer group is required";
+  if (!fields.customer_type) return "Customer type is required";
   const { error } = await supabase.from("customers").insert(fields);
   if (error) return error.message;
   revalidatePath("/customers");
@@ -88,7 +111,7 @@ export async function updateCustomer(
   const id = formData.get("id") as string;
   const fields = extractFields(formData);
   if (!fields.name)       return "Client name is required";
-  if (!fields.group_type) return "Customer group is required";
+  if (!fields.customer_type) return "Customer type is required";
   const { error } = await supabase.from("customers").update(fields).eq("id", id);
   if (error) return error.message;
   revalidatePath("/customers");

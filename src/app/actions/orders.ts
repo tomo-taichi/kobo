@@ -19,9 +19,19 @@ export async function createOrder(
   const exchange_rate = formData.get("exchange_rate") ? Number(formData.get("exchange_rate")) : null;
   const notes         = (formData.get("notes") as string)?.trim() || null;
 
+  // Pre-fill discount/deposit from the customer's defaults (VIP carries a preset discount;
+  // deposit rate is the per-type default). Both remain editable on the order's Financials tab.
+  const { data: cust } = await supabase
+    .from("customers")
+    .select("default_discount_rate, default_deposit_rate")
+    .eq("id", customer_id)
+    .single();
+  const discount_rate = Number(cust?.default_discount_rate ?? 0);
+  const deposit_rate  = Number(cust?.default_deposit_rate ?? 0.30);
+
   const { data, error } = await supabase
     .from("orders")
-    .insert({ customer_id, season_id, order_date, invoice_type, currency_type, exchange_rate, notes, discount_rate: 0 })
+    .insert({ customer_id, season_id, order_date, invoice_type, currency_type, exchange_rate, notes, discount_rate, deposit_rate })
     .select("id")
     .single();
   if (error) return error.message;

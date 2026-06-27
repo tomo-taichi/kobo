@@ -3,26 +3,20 @@
 import { useState, useMemo, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { GROUP_TYPES, GROUP_TYPE_LABELS, DEPOSIT_TERMS_LABELS } from "@/lib/customer-constants";
+import { CUSTOMER_TYPES, CUSTOMER_TYPE_LABELS, CUSTOMER_TYPE_COLOURS, DEPOSIT_TERMS_LABELS } from "@/lib/customer-constants";
 import { updateCustomerStatus } from "@/app/actions/customers";
 
 type Customer = {
   id: string;
   name: string;
-  group_type: string;
+  customer_type: string;
+  is_vip: boolean;
   deposit_terms: string;
   currency: string | null;
   billing_country: string | null;
   contract_status: string | null;
   contract_start_date: string | null;
   contract_end_date: string | null;
-};
-
-const GROUP_COLOURS: Record<string, string> = {
-  Domestic: "bg-blue-50 text-blue-700",
-  Overseas: "bg-purple-50 text-purple-700",
-  Personal: "bg-green-50 text-green-700",
-  Customer: "bg-orange-50 text-orange-700",
 };
 
 const CONTRACT_COLOURS: Record<string, string> = {
@@ -46,7 +40,7 @@ const CONTRACT_STATUSES = [
 const SORT_OPTIONS = [
   { value: "name_asc",   label: "Name A→Z" },
   { value: "name_desc",  label: "Name Z→A" },
-  { value: "group_asc",  label: "Group" },
+  { value: "group_asc",  label: "Type" },
 ] as const;
 
 export function CustomersClient({ customers }: { customers: Customer[] }) {
@@ -68,12 +62,12 @@ export function CustomersClient({ customers }: { customers: Customer[] }) {
       const q = search.trim().toLowerCase();
       list = list.filter((c) => c.name.toLowerCase().includes(q));
     }
-    if (fGroup)  list = list.filter((c) => c.group_type === fGroup);
+    if (fGroup)  list = list.filter((c) => c.customer_type === fGroup);
     if (fStatus) list = list.filter((c) => (c.contract_status ?? "Active") === fStatus);
     list = [...list].sort((a, b) => {
       if (sort === "name_desc") return b.name.localeCompare(a.name);
       if (sort === "group_asc") {
-        const g = a.group_type.localeCompare(b.group_type);
+        const g = a.customer_type.localeCompare(b.customer_type);
         return g !== 0 ? g : a.name.localeCompare(b.name);
       }
       return a.name.localeCompare(b.name);
@@ -109,9 +103,9 @@ export function CustomersClient({ customers }: { customers: Customer[] }) {
             onChange={(e) => setFGroup(e.target.value)}
             className="px-2 py-1.5 border border-gray-300 rounded-md text-sm bg-white"
           >
-            <option value="">All Groups</option>
-            {GROUP_TYPES.map((t) => (
-              <option key={t} value={t}>{GROUP_TYPE_LABELS[t]}</option>
+            <option value="">All Types</option>
+            {CUSTOMER_TYPES.map((t) => (
+              <option key={t} value={t}>{CUSTOMER_TYPE_LABELS[t]}</option>
             ))}
           </select>
 
@@ -168,7 +162,7 @@ export function CustomersClient({ customers }: { customers: Customer[] }) {
         <thead className="bg-gray-50 border-b border-gray-200">
           <tr>
             <th className="text-left px-4 py-3 font-medium text-gray-600">Status</th>
-            <th className="text-left px-4 py-3 font-medium text-gray-600">Group</th>
+            <th className="text-left px-4 py-3 font-medium text-gray-600">Type</th>
             <th className="text-left px-4 py-3 font-medium text-gray-600 min-w-48">Name</th>
             <th className="text-left px-4 py-3 font-medium text-gray-600">Deposit Terms</th>
             <th className="text-left px-4 py-3 font-medium text-gray-600">Currency</th>
@@ -214,9 +208,12 @@ export function CustomersClient({ customers }: { customers: Customer[] }) {
                 </td>
 
                 <td className="px-4 py-3">
-                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${GROUP_COLOURS[c.group_type] ?? "bg-gray-100 text-gray-600"}`}>
-                    {GROUP_TYPE_LABELS[c.group_type] ?? c.group_type}
-                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${CUSTOMER_TYPE_COLOURS[c.customer_type] ?? "bg-gray-100 text-gray-600"}`}>
+                      {CUSTOMER_TYPE_LABELS[c.customer_type] ?? c.customer_type}
+                    </span>
+                    {c.is_vip && <span className="text-xs px-1.5 py-0.5 rounded-full font-medium bg-amber-100 text-amber-700">VIP</span>}
+                  </div>
                 </td>
                 <td className="px-4 py-3 text-gray-900 font-medium">{c.name}</td>
                 <td className="px-4 py-3 text-gray-500 text-xs">{DEPOSIT_TERMS_LABELS[c.deposit_terms] ?? c.deposit_terms}</td>

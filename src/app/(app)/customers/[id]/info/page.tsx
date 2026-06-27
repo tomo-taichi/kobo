@@ -37,7 +37,12 @@ export default async function CustomerInfoPage({ params }: { params: Promise<{ i
           action={updateCustomer}
           initialData={{
             name:                s.name,
-            group_type:          s.group_type,
+            customer_type:       s.customer_type,
+            language:            s.language,
+            is_vip:              s.is_vip,
+            default_discount_rate: s.default_discount_rate,
+            default_deposit_rate:  s.default_deposit_rate,
+            portal_access:       s.portal_access,
             deposit_terms:       s.deposit_terms,
             currency:            s.currency,
             tax_included:        s.tax_included,
