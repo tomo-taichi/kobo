@@ -96,7 +96,7 @@ export async function buildDeliveryNoteProps(supabase: any, orderId: string, ite
 
   let itemsQuery = supabase
     .from("order_items")
-    .select("id, retail_price_eur, customer_wholesale_eur, products(product_category, name, model_name), order_item_sizes(size, quantity)")
+    .select("id, retail_price_eur, customer_wholesale_eur, products(product_category, name, model_name), product_colors(material_colors(color)), order_item_sizes(size, quantity)")
     .eq("order_id", orderId)
     .order("created_at");
   // explicit selection for a saved batch; otherwise all items (preview draft)
@@ -112,7 +112,8 @@ export async function buildDeliveryNoteProps(supabase: any, orderId: string, ite
 
   const items = rows.map((it: any) => ({
     category: it.products?.product_category ?? null,
-    itemName: it.products?.name ?? it.products?.model_name ?? "—",
+    itemName: it.products?.model_name ?? it.products?.name ?? "—",
+    color: it.product_colors?.material_colors?.color ?? resolveColor(it.products),
     whsleJpy: Math.round(Number(it.customer_wholesale_eur) * rate),
     retailJpy: Math.round(Number(it.retail_price_eur) * rate),
     sizes: (it.order_item_sizes ?? []).map((s: any) => ({ size: s.size, quantity: s.quantity })),
@@ -150,7 +151,7 @@ export async function buildOcProps(supabase: any, orderId: string) {
       .single(),
     supabase
       .from("order_items")
-      .select("id, retail_price_eur, customer_wholesale_eur, products(product_number, product_category, product_sex, model_name, name, main_m_name, color), order_item_sizes(size, quantity)")
+      .select("id, retail_price_eur, customer_wholesale_eur, products(product_number, product_category, product_sex, model_name, name, main_m_name, color), product_colors(material_colors(color)), order_item_sizes(size, quantity)")
       .eq("order_id", orderId),
     supabase
       .from("company_settings")
@@ -203,7 +204,7 @@ export async function buildOcProps(supabase: any, orderId: string) {
     sex: item.products?.product_sex ?? null,
     modelName: item.products?.model_name ?? item.products?.name ?? "—",
     materialName: item.products?.main_m_name ?? null,
-    color: resolveColor(item.products),
+    color: item.product_colors?.material_colors?.color ?? resolveColor(item.products),
     wholesaleEur: Number(item.customer_wholesale_eur),
     retailEur: Number(item.retail_price_eur),
     sizes: (item.order_item_sizes ?? []).map((s: any) => ({ size: s.size, quantity: s.quantity })),

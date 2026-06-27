@@ -19,7 +19,7 @@ export default async function OrderDocumentsPage({ params }: { params: Promise<{
       .single(),
     supabase
       .from("order_items")
-      .select("id, customer_wholesale_eur, is_flagged_invoice, is_flagged_delivery, products(name, model_name, product_number, color), order_item_sizes(quantity)")
+      .select("id, customer_wholesale_eur, is_flagged_invoice, is_flagged_delivery, products(name, model_name, product_number, color), product_colors(material_colors(color)), order_item_sizes(quantity)")
       .eq("order_id", id)
       .order("created_at"),
     supabase
@@ -58,7 +58,7 @@ export default async function OrderDocumentsPage({ params }: { params: Promise<{
       id: it.id,
       productId: it.products?.product_number ?? "—",
       modelName: it.products?.model_name ?? it.products?.name ?? "—",
-      color: it.products?.color ?? null,
+      color: it.product_colors?.material_colors?.color ?? it.products?.color ?? null,
       qty: (it.order_item_sizes ?? []).reduce((s: number, r: any) => s + r.quantity, 0),
       processed: dt === "final" ? !!it.is_flagged_invoice : !!it.is_flagged_delivery,
     }));

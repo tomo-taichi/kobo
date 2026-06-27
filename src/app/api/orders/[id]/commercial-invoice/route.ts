@@ -70,7 +70,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   const flagField = isOverseas ? "is_flagged_invoice" : "is_flagged_delivery";
   const itemsResult = await supabase
     .from("order_items")
-    .select("customer_wholesale_eur, products(product_number, product_category, model_name, name, color, product_materials(materials(name))), order_item_sizes(size, quantity)")
+    .select("customer_wholesale_eur, products(product_number, product_category, model_name, name, color, product_materials(materials(name))), product_colors(material_colors(color)), order_item_sizes(size, quantity)")
     .eq("order_id", id)
     .eq(flagField, true);
 
@@ -79,7 +79,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     productId: fmtId(item.products?.product_number),
     productCategory: item.products?.product_category ?? null,
     modelName: item.products?.model_name ?? item.products?.name ?? "—",
-    color: item.products?.color ?? null,
+    color: item.product_colors?.material_colors?.color ?? item.products?.color ?? null,
     customerWholesaleEur: Number(item.customer_wholesale_eur),
     sizes: (item.order_item_sizes ?? []).map((s: { size: string; quantity: number }) => ({
       size: s.size,

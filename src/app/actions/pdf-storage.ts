@@ -265,7 +265,7 @@ export async function saveCommercialPdf(orderId: string, isOverseas: boolean, op
   const flagField = isOverseas ? "is_flagged_invoice" : "is_flagged_delivery";
   let itemsQuery = supabase
     .from("order_items")
-    .select("id, customer_wholesale_eur, products(product_number, product_category, model_name, name, color, product_materials(materials(name))), order_item_sizes(size, quantity)")
+    .select("id, customer_wholesale_eur, products(product_number, product_category, model_name, name, color, product_materials(materials(name))), product_colors(material_colors(color)), order_item_sizes(size, quantity)")
     .eq("order_id", orderId);
   if (opts.itemIds && opts.itemIds.length > 0) {
     itemsQuery = itemsQuery.in("id", opts.itemIds);
@@ -286,7 +286,7 @@ export async function saveCommercialPdf(orderId: string, isOverseas: boolean, op
     productId: fmtId(item.products?.product_number),
     productCategory: item.products?.product_category ?? null,
     modelName: item.products?.model_name ?? item.products?.name ?? "—",
-    color: item.products?.color ?? null,
+    color: item.product_colors?.material_colors?.color ?? item.products?.color ?? null,
     customerWholesaleEur: Number(item.customer_wholesale_eur),
     sizes: (item.order_item_sizes ?? []).map((s: any) => ({ size: s.size, quantity: s.quantity })),
     materials: (item.products?.product_materials ?? []).map((pm: any) => pm.materials?.name ?? "").filter(Boolean),

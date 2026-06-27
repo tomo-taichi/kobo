@@ -6,6 +6,7 @@ type SizeQty = { size: string; quantity: number };
 type DeliveryItem = {
   category: string | null;
   itemName: string;
+  color: string | null;
   whsleJpy: number;
   retailJpy: number;
   sizes: SizeQty[];
@@ -125,7 +126,9 @@ export function DeliveryNoteDocument({
             return (
               <View key={idx} style={{ flexDirection: "row", borderBottom: "0.5pt solid #eee", paddingVertical: 5, paddingHorizontal: 4, alignItems: "flex-start", backgroundColor: idx % 2 === 1 ? "#fafafa" : "#fff" }}>
                 <Text style={{ width: W_CAT, fontSize: 7, ...muted }}>{item.category ?? "—"}</Text>
-                <Text style={{ flex: 1, fontSize: 7, paddingRight: 4 }}>{item.itemName}</Text>
+                <Text style={{ flex: 1, fontSize: 7, paddingRight: 4 }}>
+                  {item.itemName}{item.color ? <Text style={muted}>{`  /  ${item.color}`}</Text> : null}
+                </Text>
                 <Text style={{ width: W_PRICE, ...cell, textAlign: "right" }}>{fmtJpy(item.whsleJpy)}</Text>
                 <Text style={{ width: W_PRICE, fontSize: 7, ...muted, textAlign: "right" }}>{fmtJpy(item.retailJpy)}</Text>
                 {SIZES.map((s) => {
