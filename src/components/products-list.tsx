@@ -244,22 +244,23 @@ function CompactColHeader({ showModel = false }: { showModel?: boolean }) {
 }
 
 // ─── Helpers for flat card mode ──────────────────────────────────────
-function MetaCell({ label, value, mono }: { label: string; value: string | null; mono?: boolean }) {
+// A label/value pair inside the meta grid. Label sits in a fixed-width column so
+// every product's values line up vertically; the value may wrap (e.g. long colour lists).
+function Field({ label, value, mono }: { label: string; value: string | null; mono?: boolean }) {
   return (
-    <div className="flex items-baseline gap-1 min-w-0">
-      <span className="text-gray-400 shrink-0">{label}</span>
-      <span className={`truncate ${mono ? "font-mono text-gray-600" : "text-gray-600"}`}>
-        {value ?? "—"}
-      </span>
-    </div>
+    <>
+      <dt className="text-[10px] uppercase tracking-wide text-gray-400 pt-px">{label}</dt>
+      <dd className={`min-w-0 ${mono ? "font-mono text-gray-600" : "text-gray-700"}`}>{value ?? "—"}</dd>
+    </>
   );
 }
 
-function PriceCell({ label, value, bold }: { label: string; value: string; bold?: boolean }) {
+// A stacked price stat for the pinned right-hand column.
+function PriceStat({ label, value, bold }: { label: string; value: string; bold?: boolean }) {
   return (
-    <div className="flex items-baseline gap-1">
-      <span className="shrink-0 text-gray-400">{label}</span>
-      <span className={`font-mono ${bold ? "font-semibold text-gray-800" : "text-gray-500"}`}>{value}</span>
+    <div>
+      <div className="text-[10px] uppercase tracking-wide text-gray-400">{label}</div>
+      <div className={`font-mono ${bold ? "font-semibold text-gray-800" : "text-gray-500"}`}>{value}</div>
     </div>
   );
 }
@@ -365,60 +366,59 @@ export function ProductsList({ products, seasons }: { products: ProductRow[]; se
     return (
       <div className="divide-y divide-gray-100">
         {items.map((p) => (
-          <div key={p.id} className={`px-4 py-3 hover:bg-gray-50 transition-colors flex gap-3 ${p.is_invalid ? "opacity-40" : ""}`}>
+          <div key={p.id} className={`px-4 py-3 hover:bg-gray-50 transition-colors flex gap-4 items-start ${p.is_invalid ? "opacity-40" : ""}`}>
             {/* Main-photo thumbnails (up to 2) */}
             <div className="flex gap-1 shrink-0">
               {(p.main_thumbs ?? []).length > 0 ? (
                 (p.main_thumbs ?? []).map((url, i) => (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img key={i} src={url} alt="" className="w-12 h-12 rounded object-cover border border-gray-200 bg-gray-50" />
+                  <img key={i} src={url} alt="" className="w-14 h-14 rounded object-cover border border-gray-200 bg-gray-50" />
                 ))
               ) : (
-                <div className="w-12 h-12 rounded border border-dashed border-gray-200 flex items-center justify-center text-gray-300 text-base">🖼</div>
+                <div className="w-14 h-14 rounded border border-dashed border-gray-200 flex items-center justify-center text-gray-300 text-base">🖼</div>
               )}
             </div>
 
             <div className="flex-1 min-w-0">
-            {/* Row 1: Model Name + badges + actions */}
-            <div className="flex items-start justify-between gap-4 mb-1.5">
-              <div className="flex items-center gap-2 flex-wrap min-w-0">
-                <Link href={`/products/${p.id}/edit`}
-                  className="text-sm font-medium text-gray-900 hover:text-gray-600 hover:underline">
-                  {p.model_name ?? "—"}
-                </Link>
-                {p.is_sample && (
-                  <span className="text-[10px] font-medium bg-yellow-100 text-yellow-700 px-1.5 py-0.5 rounded shrink-0">SAMPLE</span>
-                )}
-                {p.is_invalid && (
-                  <span className="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded shrink-0">invalid</span>
-                )}
+              {/* Header: Model Name + badges (left), actions (right) */}
+              <div className="flex items-start justify-between gap-4 mb-2">
+                <div className="flex items-center gap-2 flex-wrap min-w-0">
+                  <Link href={`/products/${p.id}/edit`}
+                    className="text-sm font-medium text-gray-900 hover:text-gray-600 hover:underline">
+                    {p.model_name ?? "—"}
+                  </Link>
+                  {p.is_sample && (
+                    <span className="text-[10px] font-medium bg-yellow-100 text-yellow-700 px-1.5 py-0.5 rounded shrink-0">SAMPLE</span>
+                  )}
+                  {p.is_invalid && (
+                    <span className="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded shrink-0">invalid</span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <Link href={`/products/${p.id}/edit`}
+                    className="text-xs text-gray-400 hover:text-gray-800 border border-gray-200 rounded px-2 py-0.5 hover:border-gray-400">
+                    Edit
+                  </Link>
+                  <DupButton productId={p.id} />
+                  <RowDeleteButton productId={p.id} label={p.model_name} />
+                </div>
               </div>
-              <div className="flex items-center gap-2 shrink-0">
-                <Link href={`/products/${p.id}/edit`}
-                  className="text-xs text-gray-400 hover:text-gray-800 border border-gray-200 rounded px-2 py-0.5 hover:border-gray-400">
-                  Edit
-                </Link>
-                <DupButton productId={p.id} />
-                <RowDeleteButton productId={p.id} label={p.model_name} />
-              </div>
-            </div>
 
-            {/* Row 2: meta + pricing */}
-            <div className="flex items-start gap-5 text-xs flex-wrap">
-              <div className="grid grid-cols-2 gap-x-5 gap-y-0.5 min-w-[220px]">
-                <MetaCell label="Material" value={p.main_m_name} />
-                <MetaCell label="Colours"  value={colourNamesOf(p)} />
-                <MetaCell label="Season"   value={p.seasons?.name ?? null} />
-                <MetaCell label="Category" value={p.product_category} />
-                <MetaCell label="Sex"      value={p.product_sex} />
-                <MetaCell label="ID"       value={fmtId(p.product_number)} mono />
+              {/* Body: meta grid (left, fills) + pricing (pinned right, fixed) */}
+              <div className="flex items-start gap-6">
+                <dl className="flex-1 min-w-0 grid grid-cols-[4.5rem_minmax(0,1fr)_4.5rem_minmax(0,1fr)] gap-x-3 gap-y-1 text-xs items-start">
+                  <Field label="Material" value={p.main_m_name} />
+                  <Field label="Category" value={p.product_category} />
+                  <Field label="Season"   value={p.seasons?.name ?? null} />
+                  <Field label="ID"       value={fmtId(p.product_number)} mono />
+                  <Field label="Sex"      value={p.product_sex} />
+                  <Field label="Colours"  value={colourNamesOf(p)} />
+                </dl>
+                <div className="shrink-0 w-40 self-stretch border-l border-gray-200 pl-5 flex flex-col gap-2 text-xs">
+                  <PriceStat label="Ideal WS" value={idealWsOf(p)} />
+                  <PriceStat label="Retail (EUR)" value={retailOf(p)} bold />
+                </div>
               </div>
-              <div className="border-l border-gray-200 self-stretch" />
-              <div className="grid grid-cols-2 gap-x-5 gap-y-0.5">
-                <PriceCell label="Ideal WS" value={idealWsOf(p)} />
-                <PriceCell label="Retail (EUR)" value={retailOf(p)} bold />
-              </div>
-            </div>
             </div>
           </div>
         ))}
