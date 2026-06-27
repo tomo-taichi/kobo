@@ -175,6 +175,18 @@ export async function updateMaterialSetPrice(id: string, set_price_jpy: number):
   return updateMaterialField(id, "set_price_jpy", String(set_price_jpy));
 }
 
+export async function deleteMaterial(materialId: string): Promise<string | null> {
+  const supabase = await createClient();
+  // material_colors cascade-delete; products / orders referencing it block deletion (23503).
+  const { error } = await supabase.from("materials").delete().eq("id", materialId);
+  if (error) {
+    if (error.code === "23503") return "Cannot delete — this material is used by a product or order.";
+    return error.message;
+  }
+  revalidatePath("/materials");
+  return null;
+}
+
 // Inline edit (materials list) of the FIRST colour's Unit/Set price. Updates the first
 // material_colors row and mirrors it onto the material's base column.
 export async function updateMaterialFirstColorPrice(

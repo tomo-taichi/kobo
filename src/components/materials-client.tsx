@@ -9,7 +9,7 @@ import {
   isFabric,
   getMaterialStatus,
 } from "@/lib/material-constants";
-import { updateMaterialField, updateMaterialFirstColorPrice, duplicateMaterial } from "@/app/actions/materials";
+import { updateMaterialField, updateMaterialFirstColorPrice, duplicateMaterial, deleteMaterial } from "@/app/actions/materials";
 
 type CompEntry = { label: string | null; pct: number | null };
 type ColorEntry = { color: string; unitPrice: number | null; setPrice: number | null };
@@ -41,6 +41,52 @@ const GROUP_OPTIONS: { value: GroupMode; label: string }[] = [
   { value: "category", label: "Category" },
   { value: "season",   label: "Season" },
 ];
+
+// Per-row delete with an always-on confirmation; removes the row from the list on success.
+function MaterialDeleteButton({ materialId, name, onDeleted }: { materialId: string; name: string; onDeleted: () => void }) {
+  const [open, setOpen]       = useState(false);
+  const [pending, setPending] = useState(false);
+  const [error, setError]     = useState<string | null>(null);
+
+  async function handleDelete() {
+    setPending(true);
+    setError(null);
+    const result = await deleteMaterial(materialId);
+    if (result) { setError(result); setPending(false); }
+    else { onDeleted(); }
+  }
+
+  return (
+    <>
+      <button type="button" onClick={() => setOpen(true)} className="text-gray-400 hover:text-red-600 text-xs underline">Delete</button>
+      {open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/40" onClick={() => !pending && setOpen(false)} />
+          <div className="relative bg-white rounded-xl shadow-xl w-full max-w-sm p-6 space-y-4">
+            <div className="flex items-start gap-3">
+              <div className="shrink-0 w-10 h-10 rounded-full bg-red-100 flex items-center justify-center text-red-600 text-lg">⚠</div>
+              <div>
+                <h2 className="text-sm font-semibold text-gray-900">Delete material?</h2>
+                <p className="text-xs text-gray-500 mt-1 leading-relaxed">
+                  <span className="font-medium text-gray-700">{name}</span> and its colours will be permanently deleted. This action cannot be undone.
+                </p>
+              </div>
+            </div>
+            {error && <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">{error}</p>}
+            <div className="flex justify-end gap-2 pt-1">
+              <button type="button" onClick={() => setOpen(false)} disabled={pending}
+                className="px-4 py-2 text-sm border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 disabled:opacity-50">Cancel</button>
+              <button type="button" onClick={handleDelete} disabled={pending}
+                className="px-4 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50">
+                {pending ? "Deleting…" : "Yes, delete"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
 
 function formatComps(comps: CompEntry[]) {
   return comps
@@ -298,6 +344,7 @@ export function MaterialsClient({
               <button type="submit" className="text-gray-400 hover:text-blue-600 text-xs underline">Duplicate</button>
             </form>
             <Link href={`/materials/${m.id}/edit`} className="text-gray-400 hover:text-gray-900 text-xs underline">Edit</Link>
+            <MaterialDeleteButton materialId={m.id} name={m.name} onDeleted={() => setMaterials((prev) => prev.filter((x) => x.id !== m.id))} />
           </div>
         </td>
       </tr>
