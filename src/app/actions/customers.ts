@@ -107,5 +107,6 @@ export async function updateCustomer(
   const { error } = await supabase.from("customers").update(fields).eq("id", id);
   if (error) return error.message;
   revalidatePath("/customers");
-  redirect(`/customers/${id}/info`);
+  revalidatePath(`/customers/${id}/info`);
+  return "ok"; // auto-save: stay on the page (no redirect)
 }

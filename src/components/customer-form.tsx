@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useState, useRef } from "react";
 import { CUSTOMER_TYPES, CUSTOMER_TYPE_LABELS, LANGUAGES, COUNTRY_GROUPS, FLAT_COUNTRIES } from "@/lib/customer-constants";
 
 type Action = (_state: string | null, formData: FormData) => Promise<string | null>;
@@ -139,6 +139,8 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 }
 
 // Optional section that can be collapsed/expanded. Starts open when it already has data.
+// Children stay MOUNTED when collapsed (just hidden) so their inputs remain in the form —
+// otherwise auto-save would submit missing fields and wipe that section's data.
 function CollapsibleSection({ title, defaultOpen = false, children }: { title: string; defaultOpen?: boolean; children: React.ReactNode }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
@@ -151,13 +153,31 @@ function CollapsibleSection({ title, defaultOpen = false, children }: { title: s
         <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">{title}</h3>
         <span className="text-[11px] text-gray-400 group-hover:text-gray-700">{open ? "Hide ▲" : "Show ▼"}</span>
       </button>
-      {open && <div className="flex flex-col gap-3">{children}</div>}
+      <div className={open ? "flex flex-col gap-3" : "hidden"}>{children}</div>
     </div>
   );
 }
 
 export function CustomerForm({ action, initialData = {}, id, onCancel }: Props) {
-  const [error, formAction, pending] = useActionState(action, null);
+  const [result, formAction, pending] = useActionState(action, null);
+  const isError = result && result !== "ok";
+
+  // Auto-save (edit mode only): debounced requestSubmit on any field change.
+  const formRef = useRef<HTMLFormElement>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  function scheduleSubmit(delay: number) {
+    if (!id) return;
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => formRef.current?.requestSubmit(), delay);
+  }
+  function handleFormChange(e: React.ChangeEvent<HTMLFormElement>) {
+    if (!id) return;
+    const t = e.target as HTMLElement;
+    const typed = t instanceof HTMLInputElement &&
+      ["text", "number", "email", "url", "date", ""].includes(t.type);
+    const textarea = t instanceof HTMLTextAreaElement;
+    scheduleSubmit(typed || textarea ? 900 : 250);
+  }
 
   // Customer Type drives conditional fields (VIP, discount) and deposit/portal defaults.
   const [customerType, setCustomerType] = useState(initialData.customer_type ?? "");
@@ -237,7 +257,7 @@ export function CustomerForm({ action, initialData = {}, id, onCancel }: Props) 
   }
 
   return (
-    <form action={formAction} className="flex flex-col gap-6">
+    <form action={formAction} ref={formRef} onChange={handleFormChange} className="flex flex-col gap-6">
       {id && <input type="hidden" name="id" value={id} />}
       <input type="hidden" name="shipping_same" value={shippingSame ? "true" : "false"} />
       <input type="hidden" name="shops" value={JSON.stringify(shops)} />
@@ -247,7 +267,7 @@ export function CustomerForm({ action, initialData = {}, id, onCancel }: Props) 
       <input type="hidden" name="portal_access" value={portalAccess ? "true" : "false"} />
       <input type="hidden" name="default_deposit_pct" value={depositRequired ? depositPct : 0} />
       <input type="hidden" name="default_discount_pct" value={customerType === "B2C" && isVip ? discountPct : 0} />
-      {error && <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded">{error}</p>}
+      {isError && <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded">{result}</p>}
 
       {/* ── 1. Client Name ── */}
       <div>
@@ -581,14 +601,22 @@ export function CustomerForm({ action, initialData = {}, id, onCancel }: Props) 
         )}
       </CollapsibleSection>
 
-      <div className="flex gap-2 pt-1 border-t border-gray-100">
-        <button type="submit" disabled={pending} className="px-4 py-2 bg-gray-900 text-white text-sm rounded-md hover:bg-gray-700 disabled:opacity-50">
-          {pending ? "Saving..." : id ? "Update" : "Create"}
-        </button>
-        {onCancel && (
-          <button type="button" onClick={onCancel} className="px-4 py-2 text-sm text-gray-600 border border-gray-300 rounded-md hover:bg-gray-50">
-            Cancel
-          </button>
+      <div className="flex items-center gap-3 pt-1 border-t border-gray-100">
+        {id ? (
+          <span className="text-xs text-gray-400">
+            {pending ? "Saving…" : result === "ok" ? "✓ Saved" : "Changes auto-save"}
+          </span>
+        ) : (
+          <>
+            <button type="submit" disabled={pending} className="px-4 py-2 bg-gray-900 text-white text-sm rounded-md hover:bg-gray-700 disabled:opacity-50">
+              {pending ? "Saving..." : "Create"}
+            </button>
+            {onCancel && (
+              <button type="button" onClick={onCancel} className="px-4 py-2 text-sm text-gray-600 border border-gray-300 rounded-md hover:bg-gray-50">
+                Cancel
+              </button>
+            )}
+          </>
         )}
       </div>
     </form>
