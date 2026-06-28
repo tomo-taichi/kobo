@@ -138,6 +138,24 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
+// Optional section that can be collapsed/expanded. Starts open when it already has data.
+function CollapsibleSection({ title, defaultOpen = false, children }: { title: string; defaultOpen?: boolean; children: React.ReactNode }) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="w-full flex items-center justify-between border-b border-gray-100 pb-1 mb-3 group"
+      >
+        <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">{title}</h3>
+        <span className="text-[11px] text-gray-400 group-hover:text-gray-700">{open ? "Hide ▲" : "Show ▼"}</span>
+      </button>
+      {open && <div className="flex flex-col gap-3">{children}</div>}
+    </div>
+  );
+}
+
 export function CustomerForm({ action, initialData = {}, id, onCancel }: Props) {
   const [error, formAction, pending] = useActionState(action, null);
 
@@ -192,6 +210,16 @@ export function CustomerForm({ action, initialData = {}, id, onCancel }: Props) 
     vat:      initialData.billing_vat      ?? "",
   });
 
+  // Optional sections start expanded only when they already hold data.
+  const billingHasData = Object.values(billing).some((v) => v && v.length > 0);
+  const shippingHasData = shippingSame || [
+    initialData.shipping_name, initialData.shipping_address, initialData.shipping_city,
+    initialData.shipping_state, initialData.shipping_postcode, initialData.shipping_country,
+    initialData.shipping_tel, initialData.shipping_email, initialData.shipping_vat,
+    initialData.shipping_memo, initialData.forwarder, initialData.forwarder_account,
+  ].some(Boolean);
+  const otherHasData = !!initialData.website || snsEntries.length > 0 || shops.length > 0;
+
   function addShop() {
     if (shops.length < MAX_SHOPS) setShops((p) => [...p, { name: "", address: "" }]);
   }
@@ -230,7 +258,7 @@ export function CustomerForm({ action, initialData = {}, id, onCancel }: Props) 
       </div>
 
       {/* ── 2. Must Info ── */}
-      <Section title="Must Info">
+      <Section title="Customer Setting (MUST)">
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Customer Type <span className="text-red-500">*</span></label>
@@ -349,7 +377,7 @@ export function CustomerForm({ action, initialData = {}, id, onCancel }: Props) 
       </Section>
 
       {/* ── 3. Billing Address ── */}
-      <Section title="Billing Address">
+      <CollapsibleSection title="Billing Address" defaultOpen={billingHasData}>
         <div>
           <label className="block text-xs font-medium text-gray-600 mb-1">Company Name</label>
           <input name="billing_company" value={billing.company} onChange={(e) => setBilling((p) => ({ ...p, company: e.target.value }))} className={inputCls} />
@@ -392,10 +420,10 @@ export function CustomerForm({ action, initialData = {}, id, onCancel }: Props) 
           <label className="block text-xs font-medium text-gray-600 mb-1">VAT Number</label>
           <input name="billing_vat" value={billing.vat} onChange={(e) => setBilling((p) => ({ ...p, vat: e.target.value }))} className={inputCls} />
         </div>
-      </Section>
+      </CollapsibleSection>
 
       {/* ── 4. Shipping Address ── */}
-      <Section title="Shipping Address">
+      <CollapsibleSection title="Shipping Address" defaultOpen={shippingHasData}>
         <label className="flex items-center gap-2 cursor-pointer select-none">
           <input
             type="checkbox"
@@ -470,10 +498,11 @@ export function CustomerForm({ action, initialData = {}, id, onCancel }: Props) 
             <input name="forwarder_account" defaultValue={initialData.forwarder_account ?? ""} className={inputCls} />
           </div>
         </div>
-      </Section>
+      </CollapsibleSection>
 
-      {/* ── 5. Online Presence ── */}
-      <Section title="Online Presence">
+      {/* ── 5. Other Info (Online Presence + Shops) ── */}
+      <CollapsibleSection title="Other Info" defaultOpen={otherHasData}>
+        <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Online Presence</p>
         <div>
           <label className="block text-xs font-medium text-gray-600 mb-1">Website</label>
           <input name="website" type="url" defaultValue={initialData.website ?? ""} className={inputCls} placeholder="https://example.com" />
@@ -511,10 +540,8 @@ export function CustomerForm({ action, initialData = {}, id, onCancel }: Props) 
             + Add SNS
           </button>
         )}
-      </Section>
 
-      {/* ── 6. Shops ── */}
-      <Section title={`Shops (${shops.length}/${MAX_SHOPS})`}>
+        <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mt-3">Shops ({shops.length}/{MAX_SHOPS})</p>
         {shops.map((shop, i) => (
           <div key={i} className="flex gap-2 items-start border border-gray-100 rounded-lg p-3">
             <div className="flex-1 flex flex-col gap-2">
@@ -552,7 +579,7 @@ export function CustomerForm({ action, initialData = {}, id, onCancel }: Props) 
         {shops.length === 0 && (
           <p className="text-xs text-gray-400">No shops added yet</p>
         )}
-      </Section>
+      </CollapsibleSection>
 
       <div className="flex gap-2 pt-1 border-t border-gray-100">
         <button type="submit" disabled={pending} className="px-4 py-2 bg-gray-900 text-white text-sm rounded-md hover:bg-gray-700 disabled:opacity-50">
