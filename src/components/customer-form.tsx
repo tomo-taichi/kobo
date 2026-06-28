@@ -57,7 +57,7 @@ type Props = {
   onCancel?: () => void;
 };
 
-const inputCls  = "w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-gray-900";
+const inputCls  = "w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-gray-900 disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed";
 const selectCls = inputCls + " bg-white";
 
 // Grouped country select + optional free-text fallback
@@ -205,6 +205,18 @@ export function CustomerForm({ action, initialData = {}, id, onCancel }: Props) 
   const [portalAccess, setPortalAccess] = useState<boolean>(initialData.portal_access ?? false);
   const [portalTouched, setPortalTouched] = useState(false);
 
+  // Customer Setting fields are controlled (submitted via hidden inputs) so they survive
+  // being locked/disabled. On the detail page they're locked until "Change" is pressed.
+  const [language, setLanguage] = useState(initialData.language ?? "en");
+  const [currency, setCurrency] = useState(initialData.currency ?? "JPY");
+  const [taxIncluded, setTaxIncluded] = useState(initialData.tax_included ?? false);
+  const [bank, setBank] = useState(initialData.bank ?? "");
+  const [contractStatus, setContractStatus] = useState(initialData.contract_status ?? "Active");
+  const [contractStart, setContractStart] = useState(initialData.contract_start_date ?? "");
+  const [contractEnd, setContractEnd] = useState(initialData.contract_end_date ?? "");
+  const [locked, setLocked] = useState(true);
+  const editable = !id || !locked; // create flow is always editable; detail locks until "Change"
+
   const clampPct = (v: string) => Math.max(0, Math.min(100, Number(v) || 0));
 
   function handleTypeChange(next: string) {
@@ -219,7 +231,7 @@ export function CustomerForm({ action, initialData = {}, id, onCancel }: Props) 
     if (!portalTouched) setPortalAccess(customerType === "B2B" || v);
   }
 
-  const numCls = "w-20 px-2 py-1 border border-gray-300 rounded-md text-sm text-right focus:outline-none focus:ring-2 focus:ring-gray-900";
+  const numCls = "w-20 px-2 py-1 border border-gray-300 rounded-md text-sm text-right focus:outline-none focus:ring-2 focus:ring-gray-900 disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed";
 
   const [shippingSame, setShippingSame] = useState(initialData.shipping_same ?? false);
   const [shops, setShops] = useState<Shop[]>(initialData.shops?.length ? initialData.shops : []);
@@ -291,6 +303,15 @@ export function CustomerForm({ action, initialData = {}, id, onCancel }: Props) 
       <input type="hidden" name="portal_access" value={portalAccess ? "true" : "false"} />
       <input type="hidden" name="default_deposit_pct" value={depositRequired ? depositPct : 0} />
       <input type="hidden" name="default_discount_pct" value={customerType === "B2C" && isVip ? discountPct : 0} />
+      {/* Customer Setting fields submit via these hidden inputs (visible controls are name-less + lockable). */}
+      <input type="hidden" name="customer_type" value={customerType} />
+      <input type="hidden" name="language" value={language} />
+      <input type="hidden" name="currency" value={currency} />
+      <input type="hidden" name="tax_included" value={taxIncluded ? "true" : "false"} />
+      <input type="hidden" name="bank" value={bank} />
+      <input type="hidden" name="contract_status" value={contractStatus} />
+      <input type="hidden" name="contract_start_date" value={contractStart} />
+      <input type="hidden" name="contract_end_date" value={contractEnd} />
       {isError && <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded">{result}</p>}
 
       {/* ── 1. Client Name ── */}
@@ -302,18 +323,34 @@ export function CustomerForm({ action, initialData = {}, id, onCancel }: Props) 
       </div>
 
       {/* ── 2. Must Info ── */}
-      <Section title="Customer Setting (MUST)">
+      <CollapsibleSection
+        title="Customer Setting (MUST)"
+        defaultOpen
+        badge={id ? (
+          <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${editable ? "bg-amber-50 text-amber-700" : "bg-gray-100 text-gray-500"}`}>
+            {editable ? "Editing" : "🔒 Locked"}
+          </span>
+        ) : undefined}
+      >
+        {id && (
+          <div className="flex justify-end -mt-1">
+            <button type="button" onClick={() => setLocked((v) => !v)}
+              className="text-[11px] text-gray-600 hover:text-gray-900 border border-gray-300 rounded px-2.5 py-1">
+              {editable ? "Lock settings" : "Change settings"}
+            </button>
+          </div>
+        )}
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Customer Type <span className="text-red-500">*</span></label>
-            <select name="customer_type" value={customerType} onChange={(e) => handleTypeChange(e.target.value)} required className={selectCls}>
+            <select value={customerType} onChange={(e) => handleTypeChange(e.target.value)} disabled={!editable} className={selectCls}>
               <option value="">Select...</option>
               {CUSTOMER_TYPES.map((t) => <option key={t} value={t}>{CUSTOMER_TYPE_LABELS[t]}</option>)}
             </select>
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Document Language <span className="text-red-500">*</span></label>
-            <select name="language" defaultValue={initialData.language ?? "en"} required className={selectCls}>
+            <select value={language} onChange={(e) => setLanguage(e.target.value)} disabled={!editable} className={selectCls}>
               {LANGUAGES.map((l) => <option key={l.value} value={l.value}>{l.label}</option>)}
             </select>
           </div>
@@ -322,21 +359,21 @@ export function CustomerForm({ action, initialData = {}, id, onCancel }: Props) 
         <div className="grid grid-cols-3 gap-3">
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Currency <span className="text-red-500">*</span></label>
-            <select name="currency" defaultValue={initialData.currency ?? "JPY"} required className={selectCls}>
+            <select value={currency} onChange={(e) => setCurrency(e.target.value)} disabled={!editable} className={selectCls}>
               <option value="JPY">JPY (¥)</option>
               <option value="EUR">EUR (€)</option>
             </select>
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Tax <span className="text-red-500">*</span></label>
-            <select name="tax_included" defaultValue={initialData.tax_included ? "true" : "false"} required className={selectCls}>
+            <select value={taxIncluded ? "true" : "false"} onChange={(e) => setTaxIncluded(e.target.value === "true")} disabled={!editable} className={selectCls}>
               <option value="false">No Tax</option>
               <option value="true">Tax Included</option>
             </select>
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Bank <span className="text-red-500">*</span></label>
-            <select name="bank" defaultValue={initialData.bank ?? ""} required className={selectCls}>
+            <select value={bank} onChange={(e) => setBank(e.target.value)} disabled={!editable} className={selectCls}>
               <option value="">Select...</option>
               <option value="Rakuten_JP">Rakuten JP</option>
               <option value="WISE_EU">WISE EU</option>
@@ -348,13 +385,13 @@ export function CustomerForm({ action, initialData = {}, id, onCancel }: Props) 
         {customerType === "B2C" && (
           <div className="flex items-center gap-5 flex-wrap bg-gray-50 border border-gray-100 rounded-lg px-3 py-2">
             <label className="flex items-center gap-2 cursor-pointer text-xs text-gray-700 select-none">
-              <input type="checkbox" checked={isVip} onChange={(e) => handleVipChange(e.target.checked)} className="w-4 h-4" />
+              <input type="checkbox" checked={isVip} disabled={!editable} onChange={(e) => handleVipChange(e.target.checked)} className="w-4 h-4" />
               VIP
             </label>
             {isVip ? (
               <div className="flex items-center gap-2">
                 <label className="text-xs text-gray-600">VIP Discount Rate</label>
-                <input type="number" min="0" max="100" value={discountPct} onChange={(e) => setDiscountPct(clampPct(e.target.value))} className={numCls} />
+                <input type="number" min="0" max="100" value={discountPct} disabled={!editable} onChange={(e) => setDiscountPct(clampPct(e.target.value))} className={numCls} />
                 <span className="text-xs text-gray-400">% off retail (pre-fills orders)</span>
               </div>
             ) : (
@@ -366,13 +403,13 @@ export function CustomerForm({ action, initialData = {}, id, onCancel }: Props) 
         {/* Deposit on/off + default rate */}
         <div className="flex items-center gap-5 flex-wrap">
           <label className="flex items-center gap-2 cursor-pointer text-xs text-gray-700 select-none">
-            <input type="checkbox" checked={depositRequired} onChange={(e) => setDepositRequired(e.target.checked)} className="w-4 h-4" />
+            <input type="checkbox" checked={depositRequired} disabled={!editable} onChange={(e) => setDepositRequired(e.target.checked)} className="w-4 h-4" />
             Deposit required
           </label>
           {depositRequired ? (
             <div className="flex items-center gap-2">
               <label className="text-xs text-gray-600">Default Deposit Rate</label>
-              <input type="number" min="0" max="100" value={depositPct}
+              <input type="number" min="0" max="100" value={depositPct} disabled={!editable}
                 onChange={(e) => { setDepositPct(clampPct(e.target.value)); setDepositTouched(true); }} className={numCls} />
               <span className="text-xs text-gray-400">% of total (pre-fills orders)</span>
             </div>
@@ -383,7 +420,7 @@ export function CustomerForm({ action, initialData = {}, id, onCancel }: Props) 
 
         {/* B2B Portal access */}
         <label className="flex items-center gap-2 cursor-pointer text-xs text-gray-700 select-none">
-          <input type="checkbox" checked={portalAccess}
+          <input type="checkbox" checked={portalAccess} disabled={!editable}
             onChange={(e) => { setPortalAccess(e.target.checked); setPortalTouched(true); }} className="w-4 h-4" />
           B2B Portal access
           <span className="text-gray-400 font-normal">(default: B2B, or B2C marked VIP)</span>
@@ -393,7 +430,7 @@ export function CustomerForm({ action, initialData = {}, id, onCancel }: Props) 
         <div className="grid grid-cols-3 gap-3">
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Contract Status <span className="text-red-500">*</span></label>
-            <select name="contract_status" defaultValue={initialData.contract_status ?? "Active"} required className={selectCls}>
+            <select value={contractStatus} onChange={(e) => setContractStatus(e.target.value)} disabled={!editable} className={selectCls}>
               {CONTRACT_STATUSES.map((s) => (
                 <option key={s.value} value={s.value}>{s.label}</option>
               ))}
@@ -401,24 +438,14 @@ export function CustomerForm({ action, initialData = {}, id, onCancel }: Props) 
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Contract Start Date</label>
-            <input
-              type="date"
-              name="contract_start_date"
-              defaultValue={initialData.contract_start_date ?? ""}
-              className={inputCls}
-            />
+            <input type="date" value={contractStart} onChange={(e) => setContractStart(e.target.value)} disabled={!editable} className={inputCls} />
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Contract End Date</label>
-            <input
-              type="date"
-              name="contract_end_date"
-              defaultValue={initialData.contract_end_date ?? ""}
-              className={inputCls}
-            />
+            <input type="date" value={contractEnd} onChange={(e) => setContractEnd(e.target.value)} disabled={!editable} className={inputCls} />
           </div>
         </div>
-      </Section>
+      </CollapsibleSection>
 
       {/* ── 3. Billing Address ── */}
       <CollapsibleSection title="Billing Address" defaultOpen={billingHasData} badge={<StatusBadge ok={billingComplete} />}>
