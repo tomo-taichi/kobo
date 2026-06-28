@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState, useState, useRef } from "react";
-import { CUSTOMER_TYPES, CUSTOMER_TYPE_LABELS, LANGUAGES, COUNTRY_GROUPS, FLAT_COUNTRIES } from "@/lib/customer-constants";
+import { CUSTOMER_TYPES, CUSTOMER_TYPE_LABELS, LANGUAGES, COUNTRY_GROUPS, FLAT_COUNTRIES, isAddressComplete } from "@/lib/customer-constants";
 
 type Action = (_state: string | null, formData: FormData) => Promise<string | null>;
 
@@ -141,7 +141,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 // Optional section that can be collapsed/expanded. Starts open when it already has data.
 // Children stay MOUNTED when collapsed (just hidden) so their inputs remain in the form —
 // otherwise auto-save would submit missing fields and wipe that section's data.
-function CollapsibleSection({ title, defaultOpen = false, children }: { title: string; defaultOpen?: boolean; children: React.ReactNode }) {
+function CollapsibleSection({ title, defaultOpen = false, badge, children }: { title: string; defaultOpen?: boolean; badge?: React.ReactNode; children: React.ReactNode }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
     <div>
@@ -150,12 +150,22 @@ function CollapsibleSection({ title, defaultOpen = false, children }: { title: s
         onClick={() => setOpen((o) => !o)}
         className="w-full flex items-center justify-between border-b border-gray-100 pb-1 mb-3 group"
       >
-        <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">{title}</h3>
+        <span className="flex items-center gap-2">
+          <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">{title}</h3>
+          {badge}
+        </span>
         <span className="text-[11px] text-gray-400 group-hover:text-gray-700">{open ? "Hide ▲" : "Show ▼"}</span>
       </button>
       <div className={open ? "flex flex-col gap-3" : "hidden"}>{children}</div>
     </div>
   );
+}
+
+// Complete / Incomplete pill for the Billing / Shipping section headers.
+function StatusBadge({ ok }: { ok: boolean }) {
+  return ok
+    ? <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-emerald-50 text-emerald-700">Complete</span>
+    : <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-amber-50 text-amber-700">Incomplete</span>;
 }
 
 export function CustomerForm({ action, initialData = {}, id, onCancel }: Props) {
@@ -216,8 +226,6 @@ export function CustomerForm({ action, initialData = {}, id, onCancel }: Props) 
   const [snsEntries, setSnsEntries] = useState<SnsEntry[]>(
     initialData.sns?.length ? initialData.sns : []
   );
-  const [shippingCountry, setShippingCountry] = useState(initialData.shipping_country ?? "");
-
   const [billing, setBilling] = useState({
     company:  initialData.billing_company  ?? "",
     address:  initialData.billing_address  ?? "",
@@ -229,6 +237,22 @@ export function CustomerForm({ action, initialData = {}, id, onCancel }: Props) 
     email:    initialData.billing_email    ?? "",
     vat:      initialData.billing_vat      ?? "",
   });
+
+  const [shipping, setShipping] = useState({
+    name:     initialData.shipping_name     ?? "",
+    address:  initialData.shipping_address  ?? "",
+    city:     initialData.shipping_city     ?? "",
+    state:    initialData.shipping_state    ?? "",
+    postcode: initialData.shipping_postcode ?? "",
+    country:  initialData.shipping_country  ?? "",
+    tel:      initialData.shipping_tel      ?? "",
+    email:    initialData.shipping_email    ?? "",
+    vat:      initialData.shipping_vat      ?? "",
+  });
+
+  // Address completeness (live) — gates document generation. shipping_same → inherits billing.
+  const billingComplete = isAddressComplete(billing);
+  const shippingComplete = shippingSame ? billingComplete : isAddressComplete(shipping);
 
   // Optional sections start expanded only when they already hold data.
   const billingHasData = Object.values(billing).some((v) => v && v.length > 0);
@@ -397,7 +421,7 @@ export function CustomerForm({ action, initialData = {}, id, onCancel }: Props) 
       </Section>
 
       {/* ── 3. Billing Address ── */}
-      <CollapsibleSection title="Billing Address" defaultOpen={billingHasData}>
+      <CollapsibleSection title="Billing Address" defaultOpen={billingHasData} badge={<StatusBadge ok={billingComplete} />}>
         <div>
           <label className="block text-xs font-medium text-gray-600 mb-1">Company Name</label>
           <input name="billing_company" value={billing.company} onChange={(e) => setBilling((p) => ({ ...p, company: e.target.value }))} className={inputCls} />
@@ -443,7 +467,7 @@ export function CustomerForm({ action, initialData = {}, id, onCancel }: Props) 
       </CollapsibleSection>
 
       {/* ── 4. Shipping Address ── */}
-      <CollapsibleSection title="Shipping Address" defaultOpen={shippingHasData}>
+      <CollapsibleSection title="Shipping Address" defaultOpen={shippingHasData} badge={<StatusBadge ok={shippingComplete} />}>
         <label className="flex items-center gap-2 cursor-pointer select-none">
           <input
             type="checkbox"
@@ -458,45 +482,45 @@ export function CustomerForm({ action, initialData = {}, id, onCancel }: Props) 
           <>
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">Shipping Name</label>
-              <input name="shipping_name" defaultValue={initialData.shipping_name ?? ""} className={inputCls} />
+              <input name="shipping_name" value={shipping.name} onChange={(e) => setShipping((p) => ({ ...p, name: e.target.value }))} className={inputCls} />
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">Address</label>
-              <input name="shipping_address" defaultValue={initialData.shipping_address ?? ""} className={inputCls} />
+              <input name="shipping_address" value={shipping.address} onChange={(e) => setShipping((p) => ({ ...p, address: e.target.value }))} className={inputCls} />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">City</label>
-                <input name="shipping_city" defaultValue={initialData.shipping_city ?? ""} className={inputCls} />
+                <input name="shipping_city" value={shipping.city} onChange={(e) => setShipping((p) => ({ ...p, city: e.target.value }))} className={inputCls} />
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">State / Region</label>
-                <input name="shipping_state" defaultValue={initialData.shipping_state ?? ""} className={inputCls} />
+                <input name="shipping_state" value={shipping.state} onChange={(e) => setShipping((p) => ({ ...p, state: e.target.value }))} className={inputCls} />
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Postcode</label>
-                <input name="shipping_postcode" defaultValue={initialData.shipping_postcode ?? ""} className={inputCls} />
+                <input name="shipping_postcode" value={shipping.postcode} onChange={(e) => setShipping((p) => ({ ...p, postcode: e.target.value }))} className={inputCls} />
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Country</label>
                 <CountrySelect
                   name="shipping_country"
-                  value={shippingCountry}
-                  onChange={setShippingCountry}
+                  value={shipping.country}
+                  onChange={(v) => setShipping((p) => ({ ...p, country: v }))}
                 />
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Tel</label>
-                <input name="shipping_tel" defaultValue={initialData.shipping_tel ?? ""} className={inputCls} />
+                <input name="shipping_tel" value={shipping.tel} onChange={(e) => setShipping((p) => ({ ...p, tel: e.target.value }))} className={inputCls} />
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Email</label>
-                <input name="shipping_email" type="email" defaultValue={initialData.shipping_email ?? ""} className={inputCls} />
+                <input name="shipping_email" type="email" value={shipping.email} onChange={(e) => setShipping((p) => ({ ...p, email: e.target.value }))} className={inputCls} />
               </div>
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">VAT Number</label>
-              <input name="shipping_vat" defaultValue={initialData.shipping_vat ?? ""} className={inputCls} />
+              <input name="shipping_vat" value={shipping.vat} onChange={(e) => setShipping((p) => ({ ...p, vat: e.target.value }))} className={inputCls} />
             </div>
           </>
         )}

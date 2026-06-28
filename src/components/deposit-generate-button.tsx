@@ -11,7 +11,7 @@ function defaultDeadline(): string {
   return d.toISOString().slice(0, 10); // YYYY-MM-DD
 }
 
-export function DepositGenerateButton({ orderId, savedUrl: initialSavedUrl }: { orderId: string; savedUrl: string | null }) {
+export function DepositGenerateButton({ orderId, savedUrl: initialSavedUrl, disabledReason }: { orderId: string; savedUrl: string | null; disabledReason?: string | null }) {
   const [open, setOpen] = useState(false);
   const [deadline, setDeadline] = useState(defaultDeadline());
   const [savedUrl, setSavedUrl] = useState(initialSavedUrl);
@@ -39,7 +39,8 @@ export function DepositGenerateButton({ orderId, savedUrl: initialSavedUrl }: { 
       <div className="flex items-center gap-2">
         <button
           onClick={() => setOpen(true)}
-          className="text-sm px-4 py-2 bg-gray-900 text-white rounded hover:bg-gray-700"
+          disabled={!!disabledReason}
+          className="text-sm px-4 py-2 bg-gray-900 text-white rounded hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           Generate & Save
         </button>
@@ -50,6 +51,7 @@ export function DepositGenerateButton({ orderId, savedUrl: initialSavedUrl }: { 
           </a>
         )}
       </div>
+      {disabledReason && <p className="text-xs text-amber-600">⚠ {disabledReason}</p>}
 
       {open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">

@@ -23,6 +23,24 @@ export const DEPOSIT_TERMS_LABELS: Record<string, string> = {
   Production_Only:        "Production Only",
 };
 
+// An address is "complete" when address line + city + postcode + country are all present.
+// Used to gate document generation: Billing → Final/Advance Invoice; Shipping → Commercial Invoice.
+export function isAddressComplete(a: {
+  address?: string | null; city?: string | null; postcode?: string | null; country?: string | null;
+}): boolean {
+  return !!(a.address?.trim() && a.city?.trim() && a.postcode?.trim() && a.country?.trim());
+}
+export function isBillingComplete(c: {
+  billing_address?: string | null; billing_city?: string | null; billing_postcode?: string | null; billing_country?: string | null;
+}): boolean {
+  return isAddressComplete({ address: c.billing_address, city: c.billing_city, postcode: c.billing_postcode, country: c.billing_country });
+}
+export function isShippingComplete(c: {
+  shipping_address?: string | null; shipping_city?: string | null; shipping_postcode?: string | null; shipping_country?: string | null;
+}): boolean {
+  return isAddressComplete({ address: c.shipping_address, city: c.shipping_city, postcode: c.shipping_postcode, country: c.shipping_country });
+}
+
 export const COUNTRY_GROUPS: { label: string; countries: string[] }[] = [
   {
     label: "Asia",

@@ -11,8 +11,12 @@ import { DeliveryNoteDocument } from "@/lib/pdf/delivery-note-document";
 import { getLang, OC_LABELS } from "@/lib/pdf/labels";
 import { buildOcProps, computeOcTotals, buildDeliveryNoteProps } from "@/lib/pdf/oc-data";
 import { beginVersion, finalizeVersion, upsertDocumentDebit } from "@/lib/pdf/document-log";
+import { isAddressComplete } from "@/lib/customer-constants";
 
 export type SavePdfResult = { url: string } | { error: string };
+
+const BILLING_INCOMPLETE = "Billing address is incomplete — add address, city, postcode and country to the customer before issuing this invoice.";
+const SHIPPING_INCOMPLETE = "Shipping address is incomplete — add address, city, postcode and country to the customer before issuing the Commercial Invoice.";
 
 function fmtId(raw: string | null): string {
   if (!raw) return "—";
@@ -21,8 +25,8 @@ function fmtId(raw: string | null): string {
   return `P${String(n).padStart(6, "0")}`;
 }
 
-function buildCustomerAddress(customer: any): string {
-  return [customer?.billing_address, customer?.billing_city, customer?.billing_country]
+function buildShippingAddress(customer: any): string {
+  return [customer?.shipping_address, customer?.shipping_city, customer?.shipping_country]
     .filter(Boolean)
     .join(", ");
 }
@@ -83,6 +87,7 @@ export async function saveDepositPdf(orderId: string, paymentDeadline?: string |
 
   const props: any = await buildOcProps(supabase, orderId);
   if (!props) return { error: "Order not found" };
+  if (!props.billingComplete) return { error: BILLING_INCOMPLETE };
 
   const isJpy = props.currency === "JPY";
   const deadlineDisplay = paymentDeadline ? paymentDeadline.replaceAll("-", "/") : null;
@@ -143,6 +148,7 @@ export async function saveFinalInvoicePdf(orderId: string, opts: BatchOpts = {})
 
   const props: any = await buildOcProps(supabase, orderId);
   if (!props) return { error: "Order not found" };
+  if (!props.billingComplete) return { error: BILLING_INCOMPLETE };
 
   const isJpy = props.currency === "JPY";
 
@@ -251,12 +257,17 @@ export async function saveCommercialPdf(orderId: string, isOverseas: boolean, op
 
   const orderResult = await supabase
     .from("orders")
-    .select("order_date, currency_type, exchange_rate, customers(name, currency, billing_company, billing_address, billing_city, billing_country), seasons(name)")
+    .select("order_date, currency_type, exchange_rate, customers(name, currency, shipping_name, shipping_address, shipping_city, shipping_postcode, shipping_country), seasons(name)")
     .eq("id", orderId)
     .single();
 
   const order: any = orderResult.data;
   if (!order) return { error: "Order not found" };
+  // Commercial Invoice ships overseas → requires a complete consignee (shipping) address.
+  if (!isAddressComplete({
+    address: order.customers?.shipping_address, city: order.customers?.shipping_city,
+    postcode: order.customers?.shipping_postcode, country: order.customers?.shipping_country,
+  })) return { error: SHIPPING_INCOMPLETE };
 
   const lang = getLang(order.customers?.currency);
   const company = await resolveCompany(supabase, lang);
@@ -296,8 +307,8 @@ export async function saveCommercialPdf(orderId: string, isOverseas: boolean, op
     const buffer = await renderToBuffer(React.createElement(CommercialInvoiceDocument, {
       lang,
       company,
-      customerName: order.customers?.billing_company || order.customers?.name || "—",
-      customerAddress: buildCustomerAddress(order.customers),
+      customerName: order.customers?.shipping_name || order.customers?.name || "—",
+      customerAddress: buildShippingAddress(order.customers),
       seasonName: order.seasons?.name ?? "—",
       orderDate: order.order_date,
       currencyType: order.currency_type,

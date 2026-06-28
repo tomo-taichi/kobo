@@ -14,8 +14,8 @@ function fmtId(raw: string | null): string {
   return `P${String(n).padStart(6, "0")}`;
 }
 
-function buildCustomerAddress(customer: any): string {
-  return [customer?.billing_address, customer?.billing_city, customer?.billing_country]
+function buildShippingAddress(customer: any): string {
+  return [customer?.shipping_address, customer?.shipping_city, customer?.shipping_country]
     .filter(Boolean)
     .join(", ");
 }
@@ -31,7 +31,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   const [orderResult, companyResult] = await Promise.all([
     supabase
       .from("orders")
-      .select("order_date, currency_type, exchange_rate, customers(name, currency, billing_company, billing_address, billing_city, billing_country), seasons(name)")
+      .select("order_date, currency_type, exchange_rate, customers(name, currency, shipping_name, shipping_address, shipping_city, shipping_postcode, shipping_country), seasons(name)")
       .eq("id", id)
       .single(),
     supabase
@@ -88,8 +88,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     materials: (item.products?.product_materials ?? []).map((pm: { materials: { name: string } | null }) => pm.materials?.name ?? "").filter(Boolean),
   }));
 
-  const customerName = order.customers?.billing_company || order.customers?.name || "—";
-  const customerAddress = buildCustomerAddress(order.customers);
+  const customerName = order.customers?.shipping_name || order.customers?.name || "—";
+  const customerAddress = buildShippingAddress(order.customers);
 
   const filename = isOverseas
     ? `CommercialInvoice-${id.slice(0, 8)}.pdf`

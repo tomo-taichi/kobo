@@ -5,6 +5,7 @@ import { saveOcPdf } from "@/app/actions/pdf-storage";
 import { PdfSaveButton } from "@/components/pdf-save-button";
 import { DepositGenerateButton } from "@/components/deposit-generate-button";
 import { BatchGenerateButton } from "@/components/batch-generate-button";
+import { isBillingComplete, isShippingComplete } from "@/lib/customer-constants";
 import { fmtEur } from "@/lib/format";
 
 export default async function OrderDocumentsPage({ params }: { params: Promise<{ id: string }> }) {
@@ -14,7 +15,7 @@ export default async function OrderDocumentsPage({ params }: { params: Promise<{
   const [orderResult, itemsResult, docsResult] = await Promise.all([
     supabase
       .from("orders")
-      .select("invoice_count, pdf_oc_url, pdf_deposit_url, pdf_final_url, pdf_commercial_url, customers(deposit_terms, currency)")
+      .select("invoice_count, pdf_oc_url, pdf_deposit_url, pdf_final_url, pdf_commercial_url, customers(deposit_terms, currency, billing_address, billing_city, billing_postcode, billing_country, shipping_address, shipping_city, shipping_postcode, shipping_country)")
       .eq("id", id)
       .single(),
     supabase
@@ -38,6 +39,12 @@ export default async function OrderDocumentsPage({ params }: { params: Promise<{
   const currency = order.customers?.currency === "JPY" ? "JPY" : "EUR";
   // JPY customers ship with a Delivery Note (納品書); EUR with a Commercial Invoice (customs)
   const isJpy = currency === "JPY";
+
+  // Address gating: billing → Final/Advance Invoice; shipping → Commercial Invoice.
+  const billingReason = isBillingComplete(order.customers ?? {})
+    ? null : "Billing address incomplete — complete it in Client Info to issue invoices.";
+  const shippingReason = isShippingComplete(order.customers ?? {})
+    ? null : "Shipping address incomplete — complete it in Client Info to issue the Commercial Invoice.";
 
   const fmtAmount = (n: number) =>
     currency === "JPY"
@@ -89,11 +96,11 @@ export default async function OrderDocumentsPage({ params }: { params: Promise<{
   // PDF document buttons (gated by deposit terms / domestic vs overseas)
   const docButtons = [
     { kind: "oc", label: "Order Confirmation", previewHref: `/api/orders/${id}/oc`, savedUrl: order.pdf_oc_url, saveAction: saveOcPdf.bind(null, id) },
-    showAdvance ? { kind: "deposit", label: "Advance Invoice", previewHref: `/api/orders/${id}/deposit-invoice`, savedUrl: order.pdf_deposit_url } : null,
-    { kind: "batch", docType: "final", label: "Final Invoice", previewHref: `/api/orders/${id}/final-invoice`, savedUrl: order.pdf_final_url },
+    showAdvance ? { kind: "deposit", label: "Advance Invoice", previewHref: `/api/orders/${id}/deposit-invoice`, savedUrl: order.pdf_deposit_url, disabledReason: billingReason } : null,
+    { kind: "batch", docType: "final", label: "Final Invoice", previewHref: `/api/orders/${id}/final-invoice`, savedUrl: order.pdf_final_url, disabledReason: billingReason },
     isJpy
       ? { kind: "batch", docType: "delivery", label: "Delivery Note", previewHref: `/api/orders/${id}/commercial-invoice?type=domestic`, savedUrl: order.pdf_commercial_url }
-      : { kind: "batch", docType: "commercial", label: "Commercial Invoice", previewHref: `/api/orders/${id}/commercial-invoice`, savedUrl: order.pdf_commercial_url },
+      : { kind: "batch", docType: "commercial", label: "Commercial Invoice", previewHref: `/api/orders/${id}/commercial-invoice`, savedUrl: order.pdf_commercial_url, disabledReason: shippingReason },
   ].filter(Boolean) as any[];
 
   return (
@@ -111,9 +118,9 @@ export default async function OrderDocumentsPage({ params }: { params: Promise<{
                 Preview
               </a>
               {b.kind === "deposit" ? (
-                <DepositGenerateButton orderId={id} savedUrl={b.savedUrl} />
+                <DepositGenerateButton orderId={id} savedUrl={b.savedUrl} disabledReason={b.disabledReason} />
               ) : b.kind === "batch" ? (
-                <BatchGenerateButton orderId={id} docType={b.docType} items={batchItemsFor(b.docType)} existingDocs={batchDocsFor(b.docType)} savedUrl={b.savedUrl} hasDeposit={showAdvance} />
+                <BatchGenerateButton orderId={id} docType={b.docType} items={batchItemsFor(b.docType)} existingDocs={batchDocsFor(b.docType)} savedUrl={b.savedUrl} hasDeposit={showAdvance} disabledReason={b.disabledReason} />
               ) : (
                 <PdfSaveButton label="Generate & Save" savedUrl={b.savedUrl} action={b.saveAction} />
               )}

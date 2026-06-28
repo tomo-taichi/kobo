@@ -14,6 +14,8 @@ type Customer = {
   deposit_terms: string;
   currency: string | null;
   tax_included: boolean;
+  billing_complete: boolean;
+  shipping_complete: boolean;
   billing_country: string | null;
   contract_status: string | null;
   contract_start_date: string | null;
@@ -178,6 +180,7 @@ export function CustomersClient({ customers }: { customers: Customer[] }) {
             <th className="text-left px-4 py-3 font-medium text-gray-600">Deposit</th>
             <th className="text-left px-4 py-3 font-medium text-gray-600">Currency</th>
             <th className="text-left px-4 py-3 font-medium text-gray-600">Tax</th>
+            <th className="text-left px-4 py-3 font-medium text-gray-600">Address</th>
             <th className="text-left px-4 py-3 font-medium text-gray-600">Country</th>
             <th className="text-right px-4 py-3 font-medium text-gray-600"></th>
           </tr>
@@ -241,6 +244,16 @@ export function CustomersClient({ customers }: { customers: Customer[] }) {
                     ? <Pill text="Tax" cls="bg-rose-50 text-rose-700" />
                     : <Pill text="No Tax" cls="bg-gray-100 text-gray-500" />}
                 </td>
+                <td className="px-4 py-3">
+                  {c.billing_complete && c.shipping_complete ? (
+                    <Pill text="✓" cls="bg-emerald-50 text-emerald-700" />
+                  ) : (
+                    <span className="flex gap-1">
+                      {!c.billing_complete && <Pill text="Billing" cls="bg-amber-50 text-amber-700" />}
+                      {!c.shipping_complete && <Pill text="Ship" cls="bg-amber-50 text-amber-700" />}
+                    </span>
+                  )}
+                </td>
                 <td className="px-4 py-3 text-gray-500 text-xs">{c.billing_country ?? "—"}</td>
                 <td className="px-4 py-3 text-right">
                   <div className="flex gap-2 justify-end">
@@ -255,7 +268,7 @@ export function CustomersClient({ customers }: { customers: Customer[] }) {
           })}
           {!filtered.length && (
             <tr>
-              <td colSpan={8} className="px-4 py-8 text-center text-gray-400 text-sm">
+              <td colSpan={9} className="px-4 py-8 text-center text-gray-400 text-sm">
                 {hasFilter ? "No customers match the filters" : "No customers yet"}
               </td>
             </tr>

@@ -1,4 +1,5 @@
 import { buildPaymentTerms, bankDetailLines, type PdfLang } from "./labels";
+import { isAddressComplete } from "@/lib/customer-constants";
 
 function fmtId(raw: string | null): string {
   if (!raw) return "—";
@@ -166,6 +167,10 @@ export async function buildOcProps(supabase: any, orderId: string) {
   const customer = order.customers ?? {};
   const lang: PdfLang = customer.language === "ja" ? "ja" : "en";
   const showWholesale = customer.customer_type !== "B2C"; // B2C invoices show retail only
+  const billingComplete = isAddressComplete({
+    address: customer.billing_address, city: customer.billing_city,
+    postcode: customer.billing_postcode, country: customer.billing_country,
+  });
   const cs: any = companyResult.data ?? {};
 
   const nickname = cs.nickname || "taichimurakami";
@@ -219,6 +224,7 @@ export async function buildOcProps(supabase: any, orderId: string) {
   return {
     lang,
     showWholesale,
+    billingComplete,
     nickname,
     footerLine,
     orderNumber: order.order_number != null ? String(order.order_number) : orderId.slice(0, 8),

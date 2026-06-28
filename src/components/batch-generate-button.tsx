@@ -15,9 +15,10 @@ type Props = {
   existingDocs: BatchDoc[];
   savedUrl: string | null;
   hasDeposit?: boolean; // Deposit_and_Production customer → ask "Deposit Paid?"
+  disabledReason?: string | null; // when set, generation is blocked (e.g. address incomplete)
 };
 
-export function BatchGenerateButton({ orderId, docType, items, existingDocs, savedUrl: initialSavedUrl, hasDeposit }: Props) {
+export function BatchGenerateButton({ orderId, docType, items, existingDocs, savedUrl: initialSavedUrl, hasDeposit, disabledReason }: Props) {
   const askDeposit = docType === "final" && !!hasDeposit;
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<"new" | "revise">("new");
@@ -102,7 +103,8 @@ export function BatchGenerateButton({ orderId, docType, items, existingDocs, sav
   return (
     <div className="flex flex-col gap-1">
       <div className="flex items-center gap-2">
-        <button onClick={openModal} className="text-sm px-4 py-2 bg-gray-900 text-white rounded hover:bg-gray-700">
+        <button onClick={openModal} disabled={!!disabledReason}
+          className="text-sm px-4 py-2 bg-gray-900 text-white rounded hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed">
           Generate & Save
         </button>
         {savedUrl && (
@@ -112,6 +114,7 @@ export function BatchGenerateButton({ orderId, docType, items, existingDocs, sav
           </a>
         )}
       </div>
+      {disabledReason && <p className="text-xs text-amber-600">⚠ {disabledReason}</p>}
 
       {open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">

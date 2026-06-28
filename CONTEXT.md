@@ -31,7 +31,10 @@ _Avoid_: Order
 _Avoid_: ファイナルインボイス（PDF 表記は「請求書」/「Invoice」）
 
 **Commercial Invoice**:
-出荷時に発行する書類。**currency で出し分ける**: EUR → Commercial Invoice（英語・税関用: 製品名・数量・素材・原産国など）、JPY → 納品書（日本語・製品名・サイズ・上代/下代など）。**B2C の納品書は下代（Wholesale）列を出さず上代（Retail）のみ**表示する。Split Invoice の場合は該当バッチの商品のみ記載。
+出荷時に発行する書類。**currency で出し分ける**: EUR → Commercial Invoice（英語・税関用: 製品名・数量・素材・原産国など）、JPY → 納品書（日本語・製品名・サイズ・上代/下代など）。Commercial Invoice は **Ship-To（顧客の shipping address）を記載**し、**Shipping Address が未完成だと発行できない**（→ Address Completeness）。**B2C の納品書は下代（Wholesale）列を出さず上代（Retail）のみ**表示する。Split Invoice の場合は該当バッチの商品のみ記載。
+
+**Address Completeness（住所の完備）**:
+住所は **address + city + postcode + country** が揃って「complete」。**Billing 未完成 → Final Invoice / Advance Invoice 発行不可**、**Shipping 未完成 → Commercial Invoice 発行不可**（OC・納品書は対象外）。`shipping_same` の場合 shipping は billing をコピーするので billing が完成すれば shipping も完成。Customer Detail の各住所セクションに Complete/Incomplete を表示し、書類生成ボタンを無効化＋サーバ側でも拒否する。
 
 **Document Language（書類の言語）**:
 顧客ごとに **English / Japanese を明示設定**（`customers.language`）。これが **OC・Advance Invoice・Final Invoice** の本文・タイトル言語（請求書↔Invoice 等）を決める。出荷書類（納品書/Commercial Invoice）はネイティブ言語固定で Language の影響を受けない（納品書=日本語固定、Commercial Invoice=英語固定）。Language は currency とは独立した別軸（ADR-0007 が ADR-0006 を置換）。社内 Web UI は常に英語。
