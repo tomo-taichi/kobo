@@ -3,7 +3,7 @@
 import { useState, useMemo, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { CUSTOMER_TYPES, CUSTOMER_TYPE_LABELS, CUSTOMER_TYPE_COLOURS, DEPOSIT_TERMS_LABELS } from "@/lib/customer-constants";
+import { CUSTOMER_TYPES, CUSTOMER_TYPE_LABELS, CUSTOMER_TYPE_COLOURS } from "@/lib/customer-constants";
 import { updateCustomerStatus } from "@/app/actions/customers";
 
 type Customer = {
@@ -13,11 +13,22 @@ type Customer = {
   is_vip: boolean;
   deposit_terms: string;
   currency: string | null;
+  tax_included: boolean;
   billing_country: string | null;
   contract_status: string | null;
   contract_start_date: string | null;
   contract_end_date: string | null;
 };
+
+const CURRENCY_COLOURS: Record<string, string> = {
+  EUR: "bg-violet-50 text-violet-700",
+  JPY: "bg-teal-50 text-teal-700",
+};
+
+// Small colored status pill (shared by Type / Deposit / Currency / Tax cells).
+function Pill({ text, cls }: { text: string; cls: string }) {
+  return <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${cls}`}>{text}</span>;
+}
 
 const CONTRACT_COLOURS: Record<string, string> = {
   Active:     "bg-green-50 text-green-700",
@@ -164,8 +175,9 @@ export function CustomersClient({ customers }: { customers: Customer[] }) {
             <th className="text-left px-4 py-3 font-medium text-gray-600">Status</th>
             <th className="text-left px-4 py-3 font-medium text-gray-600">Type</th>
             <th className="text-left px-4 py-3 font-medium text-gray-600 min-w-48">Name</th>
-            <th className="text-left px-4 py-3 font-medium text-gray-600">Deposit Terms</th>
+            <th className="text-left px-4 py-3 font-medium text-gray-600">Deposit</th>
             <th className="text-left px-4 py-3 font-medium text-gray-600">Currency</th>
+            <th className="text-left px-4 py-3 font-medium text-gray-600">Tax</th>
             <th className="text-left px-4 py-3 font-medium text-gray-600">Country</th>
             <th className="text-right px-4 py-3 font-medium text-gray-600"></th>
           </tr>
@@ -216,8 +228,19 @@ export function CustomersClient({ customers }: { customers: Customer[] }) {
                   </div>
                 </td>
                 <td className="px-4 py-3 text-gray-900 font-medium">{c.name}</td>
-                <td className="px-4 py-3 text-gray-500 text-xs">{DEPOSIT_TERMS_LABELS[c.deposit_terms] ?? c.deposit_terms}</td>
-                <td className="px-4 py-3 text-gray-500 text-xs">{c.currency ?? "—"}</td>
+                <td className="px-4 py-3">
+                  {c.deposit_terms === "Deposit_and_Production"
+                    ? <Pill text="Deposit" cls="bg-emerald-50 text-emerald-700" />
+                    : <Pill text="No Deposit" cls="bg-gray-100 text-gray-500" />}
+                </td>
+                <td className="px-4 py-3">
+                  <Pill text={c.currency ?? "—"} cls={CURRENCY_COLOURS[c.currency ?? ""] ?? "bg-gray-100 text-gray-500"} />
+                </td>
+                <td className="px-4 py-3">
+                  {c.tax_included
+                    ? <Pill text="Tax" cls="bg-rose-50 text-rose-700" />
+                    : <Pill text="No Tax" cls="bg-gray-100 text-gray-500" />}
+                </td>
                 <td className="px-4 py-3 text-gray-500 text-xs">{c.billing_country ?? "—"}</td>
                 <td className="px-4 py-3 text-right">
                   <div className="flex gap-2 justify-end">
@@ -232,7 +255,7 @@ export function CustomersClient({ customers }: { customers: Customer[] }) {
           })}
           {!filtered.length && (
             <tr>
-              <td colSpan={7} className="px-4 py-8 text-center text-gray-400 text-sm">
+              <td colSpan={8} className="px-4 py-8 text-center text-gray-400 text-sm">
                 {hasFilter ? "No customers match the filters" : "No customers yet"}
               </td>
             </tr>
