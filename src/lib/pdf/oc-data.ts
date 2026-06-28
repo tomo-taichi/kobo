@@ -1,4 +1,4 @@
-import { getLang, buildPaymentTerms, bankDetailLines, type PdfLang } from "./labels";
+import { buildPaymentTerms, bankDetailLines, type PdfLang } from "./labels";
 
 function fmtId(raw: string | null): string {
   if (!raw) return "—";
@@ -80,7 +80,7 @@ export async function buildDeliveryNoteProps(supabase: any, orderId: string, ite
   const [orderResult, companyResult] = await Promise.all([
     supabase
       .from("orders")
-      .select("order_date, exchange_rate, customers(name, billing_company, tax_included), seasons(name)")
+      .select("order_date, exchange_rate, customers(name, billing_company, tax_included, customer_type), seasons(name)")
       .eq("id", orderId)
       .single(),
     supabase
@@ -133,6 +133,7 @@ export async function buildDeliveryNoteProps(supabase: any, orderId: string, ite
     seasonName: order.seasons?.name ?? "—",
     deliveryDate: order.order_date,
     taxRate: customer.tax_included ? 0.10 : 0,
+    showWholesale: customer.customer_type !== "B2C", // B2C 納品書 hides 下代 (wholesale)
     items,
     itemRowIds: rows.map((r: any) => r.id) as string[],
   };
@@ -146,7 +147,7 @@ export async function buildOcProps(supabase: any, orderId: string) {
   const [orderResult, itemsResult, companyResult] = await Promise.all([
     supabase
       .from("orders")
-      .select("order_number, order_date, customer_id, discount_rate, deposit_rate, tax_rate, exchange_rate, deposit_amount_eur, deposit_amount_jpy, invoice_count, customers(id, name, group_type, currency, bank, tax_included, deposit_terms, billing_company, billing_address, billing_city, billing_postcode, billing_country), seasons(name)")
+      .select("order_number, order_date, customer_id, discount_rate, deposit_rate, tax_rate, exchange_rate, deposit_amount_eur, deposit_amount_jpy, invoice_count, customers(id, name, customer_type, language, currency, bank, tax_included, deposit_terms, billing_company, billing_address, billing_city, billing_postcode, billing_country), seasons(name)")
       .eq("id", orderId)
       .single(),
     supabase
@@ -163,7 +164,8 @@ export async function buildOcProps(supabase: any, orderId: string) {
   if (!order) return null;
 
   const customer = order.customers ?? {};
-  const lang: PdfLang = getLang(customer.currency);
+  const lang: PdfLang = customer.language === "ja" ? "ja" : "en";
+  const showWholesale = customer.customer_type !== "B2C"; // B2C invoices show retail only
   const cs: any = companyResult.data ?? {};
 
   const nickname = cs.nickname || "taichimurakami";
@@ -191,7 +193,8 @@ export async function buildOcProps(supabase: any, orderId: string) {
 
   const hasDeposit = customer.deposit_terms === "Deposit_and_Production";
   const paymentTerms = buildPaymentTerms(
-    customer.group_type,
+    customer.customer_type,
+    lang,
     hasDeposit,
     Math.round(Number(order.deposit_rate) * 100),
     nickname,
@@ -215,6 +218,7 @@ export async function buildOcProps(supabase: any, orderId: string) {
 
   return {
     lang,
+    showWholesale,
     nickname,
     footerLine,
     orderNumber: order.order_number != null ? String(order.order_number) : orderId.slice(0, 8),

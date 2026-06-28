@@ -28,6 +28,7 @@ type Props = {
   seasonName: string;
   deliveryDate: string | null;
   taxRate: number;        // 0.10 if tax_included else 0
+  showWholesale?: boolean; // B2B: 上代+下代; B2C: 上代 (billed) only
   items: DeliveryItem[];
   versionLabel?: string | null;
 };
@@ -54,7 +55,7 @@ const W_TOTAL = 52;
 const W_MEMO = 56;
 
 export function DeliveryNoteDocument({
-  company, customerName, seasonName, deliveryDate, taxRate, items, versionLabel,
+  company, customerName, seasonName, deliveryDate, taxRate, items, versionLabel, showWholesale = true,
 }: Props) {
   let totalQty = 0;
   let subtotalRetail = 0;
@@ -110,13 +111,13 @@ export function DeliveryNoteDocument({
           <View style={{ flexDirection: "row", backgroundColor: "#6b6b6b", paddingVertical: 3, paddingHorizontal: 4 }}>
             <Text style={{ width: W_CAT, fontSize: 6, color: "#fff" }}>category</Text>
             <Text style={{ flex: 1, fontSize: 6, color: "#fff" }}>item</Text>
-            <Text style={{ width: W_PRICE, fontSize: 6, color: "#fff", textAlign: "right" }}>whsle</Text>
+            {showWholesale && <Text style={{ width: W_PRICE, fontSize: 6, color: "#fff", textAlign: "right" }}>whsle</Text>}
             <Text style={{ width: W_PRICE, fontSize: 6, color: "#fff", textAlign: "right" }}>retail</Text>
             {SIZES.map((s) => (
               <Text key={s} style={{ width: W_SIZE, fontSize: 6, color: "#fff", textAlign: "center" }}>{sizeLabel(s)}</Text>
             ))}
             <Text style={{ width: W_QTY, fontSize: 6, color: "#fff", textAlign: "right" }}>qty</Text>
-            <Text style={{ width: W_TOTAL, fontSize: 6, color: "#fff", textAlign: "right" }}>whsle total</Text>
+            {showWholesale && <Text style={{ width: W_TOTAL, fontSize: 6, color: "#fff", textAlign: "right" }}>whsle total</Text>}
             <Text style={{ width: W_TOTAL, fontSize: 6, color: "#fff", textAlign: "right" }}>retail total</Text>
             <Text style={{ width: W_MEMO, fontSize: 6, color: "#fff", textAlign: "right" }}>memo</Text>
           </View>
@@ -129,15 +130,15 @@ export function DeliveryNoteDocument({
                 <Text style={{ flex: 1, fontSize: 7, paddingRight: 4 }}>
                   {item.itemName}{item.color ? <Text style={muted}>{`  /  ${item.color}`}</Text> : null}
                 </Text>
-                <Text style={{ width: W_PRICE, ...cell, textAlign: "right" }}>{fmtJpy(item.whsleJpy)}</Text>
-                <Text style={{ width: W_PRICE, fontSize: 7, ...muted, textAlign: "right" }}>{fmtJpy(item.retailJpy)}</Text>
+                {showWholesale && <Text style={{ width: W_PRICE, ...cell, textAlign: "right" }}>{fmtJpy(item.whsleJpy)}</Text>}
+                <Text style={{ width: W_PRICE, ...(showWholesale ? { fontSize: 7, ...muted } : cell), textAlign: "right" }}>{fmtJpy(showWholesale ? item.retailJpy : item.whsleJpy)}</Text>
                 {SIZES.map((s) => {
                   const q = item.sizes.find((sz) => sz.size === s)?.quantity ?? 0;
                   return <Text key={s} style={{ width: W_SIZE, ...cell, textAlign: "center" }}>{q > 0 ? q : ""}</Text>;
                 })}
                 <Text style={{ width: W_QTY, ...cell, textAlign: "right", fontWeight: "bold" }}>{qty}</Text>
-                <Text style={{ width: W_TOTAL, ...cell, textAlign: "right" }}>{fmtJpy(item.whsleJpy * qty)}</Text>
-                <Text style={{ width: W_TOTAL, fontSize: 7, ...muted, textAlign: "right" }}>{fmtJpy(item.retailJpy * qty)}</Text>
+                {showWholesale && <Text style={{ width: W_TOTAL, ...cell, textAlign: "right" }}>{fmtJpy(item.whsleJpy * qty)}</Text>}
+                <Text style={{ width: W_TOTAL, ...(showWholesale ? { fontSize: 7, ...muted } : cell), textAlign: "right" }}>{fmtJpy((showWholesale ? item.retailJpy : item.whsleJpy) * qty)}</Text>
                 <Text style={{ width: W_MEMO, fontSize: 6, ...muted, textAlign: "right" }}>{item.memo ?? ""}</Text>
               </View>
             );
@@ -145,12 +146,12 @@ export function DeliveryNoteDocument({
 
           {/* Grand total strip */}
           <View style={{ flexDirection: "row", paddingVertical: 4, paddingHorizontal: 4 }}>
-            <View style={{ width: W_CAT + W_PRICE * 2 }} />
+            <View style={{ width: W_CAT + W_PRICE * (showWholesale ? 2 : 1) }} />
             <View style={{ flex: 1 }} />
             {SIZES.map((s) => <View key={s} style={{ width: W_SIZE }} />)}
             <Text style={{ width: W_QTY, fontSize: 8, textAlign: "right", fontWeight: "bold" }}>{totalQty}</Text>
-            <Text style={{ width: W_TOTAL, fontSize: 7, textAlign: "right", ...muted }}>{fmtJpy(subtotalWholesale)}</Text>
-            <Text style={{ width: W_TOTAL, fontSize: 7, textAlign: "right", ...muted }}>{fmtJpy(subtotalRetail)}</Text>
+            {showWholesale && <Text style={{ width: W_TOTAL, fontSize: 7, textAlign: "right", ...muted }}>{fmtJpy(subtotalWholesale)}</Text>}
+            <Text style={{ width: W_TOTAL, fontSize: 7, textAlign: "right", ...muted }}>{fmtJpy(showWholesale ? subtotalRetail : subtotalWholesale)}</Text>
             <View style={{ width: W_MEMO }} />
           </View>
         </View>
@@ -165,8 +166,14 @@ export function DeliveryNoteDocument({
 
           {/* totals */}
           <View style={{ width: 230, border: "0.5pt solid #ccc" }}>
-            <SummaryRow label="小計（上代）" amount={fmtJpy(subtotalRetail)} />
-            <SummaryRow label="小計（下代）" amount={fmtJpy(subtotalWholesale)} />
+            {showWholesale ? (
+              <>
+                <SummaryRow label="小計（上代）" amount={fmtJpy(subtotalRetail)} />
+                <SummaryRow label="小計（下代）" amount={fmtJpy(subtotalWholesale)} />
+              </>
+            ) : (
+              <SummaryRow label="小計" amount={fmtJpy(subtotalWholesale)} />
+            )}
             <SummaryRow label={`消費税${taxPct ? `（${taxPct}%）` : ""}`} amount={fmtJpy(tax)} />
             <SummaryRow label="合計金額" amount={fmtJpy(grandTotal)} bold last />
           </View>

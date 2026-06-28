@@ -65,8 +65,9 @@ export const LABELS = {
   },
 } as const;
 
-// Document language follows the customer's currency: JPY → Japanese, else English.
-// See docs/adr/0006-document-language-by-currency.md
+// Currency-derived language (legacy helper). Document language is now an explicit
+// customer field (customers.language) — see ADR-0007. Still used for the overseas
+// Commercial Invoice, which is English-native (EUR ⇒ "en").
 export function getLang(currency: string | null | undefined): PdfLang {
   return currency === "JPY" ? "ja" : "en";
 }
@@ -166,60 +167,69 @@ export function bankDetailLines(
 export type PaymentTerms = { label: string; lines: string[] } | null;
 
 /**
- * Build the Payment Term block, driven by the client's `group_type`.
- * Shown on Order Confirmation, Deposit Invoice and Final Invoice.
+ * Build the Payment Term block, keyed off Customer Type + document language + deposit.
+ * Shown on Order Confirmation, Advance Invoice and Final Invoice. See ADR-0007.
  *
- * - Domestic  → fixed Japanese terms (monthly closing / no web pricing / no sales)
- * - Customer  → fixed Japanese terms (made-to-order, 7-day payment, no cancellation)
- * - Personal  → no payment term block (returns null)
- * - Overseas  → English terms based on deposit_terms (deposit vs full payment).
- *               `hasDeposit` = customers.deposit_terms === "Deposit_and_Production",
- *               `depositPct` = deposit rate as a whole number, `brand` = nickname.
+ * - B2C + deposit  → made-to-order terms (ja or en by document language)
+ * - B2C, no deposit → no block (returns null) — e.g. family/friends
+ * - B2B, ja        → domestic wholesale terms (monthly closing / no web pricing / no sales)
+ * - B2B, en        → English terms based on deposit (deposit vs full payment).
+ *
+ * `hasDeposit` = customers.deposit_terms === "Deposit_and_Production",
+ * `depositPct` = deposit rate as a whole number, `brand` = nickname.
  */
 export function buildPaymentTerms(
-  groupType: string | null | undefined,
+  customerType: string | null | undefined,
+  lang: PdfLang,
   hasDeposit: boolean,
   depositPct: number,
   brand: string,
 ): PaymentTerms {
-  switch (groupType) {
-    case "Domestic":
-      return {
-        label: "お支払い条件:",
-        lines: [
-          "お支払い条件は、月末締め・翌月末払いにてお願いしております。",
-          "商品価格のWebサイト上での掲載はお控えいただきますようお願い申し上げます。",
-          "セール販売はお断りしております。また、Webサイト上での値引き表示、セール告知、クーポン配布等につきましてもご遠慮くださいますようお願い申し上げます。",
-        ],
-      };
-    case "Customer":
-      return {
-        label: "お支払い条件:",
-        lines: [
-          "本商品は受注生産品となります。",
-          "ご入金確認後に製作を開始いたしますので、お支払いは請求書発行日より7日以内にお願いいたします。",
-          "なお、ご入金確認後のキャンセル・返金はお受けいたしかねます。",
-        ],
-      };
-    case "Personal":
-      return null;
-    case "Overseas":
-    default: {
-      const lines = hasDeposit
-        ? [
-            `- ${depositPct}% deposit is required by T/T remittance within 7 days upon order placement.`,
-            "- The rest is required by T/T remittance before shipment.",
-          ]
-        : ["- Full payment is required by T/T remittance before shipment."];
-      return {
-        label: "Payment Term:",
-        lines: [
-          ...lines,
-          "- Bank fees are on your account.",
-          `- ${brand} products are strictly prohibited from being sold on discount via the internet.`,
-          "- DO NOT put the price on the internet.",
-        ],
-      };
-    }
+  if (customerType === "B2C") {
+    if (!hasDeposit) return null;
+    return lang === "ja"
+      ? {
+          label: "お支払い条件:",
+          lines: [
+            "本商品は受注生産品となります。",
+            "ご入金確認後に製作を開始いたしますので、お支払いは請求書発行日より7日以内にお願いいたします。",
+            "なお、ご入金確認後のキャンセル・返金はお受けいたしかねます。",
+          ],
+        }
+      : {
+          label: "Payment Term:",
+          lines: [
+            "- These items are made to order; production begins upon payment confirmation.",
+            "- Payment is due within 7 days of the invoice date.",
+            "- Orders cannot be cancelled or refunded once payment is confirmed.",
+          ],
+        };
   }
+
+  // B2B
+  if (lang === "ja") {
+    return {
+      label: "お支払い条件:",
+      lines: [
+        "お支払い条件は、月末締め・翌月末払いにてお願いしております。",
+        "商品価格のWebサイト上での掲載はお控えいただきますようお願い申し上げます。",
+        "セール販売はお断りしております。また、Webサイト上での値引き表示、セール告知、クーポン配布等につきましてもご遠慮くださいますようお願い申し上げます。",
+      ],
+    };
+  }
+  const lines = hasDeposit
+    ? [
+        `- ${depositPct}% deposit is required by T/T remittance within 7 days upon order placement.`,
+        "- The rest is required by T/T remittance before shipment.",
+      ]
+    : ["- Full payment is required by T/T remittance before shipment."];
+  return {
+    label: "Payment Term:",
+    lines: [
+      ...lines,
+      "- Bank fees are on your account.",
+      `- ${brand} products are strictly prohibited from being sold on discount via the internet.`,
+      "- DO NOT put the price on the internet.",
+    ],
+  };
 }

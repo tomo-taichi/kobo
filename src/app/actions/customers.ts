@@ -15,13 +15,6 @@ function pctFraction(formData: FormData, key: string): number {
   return Math.max(0, Math.min(100, n)) / 100;
 }
 
-// Legacy group_type written-through from the new model so the Phase-2 PDF code keeps
-// working: B2B → Domestic (JPY) / Overseas (EUR); B2C → Customer.
-function legacyGroupType(customerType: string | null, currency: string): string {
-  if (customerType === "B2B") return currency === "JPY" ? "Domestic" : "Overseas";
-  return "Customer";
-}
-
 function extractFields(formData: FormData) {
   const shippingSame = formData.get("shipping_same") === "true";
 
@@ -37,7 +30,6 @@ function extractFields(formData: FormData) {
   return {
     name:             str(formData, "name"),
     customer_type,
-    group_type:       legacyGroupType(customer_type, currency),
     language:         str(formData, "language") ?? "en",
     is_vip:           formData.get("is_vip") === "true",
     default_discount_rate: pctFraction(formData, "default_discount_pct"),

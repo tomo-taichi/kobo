@@ -31,7 +31,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   const [orderResult, companyResult] = await Promise.all([
     supabase
       .from("orders")
-      .select("order_date, currency_type, exchange_rate, customers(name, group_type, currency, billing_company, billing_address, billing_city, billing_country), seasons(name)")
+      .select("order_date, currency_type, exchange_rate, customers(name, currency, billing_company, billing_address, billing_city, billing_country), seasons(name)")
       .eq("id", id)
       .single(),
     supabase

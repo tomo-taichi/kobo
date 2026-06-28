@@ -34,6 +34,7 @@ type Props = {
   currency: string;            // "EUR" | "JPY" (customers.currency)
   exchangeRate: number | null; // orders.exchange_rate (Season snapshot)
   paymentTerms: PaymentTerms;
+  showWholesale?: boolean;     // B2B: show wholesale + retail; B2C: retail (billed) only
   items: OrderItem[];
   versionLabel?: string | null;
   // ── variant: shared layout for OC / Advance / Final ──
@@ -72,6 +73,7 @@ export function OcDocument({
   lang, nickname, footerLine, orderNumber, customerName, clientName, customerAddressLines,
   customerId, seasonName, orderDate, discountRate, taxRate, currency, exchangeRate, paymentTerms, items,
   versionLabel, variant = "oc", numberText, bankDetails, paymentDeadline, issueDate, depositRate, depositApplied,
+  showWholesale = true,
 }: Props) {
   const isInvoice = variant !== "oc";
   const L = OC_LABELS[lang];
@@ -185,12 +187,14 @@ export function OcDocument({
           <View style={{ flexDirection: "row", backgroundColor: "#3a3a3a", paddingVertical: 3, paddingHorizontal: 4 }}>
             <Text style={{ width: W_CAT, fontSize: 6, color: "#fff" }}>{L.colCategory}{"\n"}{L.colId}</Text>
             <Text style={{ flex: 1, fontSize: 6, color: "#fff" }}>{L.colItem}</Text>
-            <Text style={{ width: W_PRICE, fontSize: 6, color: "#fff", textAlign: "right" }}>{L.colWholesale}{"\n"}{L.colRetail}</Text>
+            <Text style={{ width: W_PRICE, fontSize: 6, color: "#fff", textAlign: "right" }}>
+              {showWholesale ? <>{L.colWholesale}{"\n"}{L.colRetail}</> : L.colRetail}
+            </Text>
             {SIZES.map((s) => (
               <Text key={s} style={{ width: W_SIZE, fontSize: 6, color: "#fff", textAlign: "center" }}>{sizeLabel(s)}</Text>
             ))}
             <Text style={{ width: W_QTY, fontSize: 6, color: "#fff", textAlign: "right" }}>{L.colQty}</Text>
-            <Text style={{ width: W_TOTAL, fontSize: 6, color: "#fff", textAlign: "right" }}>{L.colWhsleTotal}</Text>
+            {showWholesale && <Text style={{ width: W_TOTAL, fontSize: 6, color: "#fff", textAlign: "right" }}>{L.colWhsleTotal}</Text>}
             <Text style={{ width: W_TOTAL, fontSize: 6, color: "#fff", textAlign: "right" }}>{L.colRetailTotal}</Text>
             <Text style={{ width: W_MEMO, fontSize: 6, color: "#fff", textAlign: "right" }}>{L.colMemo}</Text>
           </View>
@@ -213,20 +217,31 @@ export function OcDocument({
                     {[item.materialName, item.color].filter(Boolean).join(" | ") || "—"}
                   </Text>
                 </View>
-                {/* wholesale(下代) / retail(上代) unit — JPY shows ¥ + € */}
+                {/* Unit price — B2B: wholesale(下代) + retail(上代); B2C: billed retail only. JPY shows ¥ + € */}
                 <View style={{ width: W_PRICE }}>
-                  {isJpy ? (
-                    <>
-                      <Text style={{ ...cell, textAlign: "right" }}>{fmtJpy(jpyU(item.wholesaleEur))}</Text>
-                      <Text style={{ fontSize: 5.5, ...muted, textAlign: "right", marginBottom: 1.5 }}>{fmtEur(item.wholesaleEur)}</Text>
-                      <Text style={{ ...cell, textAlign: "right" }}>{fmtJpy(jpyU(item.retailEur))}</Text>
-                      <Text style={{ fontSize: 5.5, ...muted, textAlign: "right" }}>{fmtEur(item.retailEur)}</Text>
-                    </>
+                  {showWholesale ? (
+                    isJpy ? (
+                      <>
+                        <Text style={{ ...cell, textAlign: "right" }}>{fmtJpy(jpyU(item.wholesaleEur))}</Text>
+                        <Text style={{ fontSize: 5.5, ...muted, textAlign: "right", marginBottom: 1.5 }}>{fmtEur(item.wholesaleEur)}</Text>
+                        <Text style={{ ...cell, textAlign: "right" }}>{fmtJpy(jpyU(item.retailEur))}</Text>
+                        <Text style={{ fontSize: 5.5, ...muted, textAlign: "right" }}>{fmtEur(item.retailEur)}</Text>
+                      </>
+                    ) : (
+                      <>
+                        <Text style={{ ...cell, textAlign: "right" }}>{fmtEur(item.wholesaleEur)}</Text>
+                        <Text style={{ fontSize: 7, ...muted, textAlign: "right" }}>{fmtEur(item.retailEur)}</Text>
+                      </>
+                    )
                   ) : (
-                    <>
+                    isJpy ? (
+                      <>
+                        <Text style={{ ...cell, textAlign: "right" }}>{fmtJpy(jpyU(item.wholesaleEur))}</Text>
+                        <Text style={{ fontSize: 5.5, ...muted, textAlign: "right" }}>{fmtEur(item.wholesaleEur)}</Text>
+                      </>
+                    ) : (
                       <Text style={{ ...cell, textAlign: "right" }}>{fmtEur(item.wholesaleEur)}</Text>
-                      <Text style={{ fontSize: 7, ...muted, textAlign: "right" }}>{fmtEur(item.retailEur)}</Text>
-                    </>
+                    )
                   )}
                 </View>
                 {/* sizes */}
@@ -238,25 +253,38 @@ export function OcDocument({
                 })}
                 {/* qty */}
                 <Text style={{ width: W_QTY, ...cell, textAlign: "right", fontWeight: "bold" }}>{qty}</Text>
-                {/* 下代合計 / 上代合計 — JPY shows ¥ + € */}
+                {/* Line total(s) — B2B: 下代合計 + 上代合計; B2C: single billed total. JPY shows ¥ + € */}
+                {showWholesale && (
+                  <View style={{ width: W_TOTAL }}>
+                    {isJpy ? (
+                      <>
+                        <Text style={{ ...cell, textAlign: "right" }}>{fmtJpy(jpyU(item.wholesaleEur) * qty)}</Text>
+                        <Text style={{ fontSize: 5.5, ...muted, textAlign: "right" }}>{fmtEur(item.wholesaleEur * qty)}</Text>
+                      </>
+                    ) : (
+                      <Text style={{ ...cell, textAlign: "right" }}>{fmtEur(item.wholesaleEur * qty)}</Text>
+                    )}
+                  </View>
+                )}
                 <View style={{ width: W_TOTAL }}>
-                  {isJpy ? (
-                    <>
-                      <Text style={{ ...cell, textAlign: "right" }}>{fmtJpy(jpyU(item.wholesaleEur) * qty)}</Text>
-                      <Text style={{ fontSize: 5.5, ...muted, textAlign: "right" }}>{fmtEur(item.wholesaleEur * qty)}</Text>
-                    </>
+                  {showWholesale ? (
+                    isJpy ? (
+                      <>
+                        <Text style={{ ...cell, textAlign: "right" }}>{fmtJpy(jpyU(item.retailEur) * qty)}</Text>
+                        <Text style={{ fontSize: 5.5, ...muted, textAlign: "right" }}>{fmtEur(item.retailEur * qty)}</Text>
+                      </>
+                    ) : (
+                      <Text style={{ fontSize: 7, ...muted, textAlign: "right" }}>{fmtEur(item.retailEur * qty)}</Text>
+                    )
                   ) : (
-                    <Text style={{ ...cell, textAlign: "right" }}>{fmtEur(item.wholesaleEur * qty)}</Text>
-                  )}
-                </View>
-                <View style={{ width: W_TOTAL }}>
-                  {isJpy ? (
-                    <>
-                      <Text style={{ ...cell, textAlign: "right" }}>{fmtJpy(jpyU(item.retailEur) * qty)}</Text>
-                      <Text style={{ fontSize: 5.5, ...muted, textAlign: "right" }}>{fmtEur(item.retailEur * qty)}</Text>
-                    </>
-                  ) : (
-                    <Text style={{ fontSize: 7, ...muted, textAlign: "right" }}>{fmtEur(item.retailEur * qty)}</Text>
+                    isJpy ? (
+                      <>
+                        <Text style={{ ...cell, textAlign: "right" }}>{fmtJpy(jpyU(item.wholesaleEur) * qty)}</Text>
+                        <Text style={{ fontSize: 5.5, ...muted, textAlign: "right" }}>{fmtEur(item.wholesaleEur * qty)}</Text>
+                      </>
+                    ) : (
+                      <Text style={{ ...cell, textAlign: "right" }}>{fmtEur(item.wholesaleEur * qty)}</Text>
+                    )
                   )}
                 </View>
                 {/* memo */}
@@ -271,13 +299,24 @@ export function OcDocument({
             <View style={{ flex: 1 }} />
             {SIZES.map((s) => <View key={s} style={{ width: W_SIZE }} />)}
             <Text style={{ width: W_QTY, fontSize: 8, textAlign: "right", fontWeight: "bold" }}>{totalQty}</Text>
+            {showWholesale && (
+              <View style={{ width: W_TOTAL }}>
+                <Text style={{ fontSize: 7, textAlign: "right", ...muted }}>{isJpy ? fmtJpy(subWholesaleJpy) : fmtEur(subtotalWholesale)}</Text>
+                {isJpy ? <Text style={{ fontSize: 5.5, textAlign: "right", ...muted }}>{fmtEur(subtotalWholesale)}</Text> : null}
+              </View>
+            )}
             <View style={{ width: W_TOTAL }}>
-              <Text style={{ fontSize: 7, textAlign: "right", ...muted }}>{isJpy ? fmtJpy(subWholesaleJpy) : fmtEur(subtotalWholesale)}</Text>
-              {isJpy ? <Text style={{ fontSize: 5.5, textAlign: "right", ...muted }}>{fmtEur(subtotalWholesale)}</Text> : null}
-            </View>
-            <View style={{ width: W_TOTAL }}>
-              <Text style={{ fontSize: 7, textAlign: "right", ...muted }}>{isJpy ? fmtJpy(subRetailJpy) : fmtEur(subtotalRetail)}</Text>
-              {isJpy ? <Text style={{ fontSize: 5.5, textAlign: "right", ...muted }}>{fmtEur(subtotalRetail)}</Text> : null}
+              {showWholesale ? (
+                <>
+                  <Text style={{ fontSize: 7, textAlign: "right", ...muted }}>{isJpy ? fmtJpy(subRetailJpy) : fmtEur(subtotalRetail)}</Text>
+                  {isJpy ? <Text style={{ fontSize: 5.5, textAlign: "right", ...muted }}>{fmtEur(subtotalRetail)}</Text> : null}
+                </>
+              ) : (
+                <>
+                  <Text style={{ fontSize: 7, textAlign: "right", ...muted }}>{isJpy ? fmtJpy(subWholesaleJpy) : fmtEur(subtotalWholesale)}</Text>
+                  {isJpy ? <Text style={{ fontSize: 5.5, textAlign: "right", ...muted }}>{fmtEur(subtotalWholesale)}</Text> : null}
+                </>
+              )}
             </View>
             <View style={{ width: W_MEMO }} />
           </View>
@@ -299,10 +338,16 @@ export function OcDocument({
             ) : null}
           </View>
 
-          {/* Summary table — JPY shows ¥ (primary) + € (secondary) */}
+          {/* Summary table — JPY shows ¥ (primary) + € (secondary). B2C: single billed subtotal. */}
           <View style={{ width: 200 }}>
-            <SummaryRow label={L.subtotalRetail} mid={String(totalQty)} amount={isJpy ? fmtJpy(subRetailJpy) : fmtEur(subtotalRetail)} sub={isJpy ? fmtEur(subtotalRetail) : undefined} />
-            <SummaryRow label={L.subtotalWholesale} mid={`${discountPct}%`} amount={isJpy ? fmtJpy(subWholesaleJpy) : fmtEur(subtotalWholesale)} sub={isJpy ? fmtEur(subtotalWholesale) : undefined} />
+            {showWholesale ? (
+              <>
+                <SummaryRow label={L.subtotalRetail} mid={String(totalQty)} amount={isJpy ? fmtJpy(subRetailJpy) : fmtEur(subtotalRetail)} sub={isJpy ? fmtEur(subtotalRetail) : undefined} />
+                <SummaryRow label={L.subtotalWholesale} mid={`${discountPct}%`} amount={isJpy ? fmtJpy(subWholesaleJpy) : fmtEur(subtotalWholesale)} sub={isJpy ? fmtEur(subtotalWholesale) : undefined} />
+              </>
+            ) : (
+              <SummaryRow label={L.subtotalRetail} mid={String(totalQty)} amount={isJpy ? fmtJpy(subWholesaleJpy) : fmtEur(subtotalWholesale)} sub={isJpy ? fmtEur(subtotalWholesale) : undefined} />
+            )}
             <SummaryRow label={L.tax} mid={`${taxPct}%`} amount={isJpy ? fmtJpy(taxJpy) : fmtEur(taxAmount)} />
             <SummaryRow label={L.total} mid="" amount={isJpy ? fmtJpy(totalJpy) : fmtEur(totalEur)} bold />
             {extraRows.map((r, i) => (

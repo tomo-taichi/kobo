@@ -23,16 +23,6 @@ export const DEPOSIT_TERMS_LABELS: Record<string, string> = {
   Production_Only:        "Production Only",
 };
 
-// Legacy group_type — still written-through (derived from customer_type + currency) so
-// the Phase-2 PDF code keeps working. Removed once the PDF/pricing pass migrates off it.
-export const GROUP_TYPES = ["Domestic", "Overseas", "Personal", "Customer"] as const;
-export const GROUP_TYPE_LABELS: Record<string, string> = {
-  Domestic:  "Domestic",
-  Overseas:  "Overseas",
-  Personal:  "Personal",
-  Customer:  "Customer",
-};
-
 export const COUNTRY_GROUPS: { label: string; countries: string[] }[] = [
   {
     label: "Asia",

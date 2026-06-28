@@ -14,7 +14,7 @@ export default async function OrderDocumentsPage({ params }: { params: Promise<{
   const [orderResult, itemsResult, docsResult] = await Promise.all([
     supabase
       .from("orders")
-      .select("invoice_count, pdf_oc_url, pdf_deposit_url, pdf_final_url, pdf_commercial_url, customers(deposit_terms, group_type, currency)")
+      .select("invoice_count, pdf_oc_url, pdf_deposit_url, pdf_final_url, pdf_commercial_url, customers(deposit_terms, currency)")
       .eq("id", id)
       .single(),
     supabase
