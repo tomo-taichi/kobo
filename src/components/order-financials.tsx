@@ -5,6 +5,10 @@ import { calcCustomerWholesaleEur } from "@/lib/pricing";
 import { saveOrderFinancials } from "@/app/actions/order-financials";
 import { fmtEur } from "@/lib/format";
 
+// Selectable wholesale discount tiers (B2B). The order's current value is always added
+// so any pre-filled rate (e.g. a VIP preset or 0%) stays selectable.
+const DISCOUNT_CHOICES = [40, 45, 50, 55, 60, 65];
+
 type OrderItem = {
   id:             string;
   retailPriceEur: number;
@@ -29,10 +33,8 @@ export function OrderFinancials({
   exchangeRate,
   taxRate,
   isTax,
-  currency,
   items,
 }: Props) {
-  const isJpyCust = currency === "JPY";
   const [discountPct, setDiscountPct] = useState(Math.round(initialDiscountRate * 100));
   const [depositPct,  setDepositPct]  = useState(Math.round(initialDepositRate  * 100));
   const [saving, setSaving] = useState(false);
@@ -60,6 +62,7 @@ export function OrderFinancials({
   const discountRate = discountPct / 100;
   const depositRate  = depositPct  / 100;
   const exRate       = exchangeRate && exchangeRate > 0 ? exchangeRate : null;
+  const discountOptions = Array.from(new Set([...DISCOUNT_CHOICES, discountPct])).sort((a, b) => a - b);
 
   const subtotalRetailEur   = items.reduce((s, i) => s + i.retailPriceEur * i.totalQty, 0);
   const subtotalCustomerEur = items.reduce((s, i) => s + calcCustomerWholesaleEur(i.retailPriceEur, discountRate) * i.totalQty, 0);
@@ -117,12 +120,13 @@ export function OrderFinancials({
               Discount
             </span>
             <div className="flex items-center gap-1 w-24 justify-end">
-              <input
-                type="number" min="0" max="100" step="1"
+              <select
                 value={discountPct}
                 onChange={(e) => setDiscountPct(Number(e.target.value))}
-                className="w-14 px-1.5 py-0.5 border border-gray-300 rounded text-xs text-right focus:outline-none focus:ring-1 focus:ring-gray-900"
-              />
+                className="w-16 px-1.5 py-0.5 border border-gray-300 rounded text-xs text-right bg-white focus:outline-none focus:ring-1 focus:ring-gray-900"
+              >
+                {discountOptions.map((p) => <option key={p} value={p}>{p}</option>)}
+              </select>
               <span className="text-gray-400">%</span>
             </div>
             <span className="w-24" />
@@ -154,7 +158,7 @@ export function OrderFinancials({
             <div className="grid grid-cols-[1fr_auto_auto] gap-x-4 text-xs py-1">
               <span className="text-gray-700 font-semibold">Total (incl. Tax)</span>
               <span className="font-mono font-semibold text-gray-900 text-right w-24">
-                {isJpyCust ? "—" : `€ ${fmtEur(totalWithTax)}`}
+                € {fmtEur(totalWithTax)}
               </span>
               <span className="font-mono font-semibold text-gray-700 text-right w-24">
                 {totalWithTaxJpy !== null ? `¥ ${totalWithTaxJpy.toLocaleString()}` : "—"}
