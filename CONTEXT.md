@@ -5,7 +5,17 @@ taichimurakami ブランドの商品管理・受注管理・書類発行・量�
 ## 認証
 
 **Account**:
-複数アカウント対応。各アカウントは固有の ID（メールアドレス）とパスワードを持つ。Supabase Auth（email + password）で実装する。
+複数アカウント対応。各アカウントは固有の ID（メールアドレス）とパスワードを持つ。Supabase Auth（email + password）で実装する。全アカウントに **User Role** があり **Brand User** か **Customer User** に分かれる（→ User Role）。
+
+**User Role**:
+アカウントの種別。**Brand User**（生産側。Brand Portal の全機能にアクセス）と **Customer User**（顧客側。Customer Portal のみ）。`profiles(uid, role, customer_id)` で管理し、Customer User は 1 Customer に 1:1 で紐づく（`customer_id`）。Brand User は `customer_id` なし。
+_Avoid_: 「ユーザー＝顧客」（User は Account、Customer は取引先レコード。1 Customer に 1 Customer User）
+
+**Brand Portal**:
+現行の業務システム全体（`src/app/(app)`）。Brand User のみアクセス可能。商品・受注・書類・量産・顧客管理など。
+
+**Customer Portal**:
+Customer User 向けの顧客専用画面（`src/app/(portal)`）。自社に紐づくデータのみ閲覧・操作できる。データアクセスはサーバ側（service role）で `customer_id` に限定し、顧客の JWT では Brand の各テーブルを直接読めない（各テーブルの RLS を `using(is_brand())` に変更）。
 
 ## ホーム画面
 
@@ -143,18 +153,25 @@ Order の種別フラグ。`Original`（通常受注、大多数）・`Additiona
 ## Order ステータス
 
 **Order Status**:
-Order の進行状態を A〜F で表す。支払い・書類発行のライフサイクルを追う（量産進捗は別途 Production Progress で管理）。
+Order の進行状態。Customer Portal から顧客が投稿した Order は **Submitted**（A の前）で始まり、それ以外は A〜F。支払い・書類発行のライフサイクルを追う（量産進捗は別途 Production Progress で管理）。
 
 | Status | 意味 |
 |--------|------|
-| A | OC 送付済み |
-| B | クライアントから OC 承認受領 |
+| Submitted | 顧客が Customer Portal で投稿（Brand の検証待ち。`origin=portal`）|
+| A | OC 送付済み（Brand が検証・編集して OC 発行 → Submitted から遷移）|
+| B | OC 承認受領（Customer Portal で顧客が承認 → A から遷移。Brand 手動設定も可）|
 | C | Deposit 支払い確認済み |
 | D | Final Invoice 送付済み |
 | E | 全額支払い確認済み |
 | F | Commercial Invoice 発行済み（＝出荷済み）|
 
-全額支払い確認（E）が出荷の前提条件。F に進んだ時点で納品完了。
+`orders.origin` = `brand`（Brand が作成）| `portal`（顧客が投稿）。全額支払い確認（E）が出荷の前提条件。F に進んだ時点で納品完了。
+
+**Order Submission**:
+Customer Portal での顧客による発注。Submit すると Brand Portal の Orders に `status=Submitted` / `origin=portal` で出現。Brand が検証・商品を増減して確定し OC を送付（→ A）。顧客が Customer Portal で OC を承認（→ B）。以降、Deposit が必要な顧客は入金へ（B2B=銀行振込、B2C=クレジット）、不要な顧客は量産完了を待つ。
+
+**Product Lifecycle（商品進捗）**:
+Customer Portal で Order 明細（Order 内の product×color 行）ごとに表示する 8 ステップ: PATTERN→CUT→SEW→FIN→READY（Production Progress、product×season）→ Invoiced（`order_items.is_flagged_invoice`）→ Paid（当該明細を含む Final Invoice バッチの入金済みフラグ）→ Shipped（`order_items.is_flagged_delivery`）。Paid は Final Invoice（`order_documents`）単位の入金ステータスから導出する。
 
 ## 顧客分類
 
