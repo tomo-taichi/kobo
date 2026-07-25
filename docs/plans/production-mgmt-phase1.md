@@ -3,7 +3,8 @@
 Status / progress:
 - **Step 1 — DONE & APPLIED TO PROD** (2026-07-12). Rollback-tested (all PASS), applied via apply_migration, schema verified.
 - **Step 2 — DONE** (2026-07-12). Action written; logic rollback-tested against real season 27.1 data (5 batches / 7 links / qty 23 / idempotent / progress preserved). Not yet wired to a UI (a button is Phase 2/3).
-- **Step 3, 4 — pending.**
+- **Step 3 — migration written + rollback-tested** (2026-07-12): all PASS, round-trip exact (0 mismatches) on the 2 real products; applying to prod next.
+- **Step 4 — pending.**
 
 Decisions D1–D6 confirmed by user (below). Local `supabase start` unavailable here (no Docker/CLI) → migrations rollback-tested via a self-aborting `DO` block over the live DB, then applied with user confirmation.
 
