@@ -6,7 +6,8 @@ import {
   calcCostJpy,
   calcCostEur,
   calcWholesaleEur,
-  type ManufacturingCosts,
+  mfgMinutesToAmounts,
+  type ManufacturingMinutes,
 } from "@/lib/pricing";
 
 type AdditionalRow = { materialId: string; quantity: number; role: string };
@@ -21,11 +22,15 @@ export async function updateProductCosts(
   mainQuantity: number,
   liningQuantity: number,
   additionalRows: AdditionalRow[],
-  manufacturingCosts: ManufacturingCosts,
+  manufacturingMinutes: ManufacturingMinutes,
+  laborRate: number,
   costEurRate: number,
   colorEdits: ColorEdit[]
 ): Promise<string | null> {
   const supabase = await createClient();
+
+  // The 6 steps are entered as time; derive the JPY amounts (kept in sync with *_minutes).
+  const manufacturingCosts = mfgMinutesToAmounts(manufacturingMinutes, laborRate);
 
   // Main/lining base set prices + the main material id (for per-colour prices)
   const { data: product } = await supabase
@@ -131,6 +136,13 @@ export async function updateProductCosts(
       wholesale_eur:     calcWholesaleEur(baseCostEur, baseMarkup),
       retail_rate:       first?.retailRate ?? 3.5,
       retail_price_eur:  first?.retailPriceEur ?? 0,
+      // Time inputs (source of truth) + derived JPY amounts (kept in sync for existing readers).
+      cutting_minutes:   manufacturingMinutes.cutting,
+      sewing_minutes:    manufacturingMinutes.sewing,
+      knitting_minutes:  manufacturingMinutes.knitting,
+      thread_minutes:    manufacturingMinutes.thread,
+      finish_minutes:    manufacturingMinutes.finish,
+      packing_minutes:   manufacturingMinutes.packing,
       cutting_cost_jpy:  manufacturingCosts.cutting,
       sewing_cost_jpy:   manufacturingCosts.sewing,
       knitting_cost_jpy: manufacturingCosts.knitting,

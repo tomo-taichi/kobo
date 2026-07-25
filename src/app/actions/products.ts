@@ -232,6 +232,8 @@ const DUPLICATE_FIELDS = [
   "cost_eur_rate", "markup_rate", "retail_rate", "retail_price_eur",
   "cutting_cost_jpy", "sewing_cost_jpy", "knitting_cost_jpy",
   "thread_cost_jpy", "finish_cost_jpy", "packing_cost_jpy",
+  "cutting_minutes", "sewing_minutes", "knitting_minutes",
+  "thread_minutes", "finish_minutes", "packing_minutes",
 ] as const;
 
 export async function duplicateProduct(sourceId: string) {

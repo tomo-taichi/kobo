@@ -12,6 +12,32 @@ export type ManufacturingCosts = {
   packing: number;
 };
 
+// The six manufacturing steps entered as WORK TIME (minutes). Amount = time × labor rate.
+// See ADR-0009 (D4/D5): all six steps are time-based; rate is company_settings.labor_rate_jpy_per_hour.
+export type ManufacturingMinutes = ManufacturingCosts;
+
+// One step's JPY amount from its minutes at the hourly labor rate, rounded to whole yen
+// (matches the migration backfill round(cost/rate*60) round-trip).
+export function calcMfgAmountJpy(minutes: number, ratePerHour: number): number {
+  return Math.round((minutes / 60) * ratePerHour);
+}
+
+// Convert the six time inputs into the six JPY amounts.
+export function mfgMinutesToAmounts(minutes: ManufacturingMinutes, ratePerHour: number): ManufacturingCosts {
+  return {
+    cutting:  calcMfgAmountJpy(minutes.cutting,  ratePerHour),
+    sewing:   calcMfgAmountJpy(minutes.sewing,   ratePerHour),
+    knitting: calcMfgAmountJpy(minutes.knitting, ratePerHour),
+    thread:   calcMfgAmountJpy(minutes.thread,   ratePerHour),
+    finish:   calcMfgAmountJpy(minutes.finish,   ratePerHour),
+    packing:  calcMfgAmountJpy(minutes.packing,  ratePerHour),
+  };
+}
+
+export function totalMfgMinutes(m: ManufacturingMinutes): number {
+  return m.cutting + m.sewing + m.knitting + m.thread + m.finish + m.packing;
+}
+
 export function calcMaterialCostJpy(materials: MaterialUsage[]): number {
   return materials.reduce(
     (sum, m) => sum + m.unitPriceJpy * m.usageAmount,

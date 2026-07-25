@@ -11,7 +11,7 @@ export default async function ProductCostsPage({ params }: { params: Promise<{ i
   const { id } = await params;
   const supabase = await createClient();
 
-  const [productResult, allMaterialsResult, productMaterialsResult, productColorsResult] = await Promise.all([
+  const [productResult, allMaterialsResult, productMaterialsResult, productColorsResult, settingsResult] = await Promise.all([
     supabase
       .from("products")
       .select(
@@ -19,8 +19,8 @@ export default async function ProductCostsPage({ params }: { params: Promise<{ i
         "main_material_id, main_m_name, main_m_color, main_m_quantity, " +
         "lining_material_id, lining_m_name, lining_m_color, lining_m_quantity, " +
         "cost_eur_rate, " +
-        "cutting_cost_jpy, sewing_cost_jpy, knitting_cost_jpy, " +
-        "thread_cost_jpy, finish_cost_jpy, packing_cost_jpy, " +
+        "cutting_minutes, sewing_minutes, knitting_minutes, " +
+        "thread_minutes, finish_minutes, packing_minutes, " +
         "main_mat:materials!main_material_id(material_number, set_price_jpy, unit_type), " +
         "lining_mat:materials!lining_material_id(material_number, set_price_jpy, unit_type)"
       )
@@ -33,6 +33,7 @@ export default async function ProductCostsPage({ params }: { params: Promise<{ i
       .select("id, material_color_id, markup_rate, retail_rate, retail_price_eur, sort_order, material_colors(color, set_price_jpy)")
       .eq("product_id", id)
       .order("sort_order"),
+    supabase.from("company_settings").select("labor_rate_jpy_per_hour").single(),
   ]);
 
   const p = productResult.data as any;
@@ -89,13 +90,14 @@ export default async function ProductCostsPage({ params }: { params: Promise<{ i
           allMaterials={(allMaterialsResult.data ?? []) as any}
           initialAdditionalRows={initialAdditionalRows}
           initialManufacturing={{
-            cutting:  Number(p.cutting_cost_jpy),
-            sewing:   Number(p.sewing_cost_jpy),
-            knitting: Number(p.knitting_cost_jpy),
-            thread:   Number(p.thread_cost_jpy),
-            finish:   Number(p.finish_cost_jpy),
-            packing:  Number(p.packing_cost_jpy),
+            cutting:  Number(p.cutting_minutes),
+            sewing:   Number(p.sewing_minutes),
+            knitting: Number(p.knitting_minutes),
+            thread:   Number(p.thread_minutes),
+            finish:   Number(p.finish_minutes),
+            packing:  Number(p.packing_minutes),
           }}
+          laborRate={Number((settingsResult.data as any)?.labor_rate_jpy_per_hour) || 2000}
           initialCostEurRate={Number(p.cost_eur_rate) || 160}
           colors={colors}
         />

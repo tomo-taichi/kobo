@@ -9,6 +9,9 @@ import {
   calcCustomerWholesaleEur,
   calcDepositAmountEur,
   calcDepositAmountJpy,
+  calcMfgAmountJpy,
+  mfgMinutesToAmounts,
+  totalMfgMinutes,
 } from "./pricing";
 
 // ─── 1. Material cost ────────────────────────────────────────
@@ -52,6 +55,35 @@ describe("calcCostJpy", () => {
         packing: 0,
       })
     ).toBe(5000);
+  });
+});
+
+// ─── 2b. Manufacturing time → JPY (ADR-0009) ─────────────────
+describe("calcMfgAmountJpy", () => {
+  it("amount = minutes / 60 × rate, rounded to whole yen", () => {
+    expect(calcMfgAmountJpy(240, 2000)).toBe(8000);  // 4h × 2000
+    expect(calcMfgAmountJpy(45, 2000)).toBe(1500);   // 0.75h × 2000
+  });
+  it("rounds fractional yen", () => {
+    expect(calcMfgAmountJpy(10, 2000)).toBe(333);    // 10/60×2000 = 333.33 → 333
+  });
+  it("is 0 for 0 minutes", () => {
+    expect(calcMfgAmountJpy(0, 2000)).toBe(0);
+  });
+});
+
+describe("mfgMinutesToAmounts + totalMfgMinutes", () => {
+  const mins = { cutting: 60, sewing: 300, knitting: 0, thread: 0, finish: 30, packing: 30 };
+  it("converts each step at the rate", () => {
+    expect(mfgMinutesToAmounts(mins, 2000)).toEqual({
+      cutting: 2000, sewing: 10000, knitting: 0, thread: 0, finish: 1000, packing: 1000,
+    });
+  });
+  it("round-trips through calcCostJpy (material 0)", () => {
+    expect(calcCostJpy(0, mfgMinutesToAmounts(mins, 2000))).toBe(14000);
+  });
+  it("sums total minutes", () => {
+    expect(totalMfgMinutes(mins)).toBe(420);
   });
 });
 
