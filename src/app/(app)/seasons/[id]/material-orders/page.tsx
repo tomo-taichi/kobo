@@ -2,6 +2,8 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { MaterialOrderRow } from "@/components/material-order-row";
+import { buildOrderEmail } from "@/lib/purchase-order";
+import { buildMaterialUsage, type UsageGroup } from "@/lib/material-usage";
 
 export default async function MaterialOrdersPage({ params }: { params: Promise<{ id: string }> }) {
   const { id: seasonId } = await params;
@@ -12,128 +14,170 @@ export default async function MaterialOrdersPage({ params }: { params: Promise<{
   const season: any = seasonResult.data;
   if (!season) notFound();
 
-  // Order lines in this season: each carries its main colour (product_colors) and quantity.
-  const orderItemsResult = await supabase
-    .from("order_items")
-    .select("product_id, product_colors(material_color_id), order_item_sizes(quantity), orders!inner(season_id)")
-    .eq("orders.season_id", seasonId);
-  const orderItems: any[] = orderItemsResult.data ?? [];
-  const productIds = Array.from(new Set(orderItems.map((it) => it.product_id)));
-
-  if (orderItems.length === 0) {
-    return (
-      <div className="space-y-6">
-        <Link href="/seasons" className="text-sm text-gray-500 hover:text-gray-900">← Season List</Link>
-        <h1 className="text-2xl font-semibold text-gray-900">Material Order: {season.name}</h1>
-        <p className="text-gray-400 text-sm">No ordered products in this season yet</p>
-      </div>
-    );
-  }
-
-  const [productsResult, pmResult, materialColorsResult, moResult] = await Promise.all([
-    supabase
-      .from("products")
-      .select("id, main_material_id, main_m_quantity, lining_material_id, lining_m_quantity, lining_material_color_id")
-      .in("id", productIds),
-    supabase
-      .from("product_materials")
-      .select("product_id, material_id, usage_amount, material_color_id")
-      .in("product_id", productIds),
-    supabase.from("material_colors").select("id, color, materials(id, name, unit_type)"),
+  const [usageGroups, moResult, companyResult] = await Promise.all([
+    buildMaterialUsage(supabase, seasonId),
     supabase.from("material_orders").select("material_color_id, sample_remaining, order_qty, notes").eq("season_id", seasonId),
+    supabase.from("company_settings").select("name_ja, name_en, address_ja, address_en, phone, email").limit(1).single(),
   ]);
 
-  const productsMap = new Map((productsResult.data ?? []).map((p: any) => [p.id, p]));
-  const pmsByProduct = new Map<string, any[]>();
-  for (const pm of pmResult.data ?? []) {
-    const arr = pmsByProduct.get(pm.product_id) ?? [];
-    arr.push(pm);
-    pmsByProduct.set(pm.product_id, arr);
-  }
-
-  // Aggregate usage by material colour: main → the order line's colour;
-  // lining & additional materials → their pinned colour. usage = per-unit × ordered qty.
-  const usageByColor = new Map<string, number>();
-  const add = (mcId: string | null | undefined, amt: number) => {
-    if (!mcId || !amt) return;
-    usageByColor.set(mcId, (usageByColor.get(mcId) ?? 0) + amt);
-  };
-  for (const it of orderItems) {
-    const qty = (it.order_item_sizes ?? []).reduce((s: number, r: any) => s + (r.quantity ?? 0), 0);
-    if (qty <= 0) continue;
-    const p: any = productsMap.get(it.product_id);
-    if (!p) continue;
-    const mainColor = it.product_colors?.material_color_id as string | undefined;
-    if (p.main_material_id) add(mainColor, Number(p.main_m_quantity ?? 0) * qty);
-    if (p.lining_material_id) add(p.lining_material_color_id, Number(p.lining_m_quantity ?? 0) * qty);
-    for (const pm of pmsByProduct.get(it.product_id) ?? []) {
-      add(pm.material_color_id, Number(pm.usage_amount ?? 0) * qty);
-    }
-  }
-
-  const mcMap = new Map((materialColorsResult.data ?? []).map((mc: any) => [mc.id, mc]));
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const moMap = new Map((moResult.data ?? []).map((mo: any) => [mo.material_color_id, mo]));
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const company: any = companyResult.data ?? {};
+  const companyName = company.name_ja || company.name_en || "";
+  const companyAddress = company.address_ja || company.address_en || "";
 
-  const rows = Array.from(usageByColor.entries())
-    .map(([materialColorId, totalUsage]) => {
-      const mc: any = mcMap.get(materialColorId);
-      const mo: any = moMap.get(materialColorId);
-      return {
-        materialColorId,
-        materialId: mc?.materials?.id ?? null,
-        materialName: mc?.materials?.name ?? "—",
-        colour: mc?.color ?? "—",
-        unitType: mc?.materials?.unit_type ?? "",
-        totalUsage,
-        mo,
-      };
-    })
-    .filter((r) => r.materialId)
-    .sort((a, b) => (a.materialName.localeCompare(b.materialName, "ja") || a.colour.localeCompare(b.colour)));
+  // Group material-colours by supplier for the card layout (usageGroups already
+  // arrive sorted by supplier → material → colour). "No supplier" bucket last.
+  type Group = {
+    supplierId: string | null;
+    supplierName: string | null;
+    supplierEmail: string | null;
+    supplierPerson: string | null;
+    rows: UsageGroup[];
+  };
+  const bySupplier = new Map<string, Group>();
+  for (const ug of usageGroups) {
+    const key = ug.supplierId ?? "__none__";
+    const g: Group = bySupplier.get(key) ?? {
+      supplierId: ug.supplierId,
+      supplierName: ug.supplierName,
+      supplierEmail: ug.supplierEmail,
+      supplierPerson: ug.supplierPerson,
+      rows: [],
+    };
+    g.rows.push(ug);
+    bySupplier.set(key, g);
+  }
+  const groupList = Array.from(bySupplier.values());
+
+  const buildMailto = (g: Group): string | null => {
+    if (!g.supplierEmail) return null;
+    const orderRows = g.rows
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .filter((r) => Number((moMap.get(r.materialColorId) as any)?.order_qty ?? 0) > 0)
+      .map((r) => ({
+        materialName: r.materialName,
+        colour: r.colour,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        orderQty: Number((moMap.get(r.materialColorId) as any)?.order_qty ?? 0),
+        unitType: r.unitType,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        notes: (moMap.get(r.materialColorId) as any)?.notes ?? null,
+      }));
+    if (orderRows.length === 0) return null;
+    const { subject, body } = buildOrderEmail({
+      seasonName: season.name,
+      personName: g.supplierPerson,
+      companyName,
+      companyAddress,
+      companyPhone: company.phone ?? null,
+      companyEmail: company.email ?? null,
+      rows: orderRows,
+    });
+    return `mailto:${g.supplierEmail}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  };
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const hasOrderQty = (g: Group) => g.rows.some((r) => Number((moMap.get(r.materialColorId) as any)?.order_qty ?? 0) > 0);
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-3">
+      <div className="flex items-center justify-between gap-3">
         <Link href="/seasons" className="text-sm text-gray-500 hover:text-gray-900">← Season List</Link>
+        {groupList.length > 0 && (
+          <Link
+            href={`/seasons/${seasonId}/material-orders/print`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-xs px-3 py-1.5 border border-gray-300 text-gray-700 rounded hover:bg-gray-100"
+          >
+            Print View
+          </Link>
+        )}
       </div>
       <h1 className="text-2xl font-semibold text-gray-900">Material Order: {season.name}</h1>
 
-      {rows.length === 0 ? (
-        <p className="text-gray-400 text-sm">No materials with colours configured on the ordered products</p>
+      {groupList.length === 0 ? (
+        <p className="text-gray-400 text-sm">No materials to order for this season yet</p>
       ) : (
-        <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50 border-b border-gray-200">
-              <tr>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Material</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Colour</th>
-                <th className="text-right px-4 py-3 font-medium text-gray-600">Total Usage</th>
-                <th className="text-right px-4 py-3 font-medium text-gray-600">Sample Remaining</th>
-                <th className="text-right px-4 py-3 font-medium text-gray-600">Net Required</th>
-                <th className="text-right px-4 py-3 font-medium text-gray-600">Order Qty</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Notes</th>
-                <th className="text-right px-4 py-3 font-medium text-gray-600"></th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {rows.map((row) => (
-                <MaterialOrderRow
-                  key={row.materialColorId}
-                  seasonId={seasonId}
-                  materialColorId={row.materialColorId}
-                  materialId={row.materialId as string}
-                  materialName={row.materialName}
-                  colour={row.colour}
-                  unitType={row.unitType}
-                  totalUsage={row.totalUsage}
-                  initialSampleRemaining={Number(row.mo?.sample_remaining ?? 0)}
-                  initialOrderQty={Number(row.mo?.order_qty ?? 0)}
-                  initialNotes={row.mo?.notes ?? null}
-                />
-              ))}
-            </tbody>
-          </table>
-        </div>
+        groupList.map((g) => {
+          const mailto = buildMailto(g);
+          const canOrder = hasOrderQty(g);
+          return (
+            <div key={g.supplierId ?? "__none__"} className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+              <div className="flex items-center justify-between gap-3 px-4 py-3 bg-gray-50 border-b border-gray-200">
+                <div className="min-w-0">
+                  <span className="font-medium text-gray-900">{g.supplierName ?? "No supplier assigned"}</span>
+                  {g.supplierEmail ? <span className="ml-2 text-xs text-gray-400">{g.supplierEmail}</span> : null}
+                </div>
+                {g.supplierId ? (
+                  <div className="flex items-center gap-2 shrink-0">
+                    {canOrder ? (
+                      <a
+                        href={`/api/seasons/${seasonId}/purchase-order?supplier=${g.supplierId}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs px-3 py-1.5 bg-gray-900 text-white rounded hover:bg-gray-700"
+                      >
+                        発注書 PDF
+                      </a>
+                    ) : (
+                      <span className="text-xs text-gray-400">Enter order quantities to generate a PO</span>
+                    )}
+                    {mailto ? (
+                      <a
+                        href={mailto}
+                        className="text-xs px-3 py-1.5 border border-gray-300 text-gray-700 rounded hover:bg-gray-100"
+                      >
+                        メール作成
+                      </a>
+                    ) : null}
+                  </div>
+                ) : (
+                  <span className="text-xs text-amber-600 shrink-0">Set a supplier on these materials to generate a PO</span>
+                )}
+              </div>
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 border-b border-gray-200">
+                  <tr>
+                    <th className="text-left px-4 py-3 font-medium text-gray-600">Material</th>
+                    <th className="text-left px-4 py-3 font-medium text-gray-600">Colour</th>
+                    <th className="text-right px-4 py-3 font-medium text-gray-600">Total Usage</th>
+                    <th className="text-right px-4 py-3 font-medium text-gray-600">Stock</th>
+                    <th className="text-right px-4 py-3 font-medium text-gray-600">Net Required</th>
+                    <th className="text-right px-4 py-3 font-medium text-gray-600">Order Qty</th>
+                    <th className="text-left px-4 py-3 font-medium text-gray-600">Notes</th>
+                    <th className="text-right px-4 py-3 font-medium text-gray-600"></th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {g.rows.map((row) => {
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    const mo = moMap.get(row.materialColorId) as any;
+                    return (
+                      <MaterialOrderRow
+                        key={row.materialColorId}
+                        seasonId={seasonId}
+                        materialColorId={row.materialColorId}
+                        materialId={row.materialId as string}
+                        materialNumber={row.materialNumber}
+                        materialName={row.materialName}
+                        colour={row.colour}
+                        unitType={row.unitType}
+                        totalUsage={row.totalUsage}
+                        initialSampleRemaining={Number(mo?.sample_remaining ?? 0)}
+                        initialOrderQty={Number(mo?.order_qty ?? 0)}
+                        initialNotes={mo?.notes ?? null}
+                        lines={row.lines}
+                      />
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          );
+        })
       )}
     </div>
   );
