@@ -111,16 +111,16 @@ Material マスタは単価（JPY）と単位を持つ。単位はその素材�
 **Cost（原価）**:
 商品原価は JPY で管理。以下の合計が `products.cost_jpy` に自動計算・保存される:
 - **素材コスト**: `product_materials` の（単価 × 使用量）の合計（自動計算）
-- **製造コスト各種**: 6項目（Cutting / Sewing / Knitting / Thread / Finish / Packing）を **作業時間（分）で入力**（ADR-0009）。金額 = `分 ÷ 60 × 時給`（時給 = `company_settings.labor_rate_jpy_per_hour`、既定 ¥2,000/時、編集可）。`products.*_minutes` が入力の正で、`products.*_cost_jpy` は保存時に同期される（既存の集計・請求計算はそのまま動く）。ガーメントタイプ別のプリセットは**分**で提供（例: Sewing COAT = 300分）。
+- **製造コスト各種**: 6項目（Cutting / Sewing / Knitting / Thread / Finish / Packing）を **作業時間（時間, 小数点1桁）で入力**（ADR-0009）。金額 = `時間 × 時給`（時給 = `company_settings.labor_rate_jpy_per_hour`、既定 ¥2,000/時、編集可）。DB は `products.*_minutes`（分）で保存し、フォームは時間で編集（保存時に `時間 × 60 = 分`）。`products.*_cost_jpy` は保存時に同期（既存の集計・請求計算はそのまま動く）。ガーメントタイプ別プリセットは**時間**で提供（例: Sewing COAT = 5.0h）。
 
-| プリセット(分) | TSHIRT | SHIRT | TROUSERS | JACKET | COAT |
+| プリセット(時間) | TSHIRT | SHIRT | TROUSERS | JACKET | COAT |
 |-----------|--------|-------|----------|--------|------|
-| Cutting   | 15  | 30  | 30  | 45  | 60  |
-| Sewing    | 45  | 120 | 180 | 240 | 300 |
-| Knitting  | 15  | 30  | 30  | 45  | 60  |
-| Thread    | 45  | 120 | 180 | 240 | 300 |
-| Finish    | 15  | 30  | 30  | 45  | 60  |
-| Packing   | 15  | 30  | 30  | 45  | 60  |
+| Cutting   | 0.25 | 0.5 | 0.5 | 0.75 | 1.0 |
+| Sewing    | 0.75 | 2.0 | 3.0 | 4.0  | 5.0 |
+| Knitting  | 0.25 | 0.5 | 0.5 | 0.75 | 1.0 |
+| Thread    | 0.75 | 2.0 | 3.0 | 4.0  | 5.0 |
+| Finish    | 0.25 | 0.5 | 0.5 | 0.75 | 1.0 |
+| Packing   | 0.25 | 0.5 | 0.5 | 0.75 | 1.0 |
 
 EUR 換算レートはデフォルト 130（選択式・変更可）。`cost_eur` = `cost_jpy ÷ cost_eur_rate`。
 

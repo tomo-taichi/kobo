@@ -12,6 +12,8 @@ import {
   calcMfgAmountJpy,
   mfgMinutesToAmounts,
   totalMfgMinutes,
+  calcMfgAmountFromHours,
+  mfgHoursToMinutes,
 } from "./pricing";
 
 // ─── 1. Material cost ────────────────────────────────────────
@@ -84,6 +86,28 @@ describe("mfgMinutesToAmounts + totalMfgMinutes", () => {
   });
   it("sums total minutes", () => {
     expect(totalMfgMinutes(mins)).toBe(420);
+  });
+});
+
+// ─── 2c. Manufacturing HOURS → JPY / minutes (form works in hours) ─
+describe("calcMfgAmountFromHours", () => {
+  it("amount = hours × rate, rounded", () => {
+    expect(calcMfgAmountFromHours(4, 2000)).toBe(8000);
+    expect(calcMfgAmountFromHours(0.75, 2000)).toBe(1500);
+    expect(calcMfgAmountFromHours(0.1, 2000)).toBe(200);
+  });
+});
+
+describe("mfgHoursToMinutes", () => {
+  it("converts each step hours → minutes (×60), stays exact for 1-decimal hours", () => {
+    expect(mfgHoursToMinutes({ cutting: 0.75, sewing: 4, knitting: 0, thread: 0, finish: 0.5, packing: 0.5 }))
+      .toEqual({ cutting: 45, sewing: 240, knitting: 0, thread: 0, finish: 30, packing: 30 });
+  });
+  it("hours → minutes → amount equals hours × rate (round-trip)", () => {
+    const hours = { cutting: 0.75, sewing: 4, knitting: 0, thread: 0, finish: 0.5, packing: 0.5 };
+    expect(calcCostJpy(0, mfgMinutesToAmounts(mfgHoursToMinutes(hours), 2000)))
+      .toBe(calcMfgAmountFromHours(0.75, 2000) + calcMfgAmountFromHours(4, 2000)
+          + calcMfgAmountFromHours(0.5, 2000) + calcMfgAmountFromHours(0.5, 2000));
   });
 });
 

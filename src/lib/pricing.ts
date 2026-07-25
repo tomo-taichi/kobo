@@ -38,6 +38,22 @@ export function totalMfgMinutes(m: ManufacturingMinutes): number {
   return m.cutting + m.sewing + m.knitting + m.thread + m.finish + m.packing;
 }
 
+// Manufacturing time is ENTERED in HOURS (1 decimal) on the form; the DB stores minutes,
+// so the form converts hours → minutes (×60) at save. Amount from hours = hours × rate.
+export function calcMfgAmountFromHours(hours: number, ratePerHour: number): number {
+  return Math.round(hours * ratePerHour);
+}
+export function mfgHoursToMinutes(hours: ManufacturingMinutes): ManufacturingMinutes {
+  return {
+    cutting:  hours.cutting  * 60,
+    sewing:   hours.sewing   * 60,
+    knitting: hours.knitting * 60,
+    thread:   hours.thread   * 60,
+    finish:   hours.finish   * 60,
+    packing:  hours.packing  * 60,
+  };
+}
+
 export function calcMaterialCostJpy(materials: MaterialUsage[]): number {
   return materials.reduce(
     (sum, m) => sum + m.unitPriceJpy * m.usageAmount,

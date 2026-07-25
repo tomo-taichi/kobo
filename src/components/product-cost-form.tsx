@@ -2,11 +2,11 @@
 
 import { useState, useCallback, useRef, useEffect } from "react";
 import { MaterialPickerModal, type PickableMaterial } from "@/components/material-picker";
-import { calcCostJpy, calcCostEur, calcWholesaleEur, calcRetailRefEur, calcMfgAmountJpy, mfgMinutesToAmounts, totalMfgMinutes } from "@/lib/pricing";
+import { calcCostJpy, calcCostEur, calcWholesaleEur, calcRetailRefEur, calcMfgAmountFromHours, mfgHoursToMinutes, mfgMinutesToAmounts } from "@/lib/pricing";
 import { fmtEur } from "@/lib/format";
 import {
   GARMENT_TYPES,
-  MANUFACTURING_MINUTE_PRESETS,
+  MANUFACTURING_HOUR_PRESETS,
   MANUFACTURING_COST_LABELS,
   type ManufacturingCostKey,
   type GarmentType,
@@ -64,7 +64,7 @@ type Props = {
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-const MFG_KEYS = Object.keys(MANUFACTURING_MINUTE_PRESETS) as ManufacturingCostKey[];
+const MFG_KEYS = Object.keys(MANUFACTURING_HOUR_PRESETS) as ManufacturingCostKey[];
 function fmt(n: number) { return n.toLocaleString("ja-JP", { maximumFractionDigits: 0 }); }
 function isValidRole(r: string): r is RoleKey { return ROLES.some((x) => x.key === r); }
 
@@ -82,20 +82,20 @@ function SectionBlock({ title, children }: { title: string; children: React.Reac
   );
 }
 
-// Manufacturing input: work-TIME in minutes + quick-preset dropdown, with the derived ¥ shown.
+// Manufacturing input: work-TIME in HOURS (1 decimal) + quick-preset dropdown, with derived ¥.
 function MfgInput({ mfgKey, value, laborRate, onChange }: {
   mfgKey: ManufacturingCostKey; value: number; laborRate: number; onChange: (v: number) => void;
 }) {
   return (
     <div className="flex items-center gap-1">
       <input
-        type="number" min="0" step="5" value={value || ""} placeholder="0"
+        type="number" min="0" step="0.1" value={value || ""} placeholder="0"
         onChange={(e) => onChange(Number(e.target.value))}
         className="w-16 px-2 py-1 border border-gray-200 rounded text-xs text-right focus:outline-none focus:ring-1 focus:ring-gray-900"
       />
-      <span className="text-[10px] text-gray-400 w-6 shrink-0">min</span>
-      <span className="text-[11px] font-mono text-gray-500 w-16 text-right shrink-0" title="time × labor rate">
-        ¥{fmt(calcMfgAmountJpy(value, laborRate))}
+      <span className="text-[10px] text-gray-400 w-5 shrink-0">hr</span>
+      <span className="text-[11px] font-mono text-gray-500 w-16 text-right shrink-0" title="hours × labor rate">
+        ¥{fmt(calcMfgAmountFromHours(value, laborRate))}
       </span>
       <select
         value=""
@@ -105,8 +105,8 @@ function MfgInput({ mfgKey, value, laborRate, onChange }: {
       >
         <option value="">▾</option>
         {GARMENT_TYPES.map((g) => (
-          <option key={g} value={MANUFACTURING_MINUTE_PRESETS[mfgKey][g]}>
-            {g}: {MANUFACTURING_MINUTE_PRESETS[mfgKey][g]}min
+          <option key={g} value={MANUFACTURING_HOUR_PRESETS[mfgKey][g]}>
+            {g}: {MANUFACTURING_HOUR_PRESETS[mfgKey][g]}h
           </option>
         ))}
       </select>
@@ -157,7 +157,15 @@ export function ProductCostForm({
     initialAdditionalRows.map((r) => ({ ...r, role: isValidRole(r.role) ? r.role : "accessories" }))
   );
   const [pickerRole, setPickerRole] = useState<RoleKey | null>(null);
-  const [mfg,        setMfg]        = useState<MfgState>(initialManufacturing);
+  // DB stores minutes; the form edits HOURS. Convert minutes → hours on load.
+  const [mfg,        setMfg]        = useState<MfgState>(() => ({
+    cutting:  initialManufacturing.cutting  / 60,
+    sewing:   initialManufacturing.sewing   / 60,
+    knitting: initialManufacturing.knitting / 60,
+    thread:   initialManufacturing.thread   / 60,
+    finish:   initialManufacturing.finish   / 60,
+    packing:  initialManufacturing.packing  / 60,
+  }));
   const [eurRate,    setEurRate]    = useState(initialCostEurRate);
   const [colorEdits, setColorEdits] = useState<ColorEdit[]>(
     () => colors.map((c) => ({ markup: c.markupRate, retailRate: c.retailRate, retailPrice: c.retailPriceEur }))
@@ -178,10 +186,10 @@ export function ProductCostForm({
   const nonMainCostJpy  = liningCost + additionalCost;
   const baseMainCost    = (mainMaterial?.setPriceJpy ?? 0) * mainQty;
   const baseMaterialCost = baseMainCost + nonMainCostJpy;
-  // mfg is entered as minutes; derive the JPY amounts at the labor rate.
-  const mfgAmounts      = mfgMinutesToAmounts(mfg, laborRate);
+  // mfg is entered as HOURS; convert to minutes then derive the JPY amounts at the labor rate.
+  const mfgAmounts      = mfgMinutesToAmounts(mfgHoursToMinutes(mfg), laborRate);
   const mfgCost         = calcCostJpy(0, mfgAmounts);
-  const mfgMinutesTotal = totalMfgMinutes(mfg);
+  const mfgHoursTotal   = mfg.cutting + mfg.sewing + mfg.knitting + mfg.thread + mfg.finish + mfg.packing;
   const baseCostJpy     = calcCostJpy(baseMaterialCost, mfgAmounts);
 
   // Per-colour derived values
@@ -201,12 +209,12 @@ export function ProductCostForm({
   function handleAutofill() {
     if (!autofillType) return;
     setMfg({
-      cutting:  MANUFACTURING_MINUTE_PRESETS.cutting[autofillType],
-      sewing:   MANUFACTURING_MINUTE_PRESETS.sewing[autofillType],
-      knitting: MANUFACTURING_MINUTE_PRESETS.knitting[autofillType],
-      thread:   MANUFACTURING_MINUTE_PRESETS.thread[autofillType],
-      finish:   MANUFACTURING_MINUTE_PRESETS.finish[autofillType],
-      packing:  MANUFACTURING_MINUTE_PRESETS.packing[autofillType],
+      cutting:  MANUFACTURING_HOUR_PRESETS.cutting[autofillType],
+      sewing:   MANUFACTURING_HOUR_PRESETS.sewing[autofillType],
+      knitting: MANUFACTURING_HOUR_PRESETS.knitting[autofillType],
+      thread:   MANUFACTURING_HOUR_PRESETS.thread[autofillType],
+      finish:   MANUFACTURING_HOUR_PRESETS.finish[autofillType],
+      packing:  MANUFACTURING_HOUR_PRESETS.packing[autofillType],
     });
   }
 
@@ -227,7 +235,7 @@ export function ProductCostForm({
       const result = await updateProductCosts(
         productId, v.mainQty, v.liningQty,
         v.additional.filter((r) => r.materialId),
-        v.mfg, laborRate, v.eurRate,
+        mfgHoursToMinutes(v.mfg), laborRate, v.eurRate,   // hours → minutes for storage
         colors.map((c, i) => ({
           productColorId: c.productColorId,
           markupRate:     v.colorEdits[i]?.markup ?? 3.0,
@@ -395,7 +403,7 @@ export function ProductCostForm({
         <div className="mt-3 pt-2 border-t border-gray-100 flex justify-between items-baseline text-xs">
           <span className="text-gray-400">Total Manufacturing <span className="text-gray-300">· ¥{fmt(laborRate)}/hr</span></span>
           <span className="font-mono text-gray-600">
-            {mfgMinutesTotal} min <span className="text-gray-300">·</span> ¥{fmt(mfgCost)}
+            {mfgHoursTotal.toFixed(1)} hr <span className="text-gray-300">·</span> ¥{fmt(mfgCost)}
           </span>
         </div>
       </SectionBlock>
