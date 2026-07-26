@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { updateBatchField, type BatchField } from "@/app/actions/production-batches";
+import { addTimeLog } from "@/app/actions/time-logs";
 import {
   BATCH_COLUMNS,
   CUT_SEW_FIN_STATUSES,
@@ -12,6 +13,7 @@ import {
   type BatchColumnKey,
 } from "@/lib/production-constants";
 import type { BatchClientOrder } from "@/lib/production-view";
+import type { TimeLogEntry } from "@/lib/time-logs";
 import { SIZES } from "@/lib/order-constants";
 
 export type BatchCard = {
@@ -30,6 +32,8 @@ export type BatchCard = {
   sewer_name: string | null;
   mainMaterialName: string | null;
   orderDetails: BatchClientOrder[];
+  estHours: { cut: number; sew: number; finish: number };
+  logs: TimeLogEntry[];
 };
 
 export function BatchKanban({
@@ -108,6 +112,7 @@ export function BatchKanban({
                   key={b.id}
                   b={b}
                   col={col.key}
+                  seasonId={seasonId}
                   update={update}
                   disabled={isPending}
                   cutterOptions={cutterOptions}
@@ -126,6 +131,7 @@ export function BatchKanban({
 function Card({
   b,
   col,
+  seasonId,
   update,
   disabled,
   cutterOptions,
@@ -133,44 +139,34 @@ function Card({
 }: {
   b: BatchCard;
   col: BatchColumnKey;
+  seasonId: string;
   update: (id: string, field: BatchField, value: string | number | boolean | null) => void;
   disabled: boolean;
   cutterOptions: string[];
   sewerOptions: string[];
 }) {
   const [detailOpen, setDetailOpen] = useState(false);
+  const [logOpen, setLogOpen] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+
+  const loggable = col === "cut" || col === "sew" || col === "finish";
+  const stageEst = col === "cut" ? b.estHours.cut : col === "sew" ? b.estHours.sew : b.estHours.finish;
+  const stageLogged = Math.round(b.logs.filter((l) => l.stage === col).reduce((a, l) => a + l.hours, 0) * 10) / 10;
+  const meta = [b.mainMaterialName, b.colorName, b.productNumber].filter(Boolean).join(" · ");
+  const priorityBorder =
+    b.priority >= 3 ? "border-l-red-500" : b.priority === 2 ? "border-l-orange-400" : b.priority === 1 ? "border-l-blue-400" : "border-l-gray-200";
+
   return (
-    <div className="bg-white border border-gray-200 rounded p-2 text-xs space-y-1.5 shadow-sm">
+    <div className={`bg-white border border-gray-200 border-l-4 ${priorityBorder} rounded p-1.5 text-xs space-y-1 shadow-sm`}>
       <div className="flex items-start justify-between gap-1">
-        <span className="font-medium text-gray-900 leading-tight">{b.modelName}</span>
-        <span className="shrink-0 inline-flex items-center rounded bg-gray-900 text-white text-sm font-bold font-mono px-1.5 py-0.5">
+        <span className="font-medium text-gray-900 leading-tight truncate">{b.modelName}</span>
+        <span className="shrink-0 inline-flex items-center rounded bg-gray-900 text-white text-xs font-bold font-mono px-1.5 py-0.5">
           ×{b.orderedQty}
         </span>
       </div>
-      {b.mainMaterialName ? (
-        <div className="text-gray-500 truncate" title={b.mainMaterialName}>{b.mainMaterialName}</div>
-      ) : null}
-      <div className="text-gray-500">
-        {b.colorName ?? "—"}
-        {b.productNumber ? <span className="text-gray-400 font-mono"> · {b.productNumber}</span> : null}
-      </div>
-      <button
-        onClick={() => setDetailOpen(true)}
-        className="w-full text-[11px] font-semibold px-2 py-1.5 rounded bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-sm hover:from-blue-500 hover:to-indigo-500"
-      >
-        🔍 詳細を見る
-      </button>
-      {detailOpen && (
-        <BatchDetailModal
-          modelName={b.modelName}
-          colorName={b.colorName}
-          orderedQty={b.orderedQty}
-          orders={b.orderDetails}
-          onClose={() => setDetailOpen(false)}
-        />
-      )}
+      {meta && <div className="text-gray-400 truncate" title={meta}>{meta}</div>}
 
-      {/* Stage control for the current column */}
+      {/* Stage control for the current column (primary action) */}
       {col === "fabric" && (
         <button
           disabled={disabled}
@@ -181,68 +177,256 @@ function Card({
         </button>
       )}
       {col === "pattern" && (
-        <Segmented
-          options={PATTERN_STATES.map((s) => ({ value: s.key, label: s.label }))}
-          value={b.pattern_state}
-          disabled={disabled}
-          onSet={(v) => update(b.id, "pattern_state", v)}
-        />
+        <Segmented options={PATTERN_STATES.map((s) => ({ value: s.key, label: s.label }))} value={b.pattern_state} disabled={disabled} onSet={(v) => update(b.id, "pattern_state", v)} />
       )}
       {col === "cut" && (
-        <Segmented
-          options={CUT_SEW_FIN_STATUSES.map((s) => ({ value: s, label: cap(s) }))}
-          value={b.cut_status}
-          disabled={disabled}
-          onSet={(v) => update(b.id, "cut_status", v)}
-        />
+        <Segmented options={CUT_SEW_FIN_STATUSES.map((s) => ({ value: s, label: cap(s) }))} value={b.cut_status} disabled={disabled} onSet={(v) => update(b.id, "cut_status", v)} />
       )}
       {col === "sew" && (
-        <Segmented
-          options={CUT_SEW_FIN_STATUSES.map((s) => ({ value: s, label: cap(s) }))}
-          value={b.sew_status}
-          disabled={disabled}
-          onSet={(v) => update(b.id, "sew_status", v)}
-        />
+        <Segmented options={CUT_SEW_FIN_STATUSES.map((s) => ({ value: s, label: cap(s) }))} value={b.sew_status} disabled={disabled} onSet={(v) => update(b.id, "sew_status", v)} />
       )}
       {col === "finish" && (
-        <Segmented
-          options={CUT_SEW_FIN_STATUSES.map((s) => ({ value: s, label: cap(s) }))}
-          value={b.fin_status}
-          disabled={disabled}
-          onSet={(v) => update(b.id, "fin_status", v)}
-        />
+        <Segmented options={CUT_SEW_FIN_STATUSES.map((s) => ({ value: s, label: cap(s) }))} value={b.fin_status} disabled={disabled} onSet={(v) => update(b.id, "fin_status", v)} />
       )}
       {col === "done" && <div className="text-green-600 font-medium">✓ Complete</div>}
 
-      {/* Assignees (from the managed Settings lists) */}
-      <div className="grid grid-cols-2 gap-1">
-        <AssigneeSelect
-          value={b.cutter_name}
-          options={cutterOptions}
-          placeholder="Cutter"
-          disabled={disabled}
-          onSet={(v) => update(b.id, "cutter_name", v)}
-        />
-        <AssigneeSelect
-          value={b.sewer_name}
-          options={sewerOptions}
-          placeholder="Sewer"
-          disabled={disabled}
-          onSet={(v) => update(b.id, "sewer_name", v)}
-        />
+      {/* Compact action row */}
+      <div className="flex items-center justify-between gap-1">
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => setDetailOpen(true)}
+            title="Order detail"
+            className="text-[11px] px-1.5 py-0.5 rounded bg-blue-600 text-white hover:bg-blue-500"
+          >
+            🔍
+          </button>
+          {loggable && (
+            <>
+              <button
+                onClick={() => setLogOpen(true)}
+                className="text-[11px] px-1.5 py-0.5 border border-gray-300 rounded text-gray-600 hover:bg-gray-50"
+              >
+                ⏱ Log
+              </button>
+              <span
+                className={`text-[10px] font-mono ${stageEst > 0 && stageLogged > stageEst ? "text-red-600" : "text-gray-400"}`}
+                title={`Logged ${stageLogged}h / Estimated ${stageEst}h`}
+              >
+                {stageLogged}/{stageEst}h
+              </span>
+            </>
+          )}
+        </div>
+        <button
+          onClick={() => setExpanded((v) => !v)}
+          className="text-gray-400 hover:text-gray-700 px-1"
+          title={expanded ? "Collapse" : "Assign / priority"}
+        >
+          {expanded ? "▾" : "▸"}
+        </button>
       </div>
 
-      {/* Priority */}
-      <select
-        value={b.priority}
-        disabled={disabled}
-        onChange={(e) => update(b.id, "priority", Number(e.target.value))}
-        className="w-full px-1.5 py-0.5 border border-gray-200 rounded text-[11px] bg-white focus:outline-none focus:ring-1 focus:ring-gray-900"
-      >
-        {PRIORITY_LEVELS.map((p) => (
-          <option key={p.value} value={p.value}>{p.label}</option>
-        ))}
-      </select>
+      {/* Collapsed assignee summary */}
+      {!expanded && (b.cutter_name || b.sewer_name) && (
+        <div className="text-[10px] text-gray-400 truncate">
+          {b.cutter_name ? `✂ ${b.cutter_name}` : ""}
+          {b.cutter_name && b.sewer_name ? " · " : ""}
+          {b.sewer_name ? `🪡 ${b.sewer_name}` : ""}
+        </div>
+      )}
+
+      {/* Expanded: assignees + priority */}
+      {expanded && (
+        <>
+          <div className="grid grid-cols-2 gap-1">
+            <AssigneeSelect value={b.cutter_name} options={cutterOptions} placeholder="Cutter" disabled={disabled} onSet={(v) => update(b.id, "cutter_name", v)} />
+            <AssigneeSelect value={b.sewer_name} options={sewerOptions} placeholder="Sewer" disabled={disabled} onSet={(v) => update(b.id, "sewer_name", v)} />
+          </div>
+          <select
+            value={b.priority}
+            disabled={disabled}
+            onChange={(e) => update(b.id, "priority", Number(e.target.value))}
+            className="w-full px-1.5 py-0.5 border border-gray-200 rounded text-[11px] bg-white focus:outline-none focus:ring-1 focus:ring-gray-900"
+          >
+            {PRIORITY_LEVELS.map((p) => (
+              <option key={p.value} value={p.value}>{p.label}</option>
+            ))}
+          </select>
+        </>
+      )}
+
+      {detailOpen && (
+        <BatchDetailModal
+          modelName={b.modelName}
+          colorName={b.colorName}
+          orderedQty={b.orderedQty}
+          orders={b.orderDetails}
+          onClose={() => setDetailOpen(false)}
+        />
+      )}
+      {logOpen && (
+        <TimeLogModal
+          batchId={b.id}
+          seasonId={seasonId}
+          stage={col}
+          modelName={b.modelName}
+          colorName={b.colorName}
+          cutterName={b.cutter_name}
+          sewerName={b.sewer_name}
+          cutterOptions={cutterOptions}
+          sewerOptions={sewerOptions}
+          orderedQty={b.orderedQty}
+          estHours={col === "cut" ? b.estHours.cut : col === "sew" ? b.estHours.sew : b.estHours.finish}
+          history={b.logs.filter((l) => l.stage === col)}
+          onClose={() => setLogOpen(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+function TimeLogModal({
+  batchId,
+  seasonId,
+  stage,
+  modelName,
+  colorName,
+  cutterName,
+  sewerName,
+  cutterOptions,
+  sewerOptions,
+  orderedQty,
+  estHours,
+  history,
+  onClose,
+}: {
+  batchId: string;
+  seasonId: string;
+  stage: string;
+  modelName: string;
+  colorName: string | null;
+  cutterName: string | null;
+  sewerName: string | null;
+  cutterOptions: string[];
+  sewerOptions: string[];
+  orderedQty: number;
+  estHours: number;
+  history: TimeLogEntry[];
+  onClose: () => void;
+}) {
+  const router = useRouter();
+  const [isPending, startTransition] = useTransition();
+  // Stage is fixed by the column the card is in; worker defaults to that stage's assignee.
+  const [worker, setWorker] = useState<string>(
+    stage === "cut" ? cutterName ?? "" : stage === "sew" ? sewerName ?? "" : ""
+  );
+  const [hours, setHours] = useState<string>("");
+  const [workDate, setWorkDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
+  const [error, setError] = useState<string | null>(null);
+
+  const workerOptions = Array.from(
+    new Set([...cutterOptions, ...sewerOptions, cutterName, sewerName].filter(Boolean) as string[])
+  );
+  const loggedSoFar = Math.round(history.reduce((a, h) => a + h.hours, 0) * 10) / 10;
+
+  const save = () => {
+    const h = Number(hours);
+    startTransition(async () => {
+      const err = await addTimeLog({ batchId, seasonId, stage, workerName: worker, hours: h, workDate: workDate || null });
+      if (err) {
+        setError(err);
+      } else {
+        onClose();
+        router.refresh();
+      }
+    });
+  };
+
+  const inputCls = "w-full px-2 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-gray-900";
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-sm p-5 space-y-3" onClick={(e) => e.stopPropagation()}>
+        <div>
+          <div className="text-sm text-gray-500">Log {cap(stage)} time</div>
+          <div className="text-base font-semibold text-gray-900">
+            {modelName} <span className="text-gray-500 font-normal">/ {colorName ?? "—"}</span>
+          </div>
+        </div>
+
+        {/* Estimated budget vs logged so far */}
+        <div className="rounded bg-gray-50 border border-gray-200 px-3 py-2 text-xs flex items-center justify-between">
+          <span className="text-gray-500">
+            Estimated <span className="font-semibold text-gray-900">{estHours}h</span>
+            <span className="text-gray-400"> · {orderedQty} pcs</span>
+          </span>
+          <span className="text-gray-500">
+            Logged <span className={`font-semibold ${loggedSoFar > estHours ? "text-red-600" : "text-gray-900"}`}>{loggedSoFar}h</span>
+          </span>
+        </div>
+
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">Worker</label>
+          <input
+            list="time-log-workers"
+            value={worker}
+            onChange={(e) => setWorker(e.target.value)}
+            placeholder="Name…"
+            className={inputCls}
+          />
+          <datalist id="time-log-workers">
+            {workerOptions.map((w) => (
+              <option key={w} value={w} />
+            ))}
+          </datalist>
+        </div>
+
+        <div className="flex gap-2">
+          <div className="flex-1">
+            <label className="block text-xs font-medium text-gray-600 mb-1">Hours</label>
+            <input
+              type="number" min="0" step="0.5" value={hours}
+              onChange={(e) => setHours(e.target.value)}
+              placeholder="0.0"
+              className={inputCls + " text-right"}
+            />
+          </div>
+          <div className="flex-1">
+            <label className="block text-xs font-medium text-gray-600 mb-1">Date</label>
+            <input type="date" value={workDate} onChange={(e) => setWorkDate(e.target.value)} className={inputCls} />
+          </div>
+        </div>
+
+        {history.length > 0 && (
+          <div>
+            <div className="text-xs font-medium text-gray-600 mb-1">History</div>
+            <div className="max-h-32 overflow-auto border border-gray-100 rounded divide-y divide-gray-100">
+              {history.map((h) => (
+                <div key={h.id} className="flex items-center gap-2 px-2 py-1 text-xs">
+                  <span className="text-gray-400 w-20 shrink-0">{h.workDate ?? "—"}</span>
+                  <span className="flex-1 text-gray-800 truncate">{h.workerName}</span>
+                  <span className="font-mono text-gray-700 shrink-0">{h.hours}h</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {error && <p className="text-xs text-red-500">{error}</p>}
+
+        <div className="flex justify-end gap-2 pt-1">
+          <button onClick={onClose} disabled={isPending} className="text-sm px-3 py-1.5 border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50">
+            Cancel
+          </button>
+          <button
+            onClick={save}
+            disabled={isPending || !worker.trim() || !(Number(hours) > 0)}
+            className="text-sm px-3 py-1.5 bg-gray-900 text-white rounded hover:bg-gray-700 disabled:opacity-50"
+          >
+            {isPending ? "Saving…" : "Save"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

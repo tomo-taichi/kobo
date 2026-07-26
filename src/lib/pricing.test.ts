@@ -14,6 +14,7 @@ import {
   totalMfgMinutes,
   calcMfgAmountFromHours,
   mfgHoursToMinutes,
+  estimatedStageMinutes,
 } from "./pricing";
 
 // ─── 1. Material cost ────────────────────────────────────────
@@ -108,6 +109,19 @@ describe("mfgHoursToMinutes", () => {
     expect(calcCostJpy(0, mfgMinutesToAmounts(mfgHoursToMinutes(hours), 2000)))
       .toBe(calcMfgAmountFromHours(0.75, 2000) + calcMfgAmountFromHours(4, 2000)
           + calcMfgAmountFromHours(0.5, 2000) + calcMfgAmountFromHours(0.5, 2000));
+  });
+});
+
+// ─── 2d. Estimated stage minutes (ADR-0009 Phase 3) ──────────
+describe("estimatedStageMinutes", () => {
+  it("groups the six steps into cut / sew / finish", () => {
+    expect(
+      estimatedStageMinutes({ cutting: 15, sewing: 120, knitting: 30, thread: 10, finish: 20, packing: 5 })
+    ).toEqual({ cut: 15, sew: 160, finish: 25 });
+  });
+  it("is all zero for no work time", () => {
+    expect(estimatedStageMinutes({ cutting: 0, sewing: 0, knitting: 0, thread: 0, finish: 0, packing: 0 }))
+      .toEqual({ cut: 0, sew: 0, finish: 0 });
   });
 });
 

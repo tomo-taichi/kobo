@@ -32,6 +32,15 @@ export const PRIORITY_LEVELS = [
   { value: 0, label: "Low" },
 ] as const;
 
+// Stages that work-time can be logged against (production_time_logs.stage).
+export const TIME_LOG_STAGES = [
+  { key: "cut", label: "Cut" },
+  { key: "sew", label: "Sew" },
+  { key: "finish", label: "Finish" },
+] as const;
+
+export type TimeLogStage = typeof TIME_LOG_STAGES[number]["key"];
+
 export const CUT_SEW_FIN_STATUSES = ["ready", "started", "finished"] as const;
 export const PATTERN_STATES = [
   { key: "new",          label: "New" },

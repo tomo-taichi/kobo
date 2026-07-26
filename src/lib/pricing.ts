@@ -38,6 +38,20 @@ export function totalMfgMinutes(m: ManufacturingMinutes): number {
   return m.cutting + m.sewing + m.knitting + m.thread + m.finish + m.packing;
 }
 
+// ADR-0009 Phase 3 — the six manufacturing steps grouped into the three loggable
+// production stages, giving a per-unit time budget (minutes):
+//   Cut    = cutting
+//   Sew    = sewing + knitting + thread
+//   Finish = finishing + packing
+export type StageMinutes = { cut: number; sew: number; finish: number };
+export function estimatedStageMinutes(m: ManufacturingMinutes): StageMinutes {
+  return {
+    cut: m.cutting,
+    sew: m.sewing + m.knitting + m.thread,
+    finish: m.finish + m.packing,
+  };
+}
+
 // Manufacturing time is ENTERED in HOURS (1 decimal) on the form; the DB stores minutes,
 // so the form converts hours → minutes (×60) at save. Amount from hours = hours × rate.
 export function calcMfgAmountFromHours(hours: number, ratePerHour: number): number {
