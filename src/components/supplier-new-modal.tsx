@@ -6,7 +6,7 @@ import { useCancelConfirm, CancelConfirmDialog } from "@/components/cancel-confi
 
 type Action = (_state: string | null, formData: FormData) => Promise<string | null>;
 
-export function SupplierNewModal({ action }: { action: Action }) {
+export function SupplierNewModal({ action, countryOptions }: { action: Action; countryOptions?: string[] }) {
   const [open, setOpen] = useState(false);
   const { confirming, onContentChange, requestClose, discard, keep } = useCancelConfirm(open, () => setOpen(false));
 
@@ -31,7 +31,7 @@ export function SupplierNewModal({ action }: { action: Action }) {
                 ✕
               </button>
             </div>
-            <SupplierForm action={action} onCancel={requestClose} />
+            <SupplierForm action={action} onCancel={requestClose} countryOptions={countryOptions} />
           </div>
           <CancelConfirmDialog open={confirming} onKeep={keep} onDiscard={discard} />
         </div>

@@ -41,6 +41,10 @@ type Props = {
   id?: string;
   onCancel?: () => void;
   autoSave?: boolean;
+  fabricCategoryOptions?: { value: string; label: string }[];
+  accessoryCategoryOptions?: { value: string; label: string }[];
+  unitOptions?: { value: string; label: string }[];
+  compositionOptions?: string[];
 };
 
 const inputCls = "w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-gray-900";
@@ -75,7 +79,20 @@ function SectionHeading({ children }: { children: React.ReactNode }) {
   );
 }
 
-export function MaterialForm({ action, suppliers, seasons = [], pastColors = [], initialData = {}, id, onCancel, autoSave = false }: Props) {
+export function MaterialForm({
+  action,
+  suppliers,
+  seasons = [],
+  pastColors = [],
+  initialData = {},
+  id,
+  onCancel,
+  autoSave = false,
+  fabricCategoryOptions = FABRIC_CATEGORIES.map((c) => ({ value: c, label: CATEGORY_LABELS[c] ?? c })),
+  accessoryCategoryOptions = ACCESSORY_CATEGORIES.map((c) => ({ value: c, label: CATEGORY_LABELS[c] ?? c })),
+  unitOptions = UNIT_TYPES.map((u) => ({ value: u, label: UNIT_TYPE_LABELS[u] ?? u })),
+  compositionOptions = COMPOSITION_GROUPS.flatMap((g) => g.items),
+}: Props) {
   const [error, formAction, pending] = useActionState(action, null);
   const formRef = useRef<HTMLFormElement>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -196,13 +213,13 @@ export function MaterialForm({ action, suppliers, seasons = [], pastColors = [],
               <select name="category" defaultValue={initialData.category ?? ""} required className={inputCls + " bg-white"}>
                 <option value="">Select...</option>
                 <optgroup label="Fabric">
-                  {FABRIC_CATEGORIES.map((c) => (
-                    <option key={c} value={c}>{CATEGORY_LABELS[c]}</option>
+                  {fabricCategoryOptions.map((c) => (
+                    <option key={c.value} value={c.value}>{c.label}</option>
                   ))}
                 </optgroup>
                 <optgroup label="Accessory Material">
-                  {ACCESSORY_CATEGORIES.map((c) => (
-                    <option key={c} value={c}>{CATEGORY_LABELS[c]}</option>
+                  {accessoryCategoryOptions.map((c) => (
+                    <option key={c.value} value={c.value}>{c.label}</option>
                   ))}
                 </optgroup>
               </select>
@@ -289,8 +306,8 @@ export function MaterialForm({ action, suppliers, seasons = [], pastColors = [],
             <label className="block text-xs font-medium text-gray-600 mb-1">Unit <span className="text-red-500">*</span></label>
             <select name="unit_type" defaultValue={initialData.unit_type ?? ""} required className={inputCls + " bg-white"}>
               <option value="">Select...</option>
-              {UNIT_TYPES.map((u) => (
-                <option key={u} value={u}>{UNIT_TYPE_LABELS[u]}</option>
+              {unitOptions.map((u) => (
+                <option key={u.value} value={u.value}>{u.label}</option>
               ))}
             </select>
           </div>
@@ -318,12 +335,8 @@ export function MaterialForm({ action, suppliers, seasons = [], pastColors = [],
                 className="flex-1 px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-gray-900 bg-white"
               >
                 <option value="">— Select —</option>
-                {COMPOSITION_GROUPS.map((group) => (
-                  <optgroup key={group.label} label={group.label}>
-                    {group.items.map((item) => (
-                      <option key={item} value={item}>{item}</option>
-                    ))}
-                  </optgroup>
+                {compositionOptions.map((item) => (
+                  <option key={item} value={item}>{item}</option>
                 ))}
               </select>
               <div className="flex items-center gap-1">

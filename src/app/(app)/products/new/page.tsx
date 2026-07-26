@@ -2,6 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { ProductForm } from "@/components/product-form";
 import { createProduct } from "@/app/actions/products";
+import { getFormOptions } from "@/lib/list-options";
 
 const MATERIAL_SELECT =
   "id, material_number, name, color, category, set_price_jpy, unit_type, " +
@@ -12,10 +13,11 @@ const MATERIAL_SELECT =
 export default async function NewProductPage() {
   const supabase = await createClient();
 
-  const [seasonsResult, pastModelsResult, materialsResult] = await Promise.all([
+  const [seasonsResult, pastModelsResult, materialsResult, formOptions] = await Promise.all([
     supabase.from("seasons").select("id, name").order("name"),
     supabase.from("products").select("model_name").not("model_name", "is", null),
     supabase.from("materials").select(MATERIAL_SELECT).order("name"),
+    getFormOptions(supabase),
   ]);
 
   const pastModelNames = Array.from(
@@ -34,6 +36,9 @@ export default async function NewProductPage() {
           seasons={seasonsResult.data ?? []}
           materials={(materialsResult.data ?? []) as any}
           pastModelNames={pastModelNames}
+          categoryOptions={formOptions.productCategory}
+          sexOptions={formOptions.productSex}
+          accessoryCompositionOptions={formOptions.productAccessoryComposition}
         />
       </div>
     </div>

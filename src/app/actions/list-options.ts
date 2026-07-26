@@ -5,9 +5,10 @@ import { createClient } from "@/lib/supabase/server";
 
 // ADR-0009 Phase 3 (Settings) — manage a domain's select-list options.
 
-export async function addListOption(domain: string, value: string): Promise<string | null> {
+export async function addListOption(domain: string, value: string, label?: string | null): Promise<string | null> {
   const v = value.trim();
   if (!v) return "Value is required";
+  const l = (label ?? "").trim() || null;
   const supabase = await createClient();
 
   // Append to the end of the domain's current order.
@@ -20,7 +21,7 @@ export async function addListOption(domain: string, value: string): Promise<stri
     .maybeSingle();
   const nextOrder = ((last?.sort_order as number | undefined) ?? -1) + 1;
 
-  const { error } = await supabase.from("list_options").insert({ domain, value: v, sort_order: nextOrder });
+  const { error } = await supabase.from("list_options").insert({ domain, value: v, label: l, sort_order: nextOrder });
   if (error) {
     if (error.code === "23505") return "That value already exists in this list";
     return error.message;

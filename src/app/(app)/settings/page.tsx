@@ -34,6 +34,7 @@ export default async function SettingsPage() {
                   domain={d.domain}
                   label={d.label}
                   options={optionsByDomain.get(d.domain) ?? []}
+                  withLabel={d.withLabel}
                 />
               ) : (
                 <div key={d.domain} className="border border-dashed border-gray-200 rounded-lg p-4">

@@ -2,17 +2,19 @@ import { createClient } from "@/lib/supabase/server";
 import { MaterialNewModal } from "@/components/material-new-modal";
 import { MaterialsClient } from "@/components/materials-client";
 import { createMaterial } from "@/app/actions/materials";
+import { getMaterialFormOptions } from "@/lib/list-options";
 
 export default async function MaterialsPage() {
   const supabase = await createClient();
 
-  const [materialsResult, suppliersResult, seasonsResult] = await Promise.all([
+  const [materialsResult, suppliersResult, seasonsResult, materialOptions] = await Promise.all([
     supabase
       .from("materials")
       .select("id, name, category, unit_price_jpy, set_price_jpy, unit_type, color, supplier_id, season_id, suppliers(name), seasons(name), comp_1_label, comp_1_pct, comp_2_label, comp_2_pct, comp_3_label, comp_3_pct, comp_4_label, comp_4_pct, comp_5_label, comp_5_pct, material_colors(color, unit_price_jpy, set_price_jpy, sort_order)")
       .order("name"),
     supabase.from("suppliers").select("id, name").order("name"),
     supabase.from("seasons").select("id, name").order("name"),
+    getMaterialFormOptions(supabase),
   ]);
 
   const rawMaterials = materialsResult.data ?? [];
@@ -62,6 +64,7 @@ export default async function MaterialsPage() {
           suppliers={suppliers}
           seasons={seasons}
           pastColors={pastColors}
+          materialOptions={materialOptions}
         />
       </div>
       <MaterialsClient materials={materials} suppliers={suppliers} seasons={seasons} pastColors={pastColors} />

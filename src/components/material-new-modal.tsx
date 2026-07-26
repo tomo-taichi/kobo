@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { MaterialForm } from "@/components/material-form";
 import { useCancelConfirm, CancelConfirmDialog } from "@/components/cancel-confirm";
+import type { MaterialFormOptions } from "@/lib/list-options";
 
 type Action = (_state: string | null, formData: FormData) => Promise<string | null>;
 type Supplier = { id: string; name: string };
@@ -13,11 +14,13 @@ export function MaterialNewModal({
   suppliers,
   seasons,
   pastColors = [],
+  materialOptions,
 }: {
   action: Action;
   suppliers: Supplier[];
   seasons: Season[];
   pastColors?: string[];
+  materialOptions?: MaterialFormOptions;
 }) {
   const [open, setOpen] = useState(false);
   const { confirming, onContentChange, requestClose, discard, keep } = useCancelConfirm(open, () => setOpen(false));
@@ -44,6 +47,10 @@ export function MaterialNewModal({
               seasons={seasons}
               pastColors={pastColors}
               onCancel={requestClose}
+              fabricCategoryOptions={materialOptions?.fabricCategories}
+              accessoryCategoryOptions={materialOptions?.accessoryCategories}
+              unitOptions={materialOptions?.units}
+              compositionOptions={materialOptions?.compositions}
             />
           </div>
           <CancelConfirmDialog open={confirming} onKeep={keep} onDiscard={discard} />

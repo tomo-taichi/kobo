@@ -3,12 +3,13 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { MaterialForm } from "@/components/material-form";
 import { autosaveMaterial } from "@/app/actions/materials";
+import { getMaterialFormOptions } from "@/lib/list-options";
 
 export default async function MaterialEditPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const supabase = await createClient();
 
-  const [materialResult, suppliersResult, seasonsResult, pastColorsResult, materialColorsResult] = await Promise.all([
+  const [materialResult, suppliersResult, seasonsResult, pastColorsResult, materialColorsResult, materialOptions] = await Promise.all([
     supabase
       .from("materials")
       .select("id, name, category, unit_price_jpy, set_price_jpy, unit_type, supplier_id, season_id, color, comp_1_label, comp_1_pct, comp_2_label, comp_2_pct, comp_3_label, comp_3_pct, comp_4_label, comp_4_pct, comp_5_label, comp_5_pct")
@@ -18,6 +19,7 @@ export default async function MaterialEditPage({ params }: { params: Promise<{ i
     supabase.from("seasons").select("id, name").order("name"),
     supabase.from("material_colors").select("color"),
     supabase.from("material_colors").select("color, unit_price_jpy, set_price_jpy, sort_order").eq("material_id", id).order("sort_order"),
+    getMaterialFormOptions(supabase),
   ]);
 
   if (!materialResult.data) notFound();
@@ -47,6 +49,10 @@ export default async function MaterialEditPage({ params }: { params: Promise<{ i
           suppliers={suppliers}
           seasons={seasons}
           pastColors={pastColors}
+          fabricCategoryOptions={materialOptions.fabricCategories}
+          accessoryCategoryOptions={materialOptions.accessoryCategories}
+          unitOptions={materialOptions.units}
+          compositionOptions={materialOptions.compositions}
           initialData={{
             name:           m.name,
             category:       m.category,

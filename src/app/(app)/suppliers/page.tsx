@@ -2,19 +2,20 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SupplierNewModal } from "@/components/supplier-new-modal";
 import { createSupplier } from "@/app/actions/suppliers";
+import { getListValues, DEFAULT_SUPPLIER_COUNTRIES } from "@/lib/list-options";
 
 export default async function SuppliersPage() {
   const supabase = await createClient();
-  const { data: suppliers } = await supabase
-    .from("suppliers")
-    .select("id, name, primary_name, primary_title, country")
-    .order("name");
+  const [{ data: suppliers }, countryOptions] = await Promise.all([
+    supabase.from("suppliers").select("id, name, primary_name, primary_title, country").order("name"),
+    getListValues(supabase, "supplier_country", DEFAULT_SUPPLIER_COUNTRIES),
+  ]);
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold text-gray-900">Suppliers</h1>
-        <SupplierNewModal action={createSupplier} />
+        <SupplierNewModal action={createSupplier} countryOptions={countryOptions} />
       </div>
 
       <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">

@@ -23,6 +23,7 @@ type Props = {
   };
   id?: string;
   onCancel?: () => void;
+  countryOptions?: string[];
 };
 
 const PRESET_COUNTRIES = ["Japan", "Italy", "China", "USA", "UK"];
@@ -36,10 +37,10 @@ function SectionHeading({ children }: { children: React.ReactNode }) {
   );
 }
 
-export function SupplierForm({ action, initial = {}, id, onCancel }: Props) {
+export function SupplierForm({ action, initial = {}, id, onCancel, countryOptions = PRESET_COUNTRIES }: Props) {
   const [error, formAction, pending] = useActionState(action, null);
 
-  const isPreset = !initial.country || PRESET_COUNTRIES.includes(initial.country);
+  const isPreset = !initial.country || countryOptions.includes(initial.country);
   const [isCustom, setIsCustom] = useState(!isPreset);
   const [customCountry, setCustomCountry] = useState(isPreset ? "" : (initial.country ?? ""));
 
@@ -100,7 +101,7 @@ export function SupplierForm({ action, initial = {}, id, onCancel }: Props) {
                 className={inputCls + " bg-white"}
               >
                 <option value="">— Select —</option>
-                {PRESET_COUNTRIES.map((c) => (
+                {countryOptions.map((c) => (
                   <option key={c} value={c}>{c}</option>
                 ))}
                 <option value="__custom__">Add to list (manual entry)</option>

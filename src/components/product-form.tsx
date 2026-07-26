@@ -62,6 +62,9 @@ type Props = {
   pastModelNames?: string[];
   initialData?: InitialData;
   id?: string;
+  categoryOptions?: string[];
+  sexOptions?: string[];
+  accessoryCompositionOptions?: string[];
 };
 
 const inputCls  = "w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-gray-900";
@@ -154,7 +157,17 @@ function MaterialSummary({ mat, prefix }: { mat: SelectedMaterial; prefix: "main
   );
 }
 
-export function ProductForm({ action, seasons, materials, pastModelNames = [], initialData = {}, id }: Props) {
+export function ProductForm({
+  action,
+  seasons,
+  materials,
+  pastModelNames = [],
+  initialData = {},
+  id,
+  categoryOptions = [...PRODUCT_CATEGORIES],
+  sexOptions = [...PRODUCT_SEXES],
+  accessoryCompositionOptions = [...ACCESSORY_COMPOSITIONS],
+}: Props) {
   const [result, formAction, pending] = useActionState(action, null);
   const formRef     = useRef<HTMLFormElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -290,7 +303,7 @@ export function ProductForm({ action, seasons, materials, pastModelNames = [], i
               <select name="product_category" value={category} required className={selectCls}
                 onChange={(e) => handleCategoryChange(e.target.value)}>
                 <option value="">Select...</option>
-                {PRODUCT_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                {categoryOptions.map((c) => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
           </div>
@@ -319,7 +332,7 @@ export function ProductForm({ action, seasons, materials, pastModelNames = [], i
               <select name="product_sex" value={sex} className={selectCls}
                 onChange={(e) => handleSexChange(e.target.value)}>
                 <option value="">—</option>
-                {PRODUCT_SEXES.map((s) => <option key={s} value={s}>{s}</option>)}
+                {sexOptions.map((s) => <option key={s} value={s}>{s}</option>)}
               </select>
             </div>
           </div>
@@ -464,7 +477,7 @@ export function ProductForm({ action, seasons, materials, pastModelNames = [], i
         <Section title="Accessories Composition">
           <select name="accessory_composition" defaultValue={initialData.accessory_composition ?? ""} className={selectCls}>
             <option value="">— None —</option>
-            {ACCESSORY_COMPOSITIONS.map((c) => <option key={c} value={c}>{c}</option>)}
+            {accessoryCompositionOptions.map((c) => <option key={c} value={c}>{c}</option>)}
           </select>
         </Section>
 

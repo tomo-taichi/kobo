@@ -6,8 +6,20 @@ import { addListOption, deleteListOption } from "@/app/actions/list-options";
 import type { ListOption } from "@/lib/list-options";
 
 // ADR-0009 Phase 3 (Settings) — add/remove options for one managed list domain.
-export function ListManager({ domain, label, options }: { domain: string; label: string; options: ListOption[] }) {
+// withLabel: the domain stores a separate display label (e.g. unit meter → "m").
+export function ListManager({
+  domain,
+  label,
+  options,
+  withLabel = false,
+}: {
+  domain: string;
+  label: string;
+  options: ListOption[];
+  withLabel?: boolean;
+}) {
   const [value, setValue] = useState("");
+  const [labelInput, setLabelInput] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const router = useRouter();
@@ -15,12 +27,13 @@ export function ListManager({ domain, label, options }: { domain: string; label:
   const add = () => {
     if (!value.trim()) return;
     startTransition(async () => {
-      const err = await addListOption(domain, value);
+      const err = await addListOption(domain, value, withLabel ? labelInput : null);
       if (err) {
         setError(err);
       } else {
         setError(null);
         setValue("");
+        setLabelInput("");
         router.refresh();
       }
     });
@@ -31,6 +44,8 @@ export function ListManager({ domain, label, options }: { domain: string; label:
       await deleteListOption(id);
       router.refresh();
     });
+
+  const inputCls = "px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-gray-900";
 
   return (
     <div className="border border-gray-200 rounded-lg p-4">
@@ -44,7 +59,13 @@ export function ListManager({ domain, label, options }: { domain: string; label:
               key={o.id}
               className="inline-flex items-center gap-1 text-xs bg-gray-100 border border-gray-200 rounded px-2 py-1"
             >
-              {o.label ?? o.value}
+              {withLabel && o.label ? (
+                <span>
+                  {o.value} <span className="text-gray-400">— {o.label}</span>
+                </span>
+              ) : (
+                o.label ?? o.value
+              )}
               <button
                 disabled={isPending}
                 onClick={() => remove(o.id)}
@@ -69,13 +90,27 @@ export function ListManager({ domain, label, options }: { domain: string; label:
               add();
             }
           }}
-          placeholder={`Add ${label.toLowerCase()}…`}
-          className="flex-1 px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-gray-900"
+          placeholder={withLabel ? "Value…" : `Add ${label.toLowerCase()}…`}
+          className={inputCls + " flex-1 min-w-0"}
         />
+        {withLabel && (
+          <input
+            value={labelInput}
+            onChange={(e) => setLabelInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.nativeEvent.isComposing) {
+                e.preventDefault();
+                add();
+              }
+            }}
+            placeholder="Label (optional)"
+            className={inputCls + " w-32"}
+          />
+        )}
         <button
           disabled={isPending || !value.trim()}
           onClick={add}
-          className="text-sm px-3 py-1 bg-gray-900 text-white rounded hover:bg-gray-700 disabled:opacity-50"
+          className="text-sm px-3 py-1 bg-gray-900 text-white rounded hover:bg-gray-700 disabled:opacity-50 shrink-0"
         >
           Add
         </button>

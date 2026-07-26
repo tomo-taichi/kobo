@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { ProductForm } from "@/components/product-form";
 import { updateProduct } from "@/app/actions/products";
+import { getFormOptions } from "@/lib/list-options";
 
 export default async function ProductEditPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -13,7 +14,7 @@ export default async function ProductEditPage({ params }: { params: Promise<{ id
     "comp_4_label, comp_4_pct, comp_5_label, comp_5_pct, " +
     "colors:material_colors(id, color), seasons(name)";
 
-  const [productResult, seasonsResult, pastModelsResult, materialsResult, productColorsResult] = await Promise.all([
+  const [productResult, seasonsResult, pastModelsResult, materialsResult, productColorsResult, formOptions] = await Promise.all([
     supabase
       .from("products")
       .select(
@@ -35,6 +36,7 @@ export default async function ProductEditPage({ params }: { params: Promise<{ id
     supabase.from("products").select("model_name").not("model_name", "is", null),
     supabase.from("materials").select(MATERIAL_SELECT).order("name"),
     supabase.from("product_colors").select("material_color_id, sort_order").eq("product_id", id).order("sort_order"),
+    getFormOptions(supabase),
   ]);
 
   const p = productResult.data as any;
@@ -57,6 +59,9 @@ export default async function ProductEditPage({ params }: { params: Promise<{ id
         seasons={seasonsResult.data ?? []}
         materials={allMaterials}
         pastModelNames={pastModelNames}
+        categoryOptions={formOptions.productCategory}
+        sexOptions={formOptions.productSex}
+        accessoryCompositionOptions={formOptions.productAccessoryComposition}
         initialData={{
           season_id:            p.season_id,
           model_name:           p.model_name ?? "",

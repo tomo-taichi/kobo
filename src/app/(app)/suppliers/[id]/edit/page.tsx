@@ -3,15 +3,19 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SupplierForm } from "@/components/supplier-form";
 import { updateSupplier } from "@/app/actions/suppliers";
+import { getListValues, DEFAULT_SUPPLIER_COUNTRIES } from "@/lib/list-options";
 
 export default async function SupplierEditPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const supabase = await createClient();
-  const { data: s } = await supabase
-    .from("suppliers")
-    .select("id, name, country, address, company_phone, primary_name, primary_title, primary_mobile, primary_email, secondary_name, secondary_title, secondary_mobile, secondary_email, notes")
-    .eq("id", id)
-    .single();
+  const [{ data: s }, countryOptions] = await Promise.all([
+    supabase
+      .from("suppliers")
+      .select("id, name, country, address, company_phone, primary_name, primary_title, primary_mobile, primary_email, secondary_name, secondary_title, secondary_mobile, secondary_email, notes")
+      .eq("id", id)
+      .single(),
+    getListValues(supabase, "supplier_country", DEFAULT_SUPPLIER_COUNTRIES),
+  ]);
 
   if (!s) notFound();
 
@@ -40,6 +44,7 @@ export default async function SupplierEditPage({ params }: { params: Promise<{ i
             notes: (s as any).notes ?? "",
           }}
           id={s.id}
+          countryOptions={countryOptions}
         />
       </div>
     </div>
