@@ -74,5 +74,32 @@ export async function generateProductionBatches(seasonId: string): Promise<Gener
   }
 
   revalidatePath(`/seasons/${seasonId}/production`);
+  revalidatePath(`/seasons/${seasonId}/production/kanban`);
   return { batches: groups.size, linkedItems, skippedNoColour };
+}
+
+// ADR-0009 Phase 3 — update a single field on a production batch from the Kanban.
+// Handles stage statuses (auto-advance is derived, not stored), priority, and
+// cutter/sewer assignees. Returns null on success or an error message.
+export type BatchField =
+  | "fabric_arrived"
+  | "pattern_state"
+  | "cut_status"
+  | "sew_status"
+  | "fin_status"
+  | "priority"
+  | "cutter_name"
+  | "sewer_name";
+
+export async function updateBatchField(
+  batchId: string,
+  seasonId: string,
+  field: BatchField,
+  value: string | number | boolean | null
+): Promise<string | null> {
+  const supabase = await createClient();
+  const { error } = await supabase.from("production_batches").update({ [field]: value }).eq("id", batchId);
+  if (error) return error.message;
+  revalidatePath(`/seasons/${seasonId}/production/kanban`);
+  return null;
 }

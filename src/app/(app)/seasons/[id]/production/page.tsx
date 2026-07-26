@@ -41,8 +41,24 @@ export default async function ProductionProgressPage({ params }: { params: Promi
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-3">
+      <div className="flex items-center justify-between gap-3">
         <Link href="/seasons" className="text-sm text-gray-500 hover:text-gray-900">← Season List</Link>
+        <div className="flex items-center gap-2">
+          <Link
+            href={`/seasons/${seasonId}/production/kanban`}
+            className="text-xs px-3 py-1.5 border border-gray-300 text-gray-700 rounded hover:bg-gray-100"
+          >
+            Kanban
+          </Link>
+          <Link
+            href={`/seasons/${seasonId}/production/master-list`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-xs px-3 py-1.5 border border-gray-300 text-gray-700 rounded hover:bg-gray-100"
+          >
+            Master List
+          </Link>
+        </div>
       </div>
       <h1 className="text-2xl font-semibold text-gray-900">Production Progress: {season.name}</h1>
 

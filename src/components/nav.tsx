@@ -3,11 +3,13 @@ import { logout } from "@/app/actions/auth";
 
 const links = [
   { href: "/seasons", label: "Seasons" },
+  { href: "/production", label: "Production" },
   { href: "/suppliers", label: "Suppliers" },
   { href: "/materials", label: "Materials" },
   { href: "/customers", label: "Customers" },
   { href: "/products", label: "Products" },
   { href: "/orders", label: "Orders" },
+  { href: "/settings", label: "Settings" },
 ];
 
 export function Nav() {
