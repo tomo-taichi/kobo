@@ -4,7 +4,9 @@ import { ListManager } from "@/components/list-manager";
 import { PricingSettingsForm } from "@/components/pricing-settings-form";
 import { ManufacturingPresetsForm } from "@/components/manufacturing-presets-form";
 import { SettingsTabs } from "@/components/settings-tabs";
+import { BanksManager } from "@/components/banks-manager";
 import { getManufacturingPresets } from "@/lib/manufacturing-presets";
+import { getBanks } from "@/lib/banks";
 
 // ADR-0009 Phase 3 (Settings) — Brand-user hub. Left sub-menu selects a section;
 // only the wired ("ready") lists are editable, others show as placeholders.
@@ -14,10 +16,11 @@ export default async function SettingsPage() {
   const supabase = await createClient();
 
   const readyDomains = SETTINGS_GROUPS.flatMap((g) => g.domains.filter((d) => d.ready).map((d) => d.domain));
-  const [entries, settingsRes, mfgPresets] = await Promise.all([
+  const [entries, settingsRes, mfgPresets, banks] = await Promise.all([
     Promise.all(readyDomains.map(async (d) => [d, await getListOptions(supabase, d)] as const)),
     supabase.from("company_settings").select("cost_eur_rate_default, labor_rate_jpy_per_hour").limit(1).maybeSingle(),
     getManufacturingPresets(supabase),
+    getBanks(supabase),
   ]);
   const optionsByDomain = new Map<string, ListOption[]>(entries);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -63,6 +66,18 @@ export default async function SettingsPage() {
         </div>
       ),
     })),
+    {
+      key: "customers",
+      label: "Customers",
+      content: (
+        <div>
+          <p className="text-xs text-gray-500 mb-3">
+            Banks and their payment details. A customer’s selected bank prints on their invoices.
+          </p>
+          <BanksManager banks={banks} />
+        </div>
+      ),
+    },
   ];
 
   return (

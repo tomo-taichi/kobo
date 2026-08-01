@@ -55,7 +55,13 @@ type Props = {
   initialData?: InitialData;
   id?: string;
   onCancel?: () => void;
+  bankOptions?: { value: string; label: string }[];
 };
+
+const DEFAULT_BANK_OPTIONS = [
+  { value: "Rakuten_JP", label: "Rakuten JP" },
+  { value: "WISE_EU", label: "WISE EU" },
+];
 
 const inputCls  = "w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-gray-900 disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed";
 const selectCls = inputCls + " bg-white";
@@ -168,7 +174,7 @@ function StatusBadge({ ok }: { ok: boolean }) {
     : <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-amber-50 text-amber-700">Incomplete</span>;
 }
 
-export function CustomerForm({ action, initialData = {}, id, onCancel }: Props) {
+export function CustomerForm({ action, initialData = {}, id, onCancel, bankOptions = DEFAULT_BANK_OPTIONS }: Props) {
   const [result, formAction, pending] = useActionState(action, null);
   const isError = result && result !== "ok";
 
@@ -375,8 +381,11 @@ export function CustomerForm({ action, initialData = {}, id, onCancel }: Props) 
             <label className="block text-xs font-medium text-gray-600 mb-1">Bank <span className="text-red-500">*</span></label>
             <select value={bank} onChange={(e) => setBank(e.target.value)} disabled={!editable} className={selectCls}>
               <option value="">Select...</option>
-              <option value="Rakuten_JP">Rakuten JP</option>
-              <option value="WISE_EU">WISE EU</option>
+              {bankOptions.map((o) => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+              {/* keep a legacy value selectable even if its bank was removed */}
+              {bank && !bankOptions.some((o) => o.value === bank) && <option value={bank}>{bank}</option>}
             </select>
           </div>
         </div>

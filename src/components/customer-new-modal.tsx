@@ -6,7 +6,7 @@ import { useCancelConfirm, CancelConfirmDialog } from "@/components/cancel-confi
 
 type Action = (_state: string | null, formData: FormData) => Promise<string | null>;
 
-export function CustomerNewModal({ action }: { action: Action }) {
+export function CustomerNewModal({ action, bankOptions }: { action: Action; bankOptions?: { value: string; label: string }[] }) {
   const [open, setOpen] = useState(false);
   const { confirming, onContentChange, requestClose, discard, keep } = useCancelConfirm(open, () => setOpen(false));
 
@@ -26,7 +26,7 @@ export function CustomerNewModal({ action }: { action: Action }) {
               <h2 className="text-base font-semibold text-gray-900">New Customer</h2>
               <button onClick={requestClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none">✕</button>
             </div>
-            <CustomerForm action={action} onCancel={requestClose} />
+            <CustomerForm action={action} onCancel={requestClose} bankOptions={bankOptions} />
           </div>
           <CancelConfirmDialog open={confirming} onKeep={keep} onDiscard={discard} />
         </div>

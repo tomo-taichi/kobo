@@ -147,20 +147,12 @@ export const OC_LABELS = {
 } as const;
 
 /**
- * Bank-detail lines for the invoice, chosen by `customers.bank`.
- * Content lives in company_settings (editable). Returns null if no bank set.
+ * Split a bank's `details` text (from the banks table, chosen by customers.bank)
+ * into invoice lines. Returns null when there are no details.
  */
-export function bankDetailLines(
-  bank: string | null | undefined,
-  wiseEu: string | null | undefined,
-  rakutenJp: string | null | undefined,
-): string[] | null {
-  const raw =
-    bank === "WISE_EU" ? wiseEu :
-    bank === "Rakuten_JP" ? rakutenJp :
-    null;
-  if (!raw) return null;
-  const lines = raw.split("\n").map((s) => s.replace(/\s+$/, "")).filter((s) => s.length > 0);
+export function bankDetailLines(details: string | null | undefined): string[] | null {
+  if (!details) return null;
+  const lines = details.split("\n").map((s) => s.replace(/\s+$/, "")).filter((s) => s.length > 0);
   return lines.length ? lines : null;
 }
 

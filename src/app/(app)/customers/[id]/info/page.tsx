@@ -3,18 +3,20 @@ import { createClient } from "@/lib/supabase/server";
 import { CustomerForm } from "@/components/customer-form";
 import { CustomerContractsSection, type ContractFile } from "@/components/customer-contracts";
 import { updateCustomer } from "@/app/actions/customers";
+import { getBankOptions } from "@/lib/banks";
 
 export default async function CustomerInfoPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const supabase = await createClient();
 
-  const [{ data: c }, { data: rawContracts }] = await Promise.all([
+  const [{ data: c }, { data: rawContracts }, bankOptions] = await Promise.all([
     supabase.from("customers").select("*").eq("id", id).single(),
     supabase
       .from("customer_contracts")
       .select("id, filename, storage_path, uploaded_at")
       .eq("customer_id", id)
       .order("uploaded_at", { ascending: false }),
+    getBankOptions(supabase),
   ]);
 
   if (!c) notFound();
@@ -35,6 +37,7 @@ export default async function CustomerInfoPage({ params }: { params: Promise<{ i
       <div className="bg-white border border-gray-200 rounded-lg p-5">
         <CustomerForm
           action={updateCustomer}
+          bankOptions={bankOptions}
           initialData={{
             name:                s.name,
             customer_type:       s.customer_type,

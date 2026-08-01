@@ -58,11 +58,7 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
       { domain: "product_accessory_composition", label: "Accessory Composition", ready: true },
     ],
   },
-  {
-    key: "customers",
-    label: "Customers",
-    domains: [{ domain: "customer_bank", label: "Bank", ready: false }],
-  },
+  // Customers → Banks is not a simple list; it has its own section (BanksManager).
 ];
 
 // Read one domain's options, ordered. Tolerant: returns [] if the table doesn't

@@ -145,7 +145,7 @@ export async function buildDeliveryNoteProps(supabase: any, orderId: string, ite
  * route and the "Generate & Save" server action so the layout stays in sync.
  */
 export async function buildOcProps(supabase: any, orderId: string) {
-  const [orderResult, itemsResult, companyResult] = await Promise.all([
+  const [orderResult, itemsResult, companyResult, banksResult] = await Promise.all([
     supabase
       .from("orders")
       .select("order_number, order_date, customer_id, discount_rate, deposit_rate, tax_rate, exchange_rate, deposit_amount_eur, deposit_amount_jpy, invoice_count, customers(id, name, customer_type, language, currency, bank, tax_included, deposit_terms, billing_company, billing_address, billing_city, billing_postcode, billing_country), seasons(name)")
@@ -157,8 +157,9 @@ export async function buildOcProps(supabase: any, orderId: string) {
       .eq("order_id", orderId),
     supabase
       .from("company_settings")
-      .select("name_ja, address_ja, nickname, phone, email, bank_wise_eu, bank_rakuten_jp, registration_no")
+      .select("name_ja, address_ja, nickname, phone, email, registration_no")
       .single(),
+    supabase.from("banks").select("bank_key, details"),
   ]);
 
   const order: any = orderResult.data;
@@ -219,7 +220,9 @@ export async function buildOcProps(supabase: any, orderId: string) {
     memo: null,
   }));
 
-  const bankDetails = bankDetailLines(customer.bank, cs.bank_wise_eu, cs.bank_rakuten_jp);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const bankMap = new Map<string, string | null>((banksResult.data ?? []).map((b: any) => [b.bank_key, b.details ?? null]));
+  const bankDetails = bankDetailLines(bankMap.get(customer.bank) ?? null);
 
   return {
     lang,
