@@ -8,7 +8,9 @@ import {
   GARMENT_TYPES,
   MANUFACTURING_HOUR_PRESETS,
   MANUFACTURING_COST_LABELS,
+  formatHours,
   type ManufacturingCostKey,
+  type ManufacturingHourPresets,
   type GarmentType,
 } from "@/lib/presets";
 import { updateProductCosts } from "@/app/actions/product-costs";
@@ -61,6 +63,7 @@ type Props = {
   laborRate: number;                // company_settings.labor_rate_jpy_per_hour
   initialCostEurRate: number;
   colors: ColorRow[];
+  presets: ManufacturingHourPresets; // manufacturing autofill matrix (Settings)
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -83,8 +86,8 @@ function SectionBlock({ title, children }: { title: string; children: React.Reac
 }
 
 // Manufacturing input: work-TIME in HOURS (1 decimal) + quick-preset dropdown, with derived ¥.
-function MfgInput({ mfgKey, value, laborRate, onChange }: {
-  mfgKey: ManufacturingCostKey; value: number; laborRate: number; onChange: (v: number) => void;
+function MfgInput({ mfgKey, value, laborRate, presets, onChange }: {
+  mfgKey: ManufacturingCostKey; value: number; laborRate: number; presets: ManufacturingHourPresets; onChange: (v: number) => void;
 }) {
   return (
     <div className="flex items-center gap-1">
@@ -105,8 +108,8 @@ function MfgInput({ mfgKey, value, laborRate, onChange }: {
       >
         <option value="">▾</option>
         {GARMENT_TYPES.map((g) => (
-          <option key={g} value={MANUFACTURING_HOUR_PRESETS[mfgKey][g]}>
-            {g}: {MANUFACTURING_HOUR_PRESETS[mfgKey][g]}h
+          <option key={g} value={presets[mfgKey][g]}>
+            {g}: {formatHours(presets[mfgKey][g])}h
           </option>
         ))}
       </select>
@@ -150,6 +153,7 @@ export function ProductCostForm({
   initialManufacturing,
   laborRate,
   initialCostEurRate, colors,
+  presets,
 }: Props) {
   const [mainQty,    setMainQty]    = useState(initialMainQuantity);
   const [liningQty,  setLiningQty]  = useState(initialLiningQuantity);
@@ -209,12 +213,12 @@ export function ProductCostForm({
   function handleAutofill() {
     if (!autofillType) return;
     setMfg({
-      cutting:  MANUFACTURING_HOUR_PRESETS.cutting[autofillType],
-      sewing:   MANUFACTURING_HOUR_PRESETS.sewing[autofillType],
-      knitting: MANUFACTURING_HOUR_PRESETS.knitting[autofillType],
-      thread:   MANUFACTURING_HOUR_PRESETS.thread[autofillType],
-      finish:   MANUFACTURING_HOUR_PRESETS.finish[autofillType],
-      packing:  MANUFACTURING_HOUR_PRESETS.packing[autofillType],
+      cutting:  presets.cutting[autofillType],
+      sewing:   presets.sewing[autofillType],
+      knitting: presets.knitting[autofillType],
+      thread:   presets.thread[autofillType],
+      finish:   presets.finish[autofillType],
+      packing:  presets.packing[autofillType],
     });
   }
 
@@ -395,7 +399,7 @@ export function ProductCostForm({
           {MFG_KEYS.map((key) => (
             <div key={key} className="flex items-center gap-2">
               <label className="text-xs text-gray-500 w-20 shrink-0">{MANUFACTURING_COST_LABELS[key]}</label>
-              <MfgInput mfgKey={key} value={mfg[key]} laborRate={laborRate}
+              <MfgInput mfgKey={key} value={mfg[key]} laborRate={laborRate} presets={presets}
                 onChange={(v) => setMfg((prev) => ({ ...prev, [key]: v }))} />
             </div>
           ))}

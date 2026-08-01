@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { ProductCostForm } from "@/components/product-cost-form";
+import { getManufacturingPresets } from "@/lib/manufacturing-presets";
 
 const MATERIAL_SELECT =
   "id, material_number, name, color, category, set_price_jpy, unit_type, " +
@@ -11,7 +12,7 @@ export default async function ProductCostsPage({ params }: { params: Promise<{ i
   const { id } = await params;
   const supabase = await createClient();
 
-  const [productResult, allMaterialsResult, productMaterialsResult, productColorsResult, settingsResult] = await Promise.all([
+  const [productResult, allMaterialsResult, productMaterialsResult, productColorsResult, settingsResult, mfgPresets] = await Promise.all([
     supabase
       .from("products")
       .select(
@@ -33,7 +34,8 @@ export default async function ProductCostsPage({ params }: { params: Promise<{ i
       .select("id, material_color_id, markup_rate, retail_rate, retail_price_eur, sort_order, material_colors(color, set_price_jpy)")
       .eq("product_id", id)
       .order("sort_order"),
-    supabase.from("company_settings").select("labor_rate_jpy_per_hour").single(),
+    supabase.from("company_settings").select("labor_rate_jpy_per_hour, cost_eur_rate_default").single(),
+    getManufacturingPresets(supabase),
   ]);
 
   const p = productResult.data as any;
@@ -98,8 +100,9 @@ export default async function ProductCostsPage({ params }: { params: Promise<{ i
             packing:  Number(p.packing_minutes),
           }}
           laborRate={Number((settingsResult.data as any)?.labor_rate_jpy_per_hour) || 2000}
-          initialCostEurRate={Number(p.cost_eur_rate) || 160}
+          initialCostEurRate={Number(p.cost_eur_rate) || Number((settingsResult.data as any)?.cost_eur_rate_default) || 130}
           colors={colors}
+          presets={mfgPresets}
         />
       </div>
 
