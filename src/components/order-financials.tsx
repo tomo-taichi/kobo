@@ -7,7 +7,7 @@ import { fmtEur } from "@/lib/format";
 
 // Selectable wholesale discount tiers (B2B). The order's current value is always added
 // so any pre-filled rate (e.g. a VIP preset or 0%) stays selectable.
-const DISCOUNT_CHOICES = [40, 45, 50, 55, 60, 65];
+const DISCOUNT_CHOICES = [0, 40, 45, 50, 55, 60, 65];
 
 type OrderItem = {
   id:             string;

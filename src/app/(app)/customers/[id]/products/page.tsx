@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { buildColorSkuMap } from "@/lib/skus";
+import { fmtProductId } from "@/lib/format";
 
 export default async function CustomerProductsPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -21,14 +23,21 @@ export default async function CustomerProductsPage({ params }: { params: Promise
   const { data: items } = orderIds.length > 0
     ? await supabase
         .from("order_items")
-        .select("id, order_id, customer_wholesale_eur, products(id, name, product_number, color, model_name)")
+        .select("id, order_id, product_id, product_color_id, customer_wholesale_eur, products(id, name, product_number, color, model_name)")
         .in("order_id", orderIds)
     : { data: [] };
+
+  const skuMap = await buildColorSkuMap(
+    supabase,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    Array.from(new Set(((items ?? []) as any[]).map((it) => it.product_id).filter(Boolean)))
+  );
 
   // Group items by order, attach season info
   type Item = {
     id: string;
     order_id: string;
+    product_color_id: string | null;
     customer_wholesale_eur: number | null;
     products: { id: string; name: string; product_number: string | null; color: string | null; model_name: string | null } | null;
   };
@@ -90,7 +99,7 @@ export default async function CustomerProductsPage({ params }: { params: Promise
                   const p = item.products;
                   return (
                     <tr key={item.id} className="hover:bg-gray-50">
-                      <td className="px-4 py-2 text-gray-500 text-xs font-mono">{p?.product_number ?? "—"}</td>
+                      <td className="px-4 py-2 text-gray-500 text-xs font-mono">{item.product_color_id ? skuMap.get(item.product_color_id) ?? fmtProductId(p?.product_number) : fmtProductId(p?.product_number)}</td>
                       <td className="px-4 py-2 text-gray-900 text-xs">{p?.name ?? "—"}</td>
                       <td className="px-4 py-2 text-gray-500 text-xs">{p?.color ?? "—"}</td>
                       <td className="px-4 py-2 text-gray-500 text-xs">{p?.model_name ?? "—"}</td>

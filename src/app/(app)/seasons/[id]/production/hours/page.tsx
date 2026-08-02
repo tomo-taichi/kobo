@@ -1,9 +1,9 @@
 import { notFound } from "next/navigation";
-import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { getTimeLogs } from "@/lib/time-logs";
 import { TIME_LOG_STAGES } from "@/lib/production-constants";
 import { TimeLogEntries } from "@/components/time-log-entries";
+import { ProductionTabNav } from "@/components/production-tab-nav";
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -17,7 +17,10 @@ export default async function ProductionHoursPage({ params }: { params: Promise<
   const season: any = seasonResult.data;
   if (!season) notFound();
 
-  const entries = await getTimeLogs(supabase, seasonId);
+  const [entries, seasonsListResult] = await Promise.all([
+    getTimeLogs(supabase, seasonId),
+    supabase.from("seasons").select("id, name").order("created_at", { ascending: false }),
+  ]);
 
   const workers = new Map<string, { total: number; byStage: Record<string, number> }>();
   for (const e of entries) {
@@ -36,11 +39,7 @@ export default async function ProductionHoursPage({ params }: { params: Promise<
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between gap-3">
-        <Link href={`/seasons/${seasonId}/production/kanban`} className="text-sm text-gray-500 hover:text-gray-900">
-          ← Kanban
-        </Link>
-      </div>
+      <ProductionTabNav seasonId={seasonId} seasons={(seasonsListResult.data ?? []) as { id: string; name: string }[]} active="hours" />
       <h1 className="text-2xl font-semibold text-gray-900">Production Hours: {season.name}</h1>
 
       {summary.length === 0 ? (

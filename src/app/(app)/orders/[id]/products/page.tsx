@@ -1,13 +1,14 @@
 import { Fragment } from "react";
 import { notFound } from "next/navigation";
-import { fmtEur } from "@/lib/format";
+import { fmtEur, fmtProductId } from "@/lib/format";
+import { buildColorSkuMap } from "@/lib/skus";
 import { createClient } from "@/lib/supabase/server";
 import { SIZES } from "@/lib/order-constants";
 import { OrderProductPicker } from "@/components/order-product-picker";
 import { OrderSizeGrid } from "@/components/order-size-grid";
 
 // 5 info cols + 11 sizes + 1 subtotal + 1 action
-const TOTAL_COLS = 5 + SIZES.length + 2;
+const TOTAL_COLS = 5 + SIZES.length + 3;
 
 export default async function OrderProductsPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -24,7 +25,7 @@ export default async function OrderProductsPage({ params }: { params: Promise<{ 
   const [itemsResult, allProductsResult, seasonsResult] = await Promise.all([
     supabase
       .from("order_items")
-      .select("id, product_id, product_color_id, retail_price_eur, customer_wholesale_eur, products(name, product_number, model_name, main_m_name, main_m_color, product_category, orderable_sizes), product_colors(material_colors(color)), order_item_sizes(size, quantity)")
+      .select("id, product_id, product_color_id, retail_price_eur, customer_wholesale_eur, memo, products(name, product_number, model_name, main_m_name, main_m_color, product_category, orderable_sizes), product_colors(material_colors(color)), order_item_sizes(size, quantity)")
       .eq("order_id", id)
       .order("created_at"),
     supabase
@@ -37,12 +38,14 @@ export default async function OrderProductsPage({ params }: { params: Promise<{ 
 
   const items: any[]    = itemsResult.data ?? [];
   const addedColorIds   = new Set(items.map((i: any) => i.product_color_id).filter(Boolean));
+  const skuMap = await buildColorSkuMap(supabase, (allProductsResult.data ?? []).map((p: any) => p.id));
   // Flatten products → one picker row per enabled colour, excluding colours already on the order
   const pickerRows = (allProductsResult.data ?? []).flatMap((p: any) =>
     (p.product_colors ?? []).map((pc: any) => ({
       productColorId:   pc.id,
       productId:        p.id,
       product_number:   p.product_number,
+      sku:              skuMap.get(pc.id) ?? fmtProductId(p.product_number),
       model_name:       p.model_name,
       main_m_name:      p.main_m_name,
       colour:           pc.material_colors?.color ?? null,
@@ -121,6 +124,7 @@ export default async function OrderProductsPage({ params }: { params: Promise<{ 
                     <th key={s} className="px-0.5 py-2 text-center font-medium text-gray-400">{s}</th>
                   ))}
                   <th className="px-3 py-2 text-right font-medium text-gray-400">Qty · Total</th>
+                  <th className="px-3 py-2 text-left font-medium text-gray-400">Memo</th>
                   <th className="px-3 py-2" />
                 </tr>
               </thead>
@@ -149,7 +153,7 @@ export default async function OrderProductsPage({ params }: { params: Promise<{ 
                           orderId={id}
                           orderItemId={item.id}
                           productName={p.name ?? "—"}
-                          productNumber={p.product_number ?? null}
+                          productSku={skuMap.get(item.product_color_id) ?? fmtProductId(p.product_number)}
                           modelName={p.model_name ?? null}
                           mainMName={p.main_m_name ?? null}
                           mainMColor={item.product_colors?.material_colors?.color ?? p.main_m_color ?? null}
@@ -157,6 +161,7 @@ export default async function OrderProductsPage({ params }: { params: Promise<{ 
                           customerWholesaleEur={Number(item.customer_wholesale_eur)}
                           initialSizes={sizes}
                           orderableSizes={p.orderable_sizes ?? null}
+                          initialMemo={item.memo ?? ""}
                         />
                       );
                     })}

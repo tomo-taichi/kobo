@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { SIZES } from "@/lib/order-constants";
-import { updateOrderItemSizes, removeOrderItem } from "@/app/actions/order-items";
+import { updateOrderItemSizes, removeOrderItem, updateOrderItemMemo } from "@/app/actions/order-items";
 import { fmtEur } from "@/lib/format";
 
 type SizeEntry = { size: string; quantity: number };
@@ -11,7 +11,7 @@ type Props = {
   orderId:              string;
   orderItemId:          string;
   productName:          string;
-  productNumber:        string | null;
+  productSku:           string;   // per-colour SKU (P000123-01)
   modelName:            string | null;
   mainMName:            string | null;
   mainMColor:           string | null;
@@ -19,27 +19,21 @@ type Props = {
   customerWholesaleEur: number;
   initialSizes:         SizeEntry[];
   orderableSizes:       string[] | null;  // null = all sizes orderable (legacy products)
+  initialMemo:          string;
 };
-
-function fmtId(raw: string | null): string {
-  if (!raw) return "—";
-  const digits = raw.replace(/^P/i, "");
-  const n = parseInt(digits, 10);
-  if (isNaN(n)) return raw;
-  return "P" + String(n).padStart(6, "0");
-}
 
 export function OrderSizeGrid({
   orderId,
   orderItemId,
   productName,
-  productNumber,
+  productSku,
   modelName,
   mainMName,
   mainMColor,
   retailPriceEur,
   initialSizes,
   orderableSizes,
+  initialMemo,
 }: Props) {
   const orderableSet = orderableSizes ? new Set(orderableSizes) : null;
   const isOrderable = (s: string) => !orderableSet || orderableSet.has(s);
@@ -83,7 +77,7 @@ export function OrderSizeGrid({
   return (
     <tr className={`border-b border-gray-100 last:border-0 transition-colors ${removing ? "opacity-40" : "hover:bg-gray-50/60"}`}>
       {/* Product info */}
-      <td className="px-3 py-2 font-mono text-xs text-gray-400 whitespace-nowrap">{fmtId(productNumber)}</td>
+      <td className="px-3 py-2 font-mono text-xs text-gray-400 whitespace-nowrap">{productSku}</td>
       <td className="px-3 py-2 text-sm font-medium text-gray-900 whitespace-nowrap">{modelName ?? productName}</td>
       <td className="px-3 py-2 text-xs text-gray-500 whitespace-nowrap">{mainMName ?? "—"}</td>
       <td className="px-3 py-2 text-xs text-gray-400 whitespace-nowrap">{mainMColor ?? "—"}</td>
@@ -125,6 +119,20 @@ export function OrderSizeGrid({
         ) : (
           <span className="text-gray-300">—</span>
         )}
+      </td>
+
+      {/* Memo (per order line; shown on the Production Master List) */}
+      <td className="px-2 py-2">
+        <input
+          type="text"
+          defaultValue={initialMemo}
+          maxLength={200}
+          placeholder="Memo…"
+          onBlur={(e) => {
+            if (e.target.value !== initialMemo) updateOrderItemMemo(orderId, orderItemId, e.target.value);
+          }}
+          className="w-32 h-7 px-2 text-xs border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-blue-400"
+        />
       </td>
 
       {/* Status + Remove */}

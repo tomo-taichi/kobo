@@ -31,6 +31,12 @@ export default async function ProductionHubPage() {
                   Kanban
                 </Link>
                 <Link
+                  href={`/seasons/${s.id}/production/finishing`}
+                  className="text-xs px-3 py-1.5 border border-gray-300 text-gray-700 rounded hover:bg-gray-100"
+                >
+                  Finishing
+                </Link>
+                <Link
                   href={`/seasons/${s.id}/production/hours`}
                   className="text-xs px-3 py-1.5 border border-gray-300 text-gray-700 rounded hover:bg-gray-100"
                 >

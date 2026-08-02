@@ -1,6 +1,6 @@
 # Customer Portal: user roles + data isolation
 
-> **状態: Accepted。** Customer Portal（顧客向け画面）と Brand Portal（現行システム）を分離し、User Role とデータ隔離の方式を定める。
+> **状態: Superseded by [ADR-0010](0010-user-functions-navigation-and-portal-flows.md)。** 単一ロール（brand/customer 二択）の方針は ADR-0010 で「internal/client の型 ＋ internal サブ権限（Brand/Production）」に置き換えた。データ隔離（サーバ限定アクセス＋`is_brand()` RLS ガード）と Supabase Auth 採用の方針は ADR-0010 でも引き継ぐ。
 
 ## 決定
 

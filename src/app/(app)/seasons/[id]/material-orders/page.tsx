@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { MaterialOrderRow } from "@/components/material-order-row";
 import { buildOrderEmail } from "@/lib/purchase-order";
 import { buildMaterialUsage, type UsageGroup } from "@/lib/material-usage";
+import { ProductionTabNav } from "@/components/production-tab-nav";
 
 export default async function MaterialOrdersPage({ params }: { params: Promise<{ id: string }> }) {
   const { id: seasonId } = await params;
@@ -14,11 +15,13 @@ export default async function MaterialOrdersPage({ params }: { params: Promise<{
   const season: any = seasonResult.data;
   if (!season) notFound();
 
-  const [usageGroups, moResult, companyResult] = await Promise.all([
+  const [usageGroups, moResult, companyResult, seasonsListResult] = await Promise.all([
     buildMaterialUsage(supabase, seasonId),
     supabase.from("material_orders").select("material_color_id, sample_remaining, order_qty, notes").eq("season_id", seasonId),
     supabase.from("company_settings").select("name_ja, name_en, address_ja, address_en, phone, email").limit(1).single(),
+    supabase.from("seasons").select("id, name").order("created_at", { ascending: false }),
   ]);
+  const seasonsList = (seasonsListResult.data ?? []) as { id: string; name: string }[];
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const moMap = new Map((moResult.data ?? []).map((mo: any) => [mo.material_color_id, mo]));
@@ -83,8 +86,9 @@ export default async function MaterialOrdersPage({ params }: { params: Promise<{
 
   return (
     <div className="space-y-6">
+      <ProductionTabNav seasonId={seasonId} seasons={seasonsList} active="material-order" />
       <div className="flex items-center justify-between gap-3">
-        <Link href="/seasons" className="text-sm text-gray-500 hover:text-gray-900">← Season List</Link>
+        <h1 className="text-2xl font-semibold text-gray-900">Material Order: {season.name}</h1>
         {groupList.length > 0 && (
           <Link
             href={`/seasons/${seasonId}/material-orders/print`}
@@ -96,7 +100,6 @@ export default async function MaterialOrdersPage({ params }: { params: Promise<{
           </Link>
         )}
       </div>
-      <h1 className="text-2xl font-semibold text-gray-900">Material Order: {season.name}</h1>
 
       {groupList.length === 0 ? (
         <p className="text-gray-400 text-sm">No materials to order for this season yet</p>

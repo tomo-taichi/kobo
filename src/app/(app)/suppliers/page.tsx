@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SupplierNewModal } from "@/components/supplier-new-modal";
+import { MaterialsSubNav } from "@/components/materials-sub-nav";
 import { createSupplier } from "@/app/actions/suppliers";
 import { getListValues, DEFAULT_SUPPLIER_COUNTRIES } from "@/lib/list-options";
 
@@ -13,6 +14,7 @@ export default async function SuppliersPage() {
 
   return (
     <div className="space-y-6">
+      <MaterialsSubNav active="suppliers" />
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold text-gray-900">Suppliers</h1>
         <SupplierNewModal action={createSupplier} countryOptions={countryOptions} />

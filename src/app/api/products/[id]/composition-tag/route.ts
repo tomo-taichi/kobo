@@ -11,7 +11,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
 
   const { data: product } = await supabase
     .from("products")
-    .select("name, product_compositions(rate, composition_options(name))")
+    .select("name, model_name, product_compositions(rate, composition_options(name)), product_colors(id, sort_order, material_colors(color))")
     .eq("id", id)
     .single();
 
@@ -24,7 +24,14 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
       `${pc.composition_options?.name ?? "?"} ${pc.rate}%`
   );
 
-  const tags = [{ productName: p.name, compositions }];
+  // One composition tag per colour (compositions are the same across colours).
+  const modelName = p.model_name || p.name || "—";
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const colors = ((p.product_colors ?? []) as any[]).slice().sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+  const tags = (colors.length > 0 ? colors : [null]).map((pc) => ({
+    productName: `${modelName}${pc?.material_colors?.color ? ` / ${pc.material_colors.color}` : ""}`,
+    compositions,
+  }));
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const stream = await renderToStream(React.createElement(CompositionTagDocument, { tags }) as any);

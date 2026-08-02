@@ -6,13 +6,8 @@ import { CommercialInvoiceDocument } from "@/lib/pdf/commercial-invoice-document
 import { DeliveryNoteDocument } from "@/lib/pdf/delivery-note-document";
 import { getLang } from "@/lib/pdf/labels";
 import { buildDeliveryNoteProps } from "@/lib/pdf/oc-data";
-
-function fmtId(raw: string | null): string {
-  if (!raw) return "—";
-  const n = parseInt(raw, 10);
-  if (isNaN(n)) return raw;
-  return `P${String(n).padStart(6, "0")}`;
-}
+import { buildColorSkuMap } from "@/lib/skus";
+import { fmtProductId } from "@/lib/format";
 
 function buildShippingAddress(customer: any): string {
   return [customer?.shipping_address, customer?.shipping_city, customer?.shipping_country]
@@ -70,13 +65,19 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   const flagField = isOverseas ? "is_flagged_invoice" : "is_flagged_delivery";
   const itemsResult = await supabase
     .from("order_items")
-    .select("customer_wholesale_eur, products(product_number, product_category, model_name, name, color, product_materials(materials(name))), product_colors(material_colors(color)), order_item_sizes(size, quantity)")
+    .select("product_id, product_color_id, customer_wholesale_eur, products(product_number, product_category, model_name, name, color, product_materials(materials(name))), product_colors(material_colors(color)), order_item_sizes(size, quantity)")
     .eq("order_id", id)
     .eq(flagField, true);
 
+  const skuMap = await buildColorSkuMap(
+    supabase,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    Array.from(new Set(((itemsResult.data ?? []) as any[]).map((it) => it.product_id).filter(Boolean)))
+  );
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const items = (itemsResult.data ?? []).map((item: any) => ({
-    productId: fmtId(item.products?.product_number),
+    productId: item.product_color_id ? skuMap.get(item.product_color_id) ?? fmtProductId(item.products?.product_number) : fmtProductId(item.products?.product_number),
     productCategory: item.products?.product_category ?? null,
     modelName: item.products?.model_name ?? item.products?.name ?? "—",
     color: item.product_colors?.material_colors?.color ?? item.products?.color ?? null,

@@ -89,7 +89,14 @@ export type BatchField =
   | "fin_status"
   | "priority"
   | "cutter_name"
-  | "sewer_name";
+  | "sewer_name"
+  | "fin_tape"
+  | "fin_button"
+  | "fin_buttonhole"
+  | "fin_handsew"
+  | "fin_wash"
+  | "fin_tag"
+  | "fin_comment";
 
 export async function updateBatchField(
   batchId: string,
@@ -101,5 +108,6 @@ export async function updateBatchField(
   const { error } = await supabase.from("production_batches").update({ [field]: value }).eq("id", batchId);
   if (error) return error.message;
   revalidatePath(`/seasons/${seasonId}/production/kanban`);
+  revalidatePath(`/seasons/${seasonId}/production/finishing`);
   return null;
 }

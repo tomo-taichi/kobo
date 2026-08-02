@@ -94,6 +94,7 @@ export type BatchClientOrder = {
   customerName: string | null;
   sizes: { size: string; qty: number }[];
   units: number;
+  memo: string; // that client's order-line memo(s) for this colour
 };
 
 export async function buildBatchOrderDetails(
@@ -102,13 +103,14 @@ export async function buildBatchOrderDetails(
 ): Promise<Map<string, BatchClientOrder[]>> {
   const res = await supabase
     .from("order_items")
-    .select("product_color_id, order_item_sizes(size, quantity), orders!inner(season_id, customers(name))")
+    .select("product_color_id, memo, order_item_sizes(size, quantity), orders!inner(season_id, customers(name))")
     .eq("orders.season_id", seasonId);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const items = (res.data ?? []) as any[];
 
-  // colourId → customer → (size → qty)
+  // colourId → customer → (size → qty) and colourId → customer → memos
   const byColor = new Map<string, Map<string, Map<string, number>>>();
+  const memoByColor = new Map<string, Map<string, Set<string>>>();
   for (const it of items) {
     const colourId = it.product_color_id as string | null;
     if (!colourId) continue;
@@ -130,6 +132,17 @@ export async function buildBatchOrderDetails(
       const size = String(s.size);
       sizeMap.set(size, (sizeMap.get(size) ?? 0) + q);
     }
+    const memo = (it.memo ?? "").trim();
+    if (memo) {
+      let cm = memoByColor.get(colourId);
+      if (!cm) {
+        cm = new Map();
+        memoByColor.set(colourId, cm);
+      }
+      const set = cm.get(customer) ?? new Set<string>();
+      set.add(memo);
+      cm.set(customer, set);
+    }
   }
 
   const out = new Map<string, BatchClientOrder[]>();
@@ -138,7 +151,9 @@ export async function buildBatchOrderDetails(
     for (const [customerName, sizeMap] of custMap) {
       const sizes = Array.from(sizeMap.entries()).map(([size, qty]) => ({ size, qty }));
       const units = sizes.reduce((a, b) => a + b.qty, 0);
-      if (units > 0) lines.push({ customerName, sizes, units });
+      if (units <= 0) continue;
+      const memo = Array.from(memoByColor.get(colourId)?.get(customerName) ?? []).join("; ");
+      lines.push({ customerName, sizes, units, memo });
     }
     lines.sort((a, b) => (a.customerName ?? "").localeCompare(b.customerName ?? "", "ja"));
     out.set(colourId, lines);

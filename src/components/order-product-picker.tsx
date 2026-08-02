@@ -7,6 +7,7 @@ import { fmtEur } from "@/lib/format";
 // One row per (product, enabled colour) — adding creates one order line for that colour.
 type Row = {
   productColorId:   string;
+  sku:              string;
   productId:        string;
   product_number:   string | null;
   model_name:       string | null;
@@ -25,14 +26,6 @@ type Props = {
   products: Row[];
   seasons:  Season[];
 };
-
-function fmtId(raw: string | null): string {
-  if (!raw) return "—";
-  const digits = raw.replace(/^P/i, "");
-  const n = parseInt(digits, 10);
-  if (isNaN(n)) return raw;
-  return "P" + String(n).padStart(6, "0");
-}
 
 export function OrderProductPicker({ orderId, products, seasons }: Props) {
   const [isOpen,          setIsOpen]          = useState(false);
@@ -53,7 +46,7 @@ export function OrderProductPicker({ orderId, products, seasons }: Props) {
     return products.filter((p) => {
       if (added.has(p.productColorId)) return false;
       if (q) {
-        const matchId     = fmtId(p.product_number).toLowerCase().includes(q);
+        const matchId     = p.sku.toLowerCase().includes(q);
         const matchModel  = p.model_name?.toLowerCase().includes(q);
         const matchColour = p.colour?.toLowerCase().includes(q);
         if (!matchId && !matchModel && !matchColour) return false;
@@ -190,7 +183,7 @@ export function OrderProductPicker({ orderId, products, seasons }: Props) {
                 <tbody className="divide-y divide-gray-100">
                   {filtered.map((p) => (
                     <tr key={p.productColorId} className="hover:bg-gray-50 transition-colors">
-                      <td className="px-4 py-2 font-mono text-gray-400 whitespace-nowrap">{fmtId(p.product_number)}</td>
+                      <td className="px-4 py-2 font-mono text-gray-400 whitespace-nowrap">{p.sku}</td>
                       <td className="px-4 py-2 text-gray-500 whitespace-nowrap">{p.seasons?.name ?? "—"}</td>
                       <td className="px-4 py-2 text-gray-400">{p.product_sex ?? "—"}</td>
                       <td className="px-4 py-2 text-gray-800 font-medium">{p.model_name ?? "—"}</td>

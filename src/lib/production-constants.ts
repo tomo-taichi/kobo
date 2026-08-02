@@ -1,13 +1,3 @@
-export const PRODUCTION_STAGES = [
-  { key: "pattern_done", label: "Pattern" },
-  { key: "cut_done",     label: "Cut" },
-  { key: "sew_done",     label: "Sew" },
-  { key: "fin_done",     label: "Finish" },
-  { key: "ready_done",   label: "Ready" },
-] as const;
-
-export type StageKey = typeof PRODUCTION_STAGES[number]["key"];
-
 // ── ADR-0009 Phase 3 — batch-level Kanban stages ─────────────────────────────
 // A ProductionBatch (Model × Color) flows through these columns. The current
 // column is derived from its status fields (first stage that isn't complete),
@@ -40,6 +30,18 @@ export const TIME_LOG_STAGES = [
 ] as const;
 
 export type TimeLogStage = typeof TIME_LOG_STAGES[number]["key"];
+
+// ADR-0009 Phase 5 — the 6 finishing steps (independent completion flags).
+export const FINISHING_STEPS = [
+  { key: "fin_tape",       label: "Tape" },
+  { key: "fin_button",     label: "Button" },
+  { key: "fin_buttonhole", label: "Buttonhole" },
+  { key: "fin_handsew",    label: "Hand-sew" },
+  { key: "fin_wash",       label: "Wash" },
+  { key: "fin_tag",        label: "Tag" },
+] as const;
+
+export type FinishingStepKey = typeof FINISHING_STEPS[number]["key"];
 
 export const CUT_SEW_FIN_STATUSES = ["ready", "started", "finished"] as const;
 export const PATTERN_STATES = [

@@ -44,6 +44,18 @@ export async function addProductColorToOrder(orderId: string, productColorId: st
   return null;
 }
 
+export async function updateOrderItemMemo(
+  orderId: string,
+  orderItemId: string,
+  memo: string
+): Promise<string | null> {
+  const supabase = await createClient();
+  const { error } = await supabase.from("order_items").update({ memo: memo.trim() || null }).eq("id", orderItemId);
+  if (error) return error.message;
+  revalidatePath(`/orders/${orderId}`);
+  return null;
+}
+
 export async function removeOrderItem(orderId: string, orderItemId: string) {
   const supabase = await createClient();
   await supabase.from("order_items").delete().eq("id", orderItemId);

@@ -1,10 +1,7 @@
 import { buildPaymentTerms, bankDetailLines, type PdfLang } from "./labels";
+import { buildColorSkuMap } from "@/lib/skus";
+import { fmtProductId } from "@/lib/format";
 import { isAddressComplete } from "@/lib/customer-constants";
-
-function fmtId(raw: string | null): string {
-  if (!raw) return "—";
-  return raw;
-}
 
 type OcLineItem = {
   id: string;
@@ -153,7 +150,7 @@ export async function buildOcProps(supabase: any, orderId: string) {
       .single(),
     supabase
       .from("order_items")
-      .select("id, retail_price_eur, customer_wholesale_eur, products(product_number, product_category, product_sex, model_name, name, main_m_name, color), product_colors(material_colors(color)), order_item_sizes(size, quantity)")
+      .select("id, product_id, product_color_id, retail_price_eur, customer_wholesale_eur, products(product_number, product_category, product_sex, model_name, name, main_m_name, color), product_colors(material_colors(color)), order_item_sizes(size, quantity)")
       .eq("order_id", orderId),
     supabase
       .from("company_settings")
@@ -206,10 +203,16 @@ export async function buildOcProps(supabase: any, orderId: string) {
     nickname,
   );
 
+  const skuMap = await buildColorSkuMap(
+    supabase,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    Array.from(new Set(((itemsResult.data ?? []) as any[]).map((it) => it.product_id).filter(Boolean)))
+  );
+
   const items: OcLineItem[] = (itemsResult.data ?? []).map((item: any) => ({
     id: item.id,
     category: item.products?.product_category ?? null,
-    productId: fmtId(item.products?.product_number),
+    productId: item.product_color_id ? skuMap.get(item.product_color_id) ?? fmtProductId(item.products?.product_number) : fmtProductId(item.products?.product_number),
     sex: item.products?.product_sex ?? null,
     modelName: item.products?.model_name ?? item.products?.name ?? "—",
     materialName: item.products?.main_m_name ?? null,

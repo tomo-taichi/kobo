@@ -46,6 +46,7 @@ const compStyles = StyleSheet.create({
 
 type ProductTagData = {
   productNumber: string | null;
+  color?: string | null;
   cleaningInstruction: string | null;
   seasonName: string;
   size?: string;
@@ -64,6 +65,7 @@ export function ProductTagDocument({ tags }: { tags: ProductTagData[] }) {
           <View key={i} style={tagStyles.tag}>
             <Text style={tagStyles.brand}>taichimurakami</Text>
             <Text style={tagStyles.productNumber}>{tag.productNumber ?? "—"}</Text>
+            {tag.color ? <Text style={tagStyles.season}>{tag.color}</Text> : null}
             <Text style={tagStyles.season}>{tag.seasonName}</Text>
             {tag.cleaningInstruction && (
               <Text style={tagStyles.cleaning}>{tag.cleaningInstruction}</Text>
@@ -83,6 +85,7 @@ export function CompositionTagDocument({ tags }: { tags: CompositionTagData[] })
         {tags.map((tag, i) => (
           <View key={i} style={compStyles.tag}>
             <Text style={compStyles.brand}>taichimurakami</Text>
+            {tag.productName ? <Text style={{ fontSize: 8, fontWeight: "bold", marginBottom: 4 }}>{tag.productName}</Text> : null}
             {tag.compositions.map((c, j) => (
               <View key={j} style={compStyles.compRow}>
                 <Text>{c}</Text>

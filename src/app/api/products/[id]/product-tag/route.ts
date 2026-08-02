@@ -3,6 +3,7 @@ import React from "react";
 import { createClient } from "@/lib/supabase/server";
 import { ensureFonts } from "@/lib/pdf/fonts";
 import { ProductTagDocument } from "@/lib/pdf/tag-documents";
+import { colorSku } from "@/lib/format";
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -14,7 +15,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
 
   const { data: product } = await supabase
     .from("products")
-    .select("product_number, cleaning_instruction, seasons(name)")
+    .select("product_number, cleaning_instruction, seasons(name), product_colors(id, sort_order, material_colors(color))")
     .eq("id", id)
     .single();
 
@@ -29,9 +30,15 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     if ((season as any)?.name) seasonName = (season as any).name;
   }
 
-  const tags = [
-    { productNumber: p.product_number, cleaningInstruction: p.cleaning_instruction, seasonName },
-  ];
+  // One tag per colour (SKU = product number + colour index).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const colors = ((p.product_colors ?? []) as any[]).slice().sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+  const tags = (colors.length > 0 ? colors : [null]).map((pc, idx) => ({
+    productNumber: colorSku(p.product_number, idx + 1),
+    color: pc?.material_colors?.color ?? null,
+    cleaningInstruction: p.cleaning_instruction,
+    seasonName,
+  }));
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const stream = await renderToStream(React.createElement(ProductTagDocument, { tags }) as any);

@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { MaterialNewModal } from "@/components/material-new-modal";
 import { MaterialsClient } from "@/components/materials-client";
+import { MaterialsSubNav } from "@/components/materials-sub-nav";
 import { createMaterial } from "@/app/actions/materials";
 import { getMaterialFormOptions } from "@/lib/list-options";
 
@@ -57,6 +58,7 @@ export default async function MaterialsPage() {
 
   return (
     <div className="space-y-6">
+      <MaterialsSubNav active="materials" />
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold text-gray-900">Materials</h1>
         <MaterialNewModal
