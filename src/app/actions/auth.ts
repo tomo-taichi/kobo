@@ -9,7 +9,7 @@ export async function login(
 ): Promise<string | null> {
   const supabase = await createClient();
 
-  const { error } = await supabase.auth.signInWithPassword({
+  const { data, error } = await supabase.auth.signInWithPassword({
     email: formData.get("email") as string,
     password: formData.get("password") as string,
   });
@@ -18,7 +18,17 @@ export async function login(
     return "Incorrect email or password";
   }
 
-  redirect("/");
+  // Route by function: client → portal, brand → app, production-only → hub.
+  const { data: prof } = await supabase
+    .from("profiles")
+    .select("user_type, is_brand, is_production")
+    .eq("id", data.user.id)
+    .maybeSingle();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const p: any = prof;
+  const home = !p ? "/" : p.user_type === "client" ? "/portal" : p.is_brand ? "/" : p.is_production ? "/production" : "/";
+
+  redirect(home);
 }
 
 export async function logout() {
