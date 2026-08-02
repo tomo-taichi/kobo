@@ -1,4 +1,6 @@
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { getCurrentProfile } from "@/lib/auth";
 import { SETTINGS_GROUPS, getListOptions, type ListOption } from "@/lib/list-options";
 import { ListManager } from "@/components/list-manager";
 import { PricingSettingsForm } from "@/components/pricing-settings-form";
@@ -80,11 +82,24 @@ export default async function SettingsPage() {
     },
   ];
 
+  const me = await getCurrentProfile();
+  const isAdmin = me?.userType === "internal" && me.isBrand && me.canCreateUsers;
+
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold text-gray-900">Settings</h1>
-        <p className="text-sm text-gray-500 mt-1">Manage the lists and options used across the app.</p>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold text-gray-900">Settings</h1>
+          <p className="text-sm text-gray-500 mt-1">Manage the lists and options used across the app.</p>
+        </div>
+        {isAdmin && (
+          <Link
+            href="/settings/users"
+            className="text-xs px-3 py-1.5 border border-gray-300 text-gray-700 rounded hover:bg-gray-100 shrink-0"
+          >
+            Users →
+          </Link>
+        )}
       </div>
       <SettingsTabs sections={sections} />
     </div>
