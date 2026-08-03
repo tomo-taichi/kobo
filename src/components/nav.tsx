@@ -61,11 +61,16 @@ export function Nav({ isBrand, isProduction }: { isBrand: boolean; isProduction:
         </div>
       </div>
 
-      <form action={logout}>
-        <button type="submit" className="text-sm text-gray-500 hover:text-gray-900 transition-colors">
-          Log out
-        </button>
-      </form>
+      <div className="flex items-center gap-4">
+        <Link href="/account/password" className="text-sm text-gray-500 hover:text-gray-900 transition-colors">
+          Reset password
+        </Link>
+        <form action={logout}>
+          <button type="submit" className="text-sm text-gray-500 hover:text-gray-900 transition-colors">
+            Log out
+          </button>
+        </form>
+      </div>
     </nav>
   );
 }

@@ -36,3 +36,18 @@ export async function logout() {
   await supabase.auth.signOut();
   redirect("/login");
 }
+
+// Self-service password change for the logged-in user (internal or client). The
+// admin-set password is only an initial one; users change it themselves here.
+// No email / SMTP — updates the current session's own password.
+export async function changeOwnPassword(newPassword: string): Promise<string | null> {
+  if (!newPassword || newPassword.length < 8) return "Password must be at least 8 characters";
+
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return "Not signed in";
+
+  const { error } = await supabase.auth.updateUser({ password: newPassword });
+  if (error) return error.message;
+  return null;
+}

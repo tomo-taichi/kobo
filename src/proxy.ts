@@ -53,7 +53,10 @@ export async function proxy(request: NextRequest) {
       return NextResponse.redirect(new URL(home, request.url));
     }
 
-    if (p) {
+    // /account is reachable by any authenticated user (e.g. self-service reset).
+    const isAccountPath = pathname.startsWith("/account");
+
+    if (p && !isAccountPath) {
       const prodPath = isProductionPath(pathname);
       const portalPath = isPortalPath(pathname);
       const client = p.user_type === "client";
