@@ -4,9 +4,6 @@ import { CustomerForm } from "@/components/customer-form";
 import { CustomerContractsSection, type ContractFile } from "@/components/customer-contracts";
 import { updateCustomer } from "@/app/actions/customers";
 import { getBankOptions } from "@/lib/banks";
-import { getCurrentProfile } from "@/lib/auth";
-import { listCustomerUsers } from "@/lib/users";
-import { ClientUserForm } from "@/components/client-user-form";
 
 export default async function CustomerInfoPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -34,9 +31,6 @@ export default async function CustomerInfoPage({ params }: { params: Promise<{ i
   );
 
   const s = c as any;
-
-  const [me, portalUsers] = await Promise.all([getCurrentProfile(), listCustomerUsers(id)]);
-  const isAdmin = me?.userType === "internal" && me.isBrand && me.canCreateUsers;
 
   return (
     <div className="space-y-6 max-w-2xl">
@@ -90,27 +84,6 @@ export default async function CustomerInfoPage({ params }: { params: Promise<{ i
       </div>
       <div className="bg-white border border-gray-200 rounded-lg p-5">
         <CustomerContractsSection customerId={s.id} contracts={contracts} />
-      </div>
-
-      <div className="bg-white border border-gray-200 rounded-lg p-5 space-y-3">
-        <h2 className="text-base font-medium text-gray-800">Portal Users</h2>
-        {portalUsers.length === 0 ? (
-          <p className="text-xs text-gray-400">No portal users yet.</p>
-        ) : (
-          <ul className="text-sm divide-y divide-gray-100">
-            {portalUsers.map((u) => (
-              <li key={u.id} className="py-1.5 flex items-center justify-between gap-2">
-                <span className="text-gray-900">{u.email ?? "—"}</span>
-                {u.displayName ? <span className="text-xs text-gray-400">{u.displayName}</span> : null}
-              </li>
-            ))}
-          </ul>
-        )}
-        {isAdmin ? (
-          <ClientUserForm customerId={id} />
-        ) : (
-          <p className="text-xs text-gray-400">Only admins can invite portal users.</p>
-        )}
       </div>
     </div>
   );

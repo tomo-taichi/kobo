@@ -8,6 +8,7 @@ const TABS = [
   { seg: "orders",   label: "Order History" },
   { seg: "products", label: "Product History" },
   { seg: "payments", label: "Payment History" },
+  { seg: "users",    label: "Users" },
 ] as const;
 
 export function CustomerTabNav({ id }: { id: string }) {

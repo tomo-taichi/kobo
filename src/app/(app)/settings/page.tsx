@@ -97,7 +97,7 @@ export default async function SettingsPage() {
             href="/settings/users"
             className="text-xs px-3 py-1.5 border border-gray-300 text-gray-700 rounded hover:bg-gray-100 shrink-0"
           >
-            Users →
+            Internal Users →
           </Link>
         )}
       </div>

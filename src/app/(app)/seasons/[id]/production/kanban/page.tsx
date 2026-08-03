@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { BatchKanban, type BatchCard } from "@/components/batch-kanban";
 import { GenerateBatchesButton } from "@/components/generate-batches-button";
 import { getListOptions } from "@/lib/list-options";
+import { listAssignees } from "@/lib/users";
 import { buildBatchOrderDetails } from "@/lib/production-view";
 import { getTimeLogs, type TimeLogEntry } from "@/lib/time-logs";
 import { estimatedStageMinutes } from "@/lib/pricing";
@@ -24,7 +25,7 @@ export default async function ProductionKanbanPage({ params }: { params: Promise
   const season: any = seasonResult.data;
   if (!season) notFound();
 
-  const [{ data }, cutters, sewers, detailsByColor, timeLogs, seasonsListResult] = await Promise.all([
+  const [{ data }, cutters, sewers, assignees, detailsByColor, timeLogs, seasonsListResult] = await Promise.all([
     supabase
       .from("production_batches")
       .select(
@@ -33,12 +34,16 @@ export default async function ProductionKanbanPage({ params }: { params: Promise
       .eq("season_id", seasonId),
     getListOptions(supabase, "cutter"),
     getListOptions(supabase, "sewer"),
+    listAssignees(),
     buildBatchOrderDetails(supabase, seasonId),
     getTimeLogs(supabase, seasonId),
     supabase.from("seasons").select("id, name").order("created_at", { ascending: false }),
   ]);
-  const cutterOptions = cutters.filter((o) => o.active).map((o) => o.value);
-  const sewerOptions = sewers.filter((o) => o.active).map((o) => o.value);
+  // Assignee options: internal users flagged Cutter/Sewer (by nickname), unioned
+  // with any legacy managed-list entries so existing setups keep working.
+  const uniqSorted = (xs: string[]) => Array.from(new Set(xs.filter(Boolean))).sort((a, b) => a.localeCompare(b, "ja"));
+  const cutterOptions = uniqSorted([...assignees.cutters, ...cutters.filter((o) => o.active).map((o) => o.value)]);
+  const sewerOptions = uniqSorted([...assignees.sewers, ...sewers.filter((o) => o.active).map((o) => o.value)]);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const skuMap = await buildColorSkuMap(supabase, Array.from(new Set(((data ?? []) as any[]).map((b) => b.product_id).filter(Boolean))));
