@@ -1,12 +1,13 @@
 "use client";
 
-import { useActionState, useState, useRef } from "react";
+import { useActionState, useState, useRef, startTransition, createContext, useContext } from "react";
 import { CUSTOMER_TYPES, CUSTOMER_TYPE_LABELS, LANGUAGES, COUNTRY_GROUPS, FLAT_COUNTRIES, isAddressComplete } from "@/lib/customer-constants";
 
 type Action = (_state: string | null, formData: FormData) => Promise<string | null>;
 
 type Shop = { name: string; address: string };
 type SnsEntry = { platform: string; url: string };
+type Contact = { name: string | null; jobTitle: string | null; email: string | null; mobile: string | null; phone: string | null };
 
 type InitialData = {
   name?: string;
@@ -24,7 +25,10 @@ type InitialData = {
   contract_start_date?: string;
   contract_end_date?: string;
   website?: string;
+  payment_terms?: string;
+  shipping_terms?: string;
   sns?: SnsEntry[];
+  contacts?: Contact[];
   billing_company?: string;
   billing_address?: string;
   billing_city?: string;
@@ -34,7 +38,9 @@ type InitialData = {
   billing_tel?: string;
   billing_email?: string;
   billing_vat?: string;
+  billing_fax?: string;
   shipping_same?: boolean;
+  shipping_fax?: string;
   shipping_name?: string;
   shipping_address?: string;
   shipping_city?: string;
@@ -56,6 +62,7 @@ type Props = {
   id?: string;
   onCancel?: () => void;
   bankOptions?: { value: string; label: string }[];
+  contractsSlot?: React.ReactNode;
 };
 
 const DEFAULT_BANK_OPTIONS = [
@@ -127,42 +134,26 @@ const FORWARDERS     = ["EMS", "FedEx", "UPS", "DHL", "TNT"] as const;
 const SNS_PLATFORMS  = ["Instagram", "X (Twitter)", "Facebook", "TikTok", "LINE", "WeChat", "YouTube", "Other"] as const;
 const CONTRACT_STATUSES = [
   { value: "Active",     label: "Active" },
-  { value: "Terminated", label: "Terminated" },
-  { value: "On Hold",    label: "On Hold" },
+  { value: "Archived", label: "Archived" },
 ] as const;
 const MAX_SHOPS = 10;
 const MAX_SNS   = 8;
+const MAX_CONTACTS = 6;
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+// The currently-selected section (side-menu). Panels for other sections stay
+// MOUNTED (hidden via CSS) so their inputs remain in the form — otherwise
+// auto-save would submit missing fields and wipe that section's data.
+const SectionCtx = createContext<string>("setting");
+
+function PanelSection({ id, title, badge, children }: { id: string; title: string; badge?: React.ReactNode; children: React.ReactNode }) {
+  const active = useContext(SectionCtx);
   return (
-    <div>
-      <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider border-b border-gray-100 pb-1 mb-3">
-        {title}
-      </h3>
+    <div className={active === id ? "border border-gray-200 rounded-lg bg-white p-4" : "hidden"}>
+      <div className="flex items-center gap-2 border-b border-gray-100 pb-1 mb-3">
+        <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">{title}</h3>
+        {badge}
+      </div>
       <div className="flex flex-col gap-3">{children}</div>
-    </div>
-  );
-}
-
-// Optional section that can be collapsed/expanded. Starts open when it already has data.
-// Children stay MOUNTED when collapsed (just hidden) so their inputs remain in the form —
-// otherwise auto-save would submit missing fields and wipe that section's data.
-function CollapsibleSection({ title, defaultOpen = false, badge, children }: { title: string; defaultOpen?: boolean; badge?: React.ReactNode; children: React.ReactNode }) {
-  const [open, setOpen] = useState(defaultOpen);
-  return (
-    <div>
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        className="w-full flex items-center justify-between border-b border-gray-100 pb-1 mb-3 group"
-      >
-        <span className="flex items-center gap-2">
-          <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">{title}</h3>
-          {badge}
-        </span>
-        <span className="text-[11px] text-gray-400 group-hover:text-gray-700">{open ? "Hide ▲" : "Show ▼"}</span>
-      </button>
-      <div className={open ? "flex flex-col gap-3" : "hidden"}>{children}</div>
     </div>
   );
 }
@@ -174,7 +165,7 @@ function StatusBadge({ ok }: { ok: boolean }) {
     : <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-amber-50 text-amber-700">Incomplete</span>;
 }
 
-export function CustomerForm({ action, initialData = {}, id, onCancel, bankOptions = DEFAULT_BANK_OPTIONS }: Props) {
+export function CustomerForm({ action, initialData = {}, id, onCancel, bankOptions = DEFAULT_BANK_OPTIONS, contractsSlot }: Props) {
   const [result, formAction, pending] = useActionState(action, null);
   const isError = result && result !== "ok";
 
@@ -184,7 +175,14 @@ export function CustomerForm({ action, initialData = {}, id, onCancel, bankOptio
   function scheduleSubmit(delay: number) {
     if (!id) return;
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => formRef.current?.requestSubmit(), delay);
+    // Dispatch the action directly with a FormData snapshot instead of
+    // form.requestSubmit(): native submission makes React 19 auto-reset the form,
+    // which reverts the field you just edited. Direct dispatch keeps state intact.
+    debounceRef.current = setTimeout(() => {
+      const form = formRef.current;
+      // useActionState's dispatch must run inside a transition.
+      if (form) startTransition(() => formAction(new FormData(form)));
+    }, delay);
   }
   function handleFormChange(e: React.ChangeEvent<HTMLFormElement>) {
     if (!id) return;
@@ -227,10 +225,15 @@ export function CustomerForm({ action, initialData = {}, id, onCancel, bankOptio
 
   function handleTypeChange(next: string) {
     setCustomerType(next);
-    const vipAfter = next === "B2B" ? false : isVip;
     if (next === "B2B") setIsVip(false);
-    if (!depositTouched) setDepositPct(next === "B2C" ? 100 : 30);
-    if (!portalTouched) setPortalAccess(next === "B2B" || vipAfter);
+    // Create flow only: pre-fill sensible deposit/portal defaults. When editing an
+    // existing customer, reclassifying must NOT silently change their deposit rate,
+    // portal access or currency — only the type itself changes.
+    if (!id) {
+      const vipAfter = next === "B2B" ? false : isVip;
+      if (!depositTouched) setDepositPct(next === "B2C" ? 100 : 30);
+      if (!portalTouched) setPortalAccess(next === "B2B" || vipAfter);
+    }
   }
   function handleVipChange(v: boolean) {
     setIsVip(v);
@@ -239,11 +242,15 @@ export function CustomerForm({ action, initialData = {}, id, onCancel, bankOptio
 
   const numCls = "w-20 px-2 py-1 border border-gray-300 rounded-md text-sm text-right focus:outline-none focus:ring-2 focus:ring-gray-900 disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed";
 
+  const [activeSection, setActiveSection] = useState("setting");
   const [shippingSame, setShippingSame] = useState(initialData.shipping_same ?? false);
   const [shops, setShops] = useState<Shop[]>(initialData.shops?.length ? initialData.shops : []);
   const [snsEntries, setSnsEntries] = useState<SnsEntry[]>(
     initialData.sns?.length ? initialData.sns : []
   );
+  const [contacts, setContacts] = useState<Contact[]>(initialData.contacts?.length ? initialData.contacts : []);
+  const [paymentTerms, setPaymentTerms] = useState(initialData.payment_terms ?? "");
+  const [shippingTerms, setShippingTerms] = useState(initialData.shipping_terms ?? "");
   const [billing, setBilling] = useState({
     company:  initialData.billing_company  ?? "",
     address:  initialData.billing_address  ?? "",
@@ -254,6 +261,7 @@ export function CustomerForm({ action, initialData = {}, id, onCancel, bankOptio
     tel:      initialData.billing_tel      ?? "",
     email:    initialData.billing_email    ?? "",
     vat:      initialData.billing_vat      ?? "",
+    fax:      initialData.billing_fax      ?? "",
   });
 
   const [shipping, setShipping] = useState({
@@ -266,26 +274,17 @@ export function CustomerForm({ action, initialData = {}, id, onCancel, bankOptio
     tel:      initialData.shipping_tel      ?? "",
     email:    initialData.shipping_email    ?? "",
     vat:      initialData.shipping_vat      ?? "",
+    fax:      initialData.shipping_fax      ?? "",
   });
 
   // Address completeness (live) — gates document generation. shipping_same → inherits billing.
   const billingComplete = isAddressComplete(billing);
   const shippingComplete = shippingSame ? billingComplete : isAddressComplete(shipping);
 
-  // Optional sections start expanded only when they already hold data.
-  const billingHasData = Object.values(billing).some((v) => v && v.length > 0);
-  const shippingHasData = shippingSame || [
-    initialData.shipping_name, initialData.shipping_address, initialData.shipping_city,
-    initialData.shipping_state, initialData.shipping_postcode, initialData.shipping_country,
-    initialData.shipping_tel, initialData.shipping_email, initialData.shipping_vat,
-    initialData.shipping_memo, initialData.forwarder, initialData.forwarder_account,
-  ].some(Boolean);
-  const otherHasData = !!initialData.website || snsEntries.length > 0 || shops.length > 0;
-
   function addShop() {
     if (shops.length < MAX_SHOPS) setShops((p) => [...p, { name: "", address: "" }]);
   }
-  function removeShop(i: number) { setShops((p) => p.filter((_, idx) => idx !== i)); }
+  function removeShop(i: number) { setShops((p) => p.filter((_, idx) => idx !== i)); scheduleSubmit(250); }
   function updateShop(i: number, field: keyof Shop, val: string) {
     setShops((p) => p.map((s, idx) => idx === i ? { ...s, [field]: val } : s));
   }
@@ -293,17 +292,35 @@ export function CustomerForm({ action, initialData = {}, id, onCancel, bankOptio
   function addSns() {
     if (snsEntries.length < MAX_SNS) setSnsEntries((p) => [...p, { platform: SNS_PLATFORMS[0], url: "" }]);
   }
-  function removeSns(i: number) { setSnsEntries((p) => p.filter((_, idx) => idx !== i)); }
+  function removeSns(i: number) { setSnsEntries((p) => p.filter((_, idx) => idx !== i)); scheduleSubmit(250); }
   function updateSns(i: number, field: keyof SnsEntry, val: string) {
     setSnsEntries((p) => p.map((s, idx) => idx === i ? { ...s, [field]: val } : s));
   }
 
+  function addContact() {
+    if (contacts.length < MAX_CONTACTS) setContacts((p) => [...p, { name: "", jobTitle: "", email: "", mobile: "", phone: "" }]);
+  }
+  function removeContact(i: number) { setContacts((p) => p.filter((_, idx) => idx !== i)); scheduleSubmit(250); }
+  function updateContact(i: number, field: keyof Contact, val: string) {
+    setContacts((p) => p.map((c, idx) => idx === i ? { ...c, [field]: val } : c));
+  }
+
+  const sections = [
+    { id: "setting", label: "Customer Setting" },
+    { id: "contacts", label: "Contacts" },
+    { id: "billing", label: "Billing Address" },
+    { id: "shipping", label: "Shipping Address" },
+    { id: "other", label: "Other Info" },
+    ...(contractsSlot ? [{ id: "contracts", label: "Contracts" }] : []),
+  ];
+
   return (
-    <form action={formAction} ref={formRef} onChange={handleFormChange} className="flex flex-col gap-6">
+    <form action={formAction} ref={formRef} onChange={handleFormChange} className="flex flex-col gap-4">
       {id && <input type="hidden" name="id" value={id} />}
       <input type="hidden" name="shipping_same" value={shippingSame ? "true" : "false"} />
       <input type="hidden" name="shops" value={JSON.stringify(shops)} />
       <input type="hidden" name="sns" value={JSON.stringify(snsEntries)} />
+      <input type="hidden" name="contacts" value={JSON.stringify(contacts)} />
       <input type="hidden" name="is_vip" value={customerType === "B2C" && isVip ? "true" : "false"} />
       <input type="hidden" name="deposit_terms" value={depositRequired ? "Deposit_and_Production" : "Production_Only"} />
       <input type="hidden" name="portal_access" value={portalAccess ? "true" : "false"} />
@@ -321,17 +338,36 @@ export function CustomerForm({ action, initialData = {}, id, onCancel, bankOptio
       {isError && <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded">{result}</p>}
 
       {/* ── 1. Client Name ── */}
-      <div>
+      <div className="border border-gray-200 rounded-lg bg-white p-4">
         <label className="block text-xs font-medium text-gray-600 mb-1">
           Client Name <span className="text-red-500">*</span>
         </label>
         <input name="name" defaultValue={initialData.name ?? ""} required className={inputCls} placeholder="e.g. ABC Boutique" />
       </div>
 
-      {/* ── 2. Must Info ── */}
-      <CollapsibleSection
+      {/* Side-menu layout to cut scrolling: pick a section on the left; panels stay
+          mounted (hidden) so auto-save keeps every section's fields. */}
+      <div className="flex gap-4 items-start">
+        <nav className="w-40 shrink-0 flex flex-col gap-0.5">
+          {sections.map((s) => (
+            <button
+              key={s.id}
+              type="button"
+              onClick={() => setActiveSection(s.id)}
+              className={`text-left px-3 py-2 rounded-lg text-sm transition-colors ${activeSection === s.id ? "bg-gray-100 text-gray-900 font-medium" : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"}`}
+            >
+              {s.label}
+            </button>
+          ))}
+        </nav>
+
+        <SectionCtx.Provider value={activeSection}>
+        <div className="flex-1 min-w-0">
+
+      {/* ── Customer Setting ── */}
+      <PanelSection
+        id="setting"
         title="Customer Setting (MUST)"
-        defaultOpen
         badge={id ? (
           <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${editable ? "bg-amber-50 text-amber-700" : "bg-gray-100 text-gray-500"}`}>
             {editable ? "Editing" : "🔒 Locked"}
@@ -339,12 +375,25 @@ export function CustomerForm({ action, initialData = {}, id, onCancel, bankOptio
         ) : undefined}
       >
         {id && (
-          <div className="flex justify-end -mt-1">
-            <button type="button" onClick={() => setLocked((v) => !v)}
-              className="text-[11px] text-gray-600 hover:text-gray-900 border border-gray-300 rounded px-2.5 py-1">
-              {editable ? "Lock settings" : "Change settings"}
-            </button>
-          </div>
+          editable ? (
+            <div className="flex justify-end -mt-1">
+              <button type="button" onClick={() => setLocked(true)}
+                className="text-[11px] text-gray-600 hover:text-gray-900 border border-gray-300 rounded px-2.5 py-1">
+                Lock settings
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between gap-2 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 -mt-1">
+              <span className="text-xs text-amber-800">
+                🔒 Locked to prevent accidental changes. Click “Change settings” to edit
+                Customer Type, Language, Bank, Currency, Tax &amp; Contract.
+              </span>
+              <button type="button" onClick={() => setLocked(false)}
+                className="text-xs font-medium px-2.5 py-1 rounded bg-amber-600 text-white hover:bg-amber-700 shrink-0">
+                Change settings
+              </button>
+            </div>
+          )
         )}
         <div className="grid grid-cols-2 gap-3">
           <div>
@@ -454,10 +503,45 @@ export function CustomerForm({ action, initialData = {}, id, onCancel, bankOptio
             <input type="date" value={contractEnd} onChange={(e) => setContractEnd(e.target.value)} disabled={!editable} className={inputCls} />
           </div>
         </div>
-      </CollapsibleSection>
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">Payment Terms</label>
+          <textarea name="payment_terms" value={paymentTerms} onChange={(e) => setPaymentTerms(e.target.value)} rows={3} className={inputCls} placeholder="e.g. 30% deposit required by ..." />
+        </div>
+      </PanelSection>
 
-      {/* ── 3. Billing Address ── */}
-      <CollapsibleSection title="Billing Address" defaultOpen={billingHasData} badge={<StatusBadge ok={billingComplete} />}>
+      {/* ── Contacts ── */}
+      <PanelSection
+        id="contacts"
+        title="Contacts"
+        badge={<span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-gray-100 text-gray-500">{contacts.length}</span>}
+      >
+        {contacts.map((c, i) => (
+          <div key={i} className="border border-gray-100 rounded-lg p-3 flex flex-col gap-2">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Contact {i + 1}</span>
+              <button type="button" onClick={() => removeContact(i)} className="text-gray-300 hover:text-red-500 text-lg leading-none">×</button>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <input value={c.name ?? ""} onChange={(e) => updateContact(i, "name", e.target.value)} placeholder="Name" className={inputCls} />
+              <input value={c.jobTitle ?? ""} onChange={(e) => updateContact(i, "jobTitle", e.target.value)} placeholder="Job title" className={inputCls} />
+            </div>
+            <input value={c.email ?? ""} type="email" onChange={(e) => updateContact(i, "email", e.target.value)} placeholder="Email" className={inputCls} />
+            <div className="grid grid-cols-2 gap-2">
+              <input value={c.mobile ?? ""} onChange={(e) => updateContact(i, "mobile", e.target.value)} placeholder="Mobile" className={inputCls} />
+              <input value={c.phone ?? ""} onChange={(e) => updateContact(i, "phone", e.target.value)} placeholder="Office phone" className={inputCls} />
+            </div>
+          </div>
+        ))}
+        {contacts.length < MAX_CONTACTS && (
+          <button type="button" onClick={addContact} className="text-xs text-gray-500 hover:text-gray-900 border border-gray-200 rounded px-3 py-1.5 hover:bg-gray-50 w-fit">
+            + Add Contact
+          </button>
+        )}
+        {contacts.length === 0 && <p className="text-xs text-gray-400">No contacts yet</p>}
+      </PanelSection>
+
+      {/* ── Billing Address ── */}
+      <PanelSection id="billing" title="Billing Address" badge={<StatusBadge ok={billingComplete} />}>
         <div>
           <label className="block text-xs font-medium text-gray-600 mb-1">Company Name</label>
           <input name="billing_company" value={billing.company} onChange={(e) => setBilling((p) => ({ ...p, company: e.target.value }))} className={inputCls} />
@@ -495,15 +579,19 @@ export function CustomerForm({ action, initialData = {}, id, onCancel, bankOptio
             <label className="block text-xs font-medium text-gray-600 mb-1">Email</label>
             <input name="billing_email" type="email" value={billing.email} onChange={(e) => setBilling((p) => ({ ...p, email: e.target.value }))} className={inputCls} />
           </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Fax</label>
+            <input name="billing_fax" value={billing.fax} onChange={(e) => setBilling((p) => ({ ...p, fax: e.target.value }))} className={inputCls} />
+          </div>
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-600 mb-1">VAT Number</label>
           <input name="billing_vat" value={billing.vat} onChange={(e) => setBilling((p) => ({ ...p, vat: e.target.value }))} className={inputCls} />
         </div>
-      </CollapsibleSection>
+      </PanelSection>
 
-      {/* ── 4. Shipping Address ── */}
-      <CollapsibleSection title="Shipping Address" defaultOpen={shippingHasData} badge={<StatusBadge ok={shippingComplete} />}>
+      {/* ── Shipping Address ── */}
+      <PanelSection id="shipping" title="Shipping Address" badge={<StatusBadge ok={shippingComplete} />}>
         <label className="flex items-center gap-2 cursor-pointer select-none">
           <input
             type="checkbox"
@@ -553,6 +641,10 @@ export function CustomerForm({ action, initialData = {}, id, onCancel, bankOptio
                 <label className="block text-xs font-medium text-gray-600 mb-1">Email</label>
                 <input name="shipping_email" type="email" value={shipping.email} onChange={(e) => setShipping((p) => ({ ...p, email: e.target.value }))} className={inputCls} />
               </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Fax</label>
+                <input name="shipping_fax" value={shipping.fax} onChange={(e) => setShipping((p) => ({ ...p, fax: e.target.value }))} className={inputCls} />
+              </div>
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">VAT Number</label>
@@ -564,6 +656,10 @@ export function CustomerForm({ action, initialData = {}, id, onCancel, bankOptio
         <div>
           <label className="block text-xs font-medium text-gray-600 mb-1">Shipping Memo</label>
           <textarea name="shipping_memo" defaultValue={initialData.shipping_memo ?? ""} rows={2} className={inputCls} />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">Shipping Terms</label>
+          <textarea name="shipping_terms" value={shippingTerms} onChange={(e) => setShippingTerms(e.target.value)} rows={2} className={inputCls} placeholder="e.g. PORT OF SHIPMENT: TOKYO, JAPAN" />
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div>
@@ -578,10 +674,10 @@ export function CustomerForm({ action, initialData = {}, id, onCancel, bankOptio
             <input name="forwarder_account" defaultValue={initialData.forwarder_account ?? ""} className={inputCls} />
           </div>
         </div>
-      </CollapsibleSection>
+      </PanelSection>
 
-      {/* ── 5. Other Info (Online Presence + Shops) ── */}
-      <CollapsibleSection title="Other Info" defaultOpen={otherHasData}>
+      {/* ── Other Info (Online Presence + Shops) ── */}
+      <PanelSection id="other" title="Other Info">
         <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Online Presence</p>
         <div>
           <label className="block text-xs font-medium text-gray-600 mb-1">Website</label>
@@ -659,7 +755,18 @@ export function CustomerForm({ action, initialData = {}, id, onCancel, bankOptio
         {shops.length === 0 && (
           <p className="text-xs text-gray-400">No shops added yet</p>
         )}
-      </CollapsibleSection>
+      </PanelSection>
+
+      {/* ── Contracts (files) ── */}
+      {contractsSlot && (
+        <PanelSection id="contracts" title="Contracts">
+          {contractsSlot}
+        </PanelSection>
+      )}
+
+        </div>{/* panel container */}
+        </SectionCtx.Provider>
+      </div>{/* side-menu layout */}
 
       <div className="flex items-center gap-3 pt-1 border-t border-gray-100">
         {id ? (

@@ -55,6 +55,7 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
     domains: [
       { domain: "product_category", label: "Category", ready: true },
       { domain: "product_sex", label: "Sex", ready: true },
+      { domain: "product_tag", label: "Tags", ready: true },
       { domain: "product_accessory_composition", label: "Accessory Composition", ready: true },
     ],
   },
@@ -98,14 +99,16 @@ export async function getFormOptions(supabase: SupabaseClient): Promise<{
   productCategory: string[];
   productSex: string[];
   productAccessoryComposition: string[];
+  productTag: string[];
 }> {
-  const [supplierCountry, productCategory, productSex, productAccessoryComposition] = await Promise.all([
+  const [supplierCountry, productCategory, productSex, productAccessoryComposition, productTag] = await Promise.all([
     getListValues(supabase, "supplier_country", DEFAULT_SUPPLIER_COUNTRIES),
     getListValues(supabase, "product_category", PRODUCT_CATEGORIES),
     getListValues(supabase, "product_sex", PRODUCT_SEXES),
     getListValues(supabase, "product_accessory_composition", ACCESSORY_COMPOSITIONS),
+    getListValues(supabase, "product_tag", []),
   ]);
-  return { supplierCountry, productCategory, productSex, productAccessoryComposition };
+  return { supplierCountry, productCategory, productSex, productAccessoryComposition, productTag };
 }
 
 // Active {value,label} pairs for a domain, or the fallback when it has no rows.

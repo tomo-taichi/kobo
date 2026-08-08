@@ -43,3 +43,37 @@ export async function updateSeason(
   revalidatePath("/seasons");
   redirect(`/seasons/${id}`);
 }
+
+// ─── Bulk list actions (default list-page spec) ───────────────────────
+export async function bulkArchiveSeasons(ids: string[], archived: boolean): Promise<string | null> {
+  if (!ids.length) return null;
+  const supabase = await createClient();
+  const { error } = await supabase.from("seasons").update({ archived }).in("id", ids);
+  if (error) return error.message;
+  revalidatePath("/seasons");
+  return null;
+}
+
+export async function bulkDeleteSeasons(ids: string[]): Promise<string | null> {
+  if (!ids.length) return null;
+  const supabase = await createClient();
+  const { error } = await supabase.from("seasons").delete().in("id", ids);
+  if (error) {
+    if (error.code === "23503") return "Some seasons are used by products/materials/orders and can't be deleted. Archive them instead.";
+    return error.message;
+  }
+  revalidatePath("/seasons");
+  return null;
+}
+
+// Modal edit (no redirect) — update a season's name + rate in place.
+export async function updateSeasonFields(id: string, name: string, rate: number): Promise<string | null> {
+  const supabase = await createClient();
+  const n = name?.trim();
+  if (!n) return "Please enter a season name";
+  if (!rate || rate <= 0) return "Please enter an exchange rate (JPY/EUR)";
+  const { error } = await supabase.from("seasons").update({ name: n, eur_jpy_rate: rate }).eq("id", id);
+  if (error) return error.message;
+  revalidatePath("/seasons");
+  return null;
+}

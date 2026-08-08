@@ -21,7 +21,7 @@ export default async function OrdersPage({
 
   const [seasonsResult, customersResult, ordersResult] = await Promise.all([
     supabase.from("seasons").select("id, name").order("name"),
-    supabase.from("customers").select("id, name").order("name"),
+    supabase.from("customers").select("id, name").neq("contract_status", "Archived").order("name"),
     (async () => {
       let q = supabase
         .from("orders")

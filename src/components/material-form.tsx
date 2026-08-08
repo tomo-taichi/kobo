@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState, useRef } from "react";
+import { useActionState, useState, useRef, startTransition } from "react";
 import {
   FABRIC_CATEGORIES,
   ACCESSORY_CATEGORIES,
@@ -29,8 +29,10 @@ type Props = {
     set_price_jpy?: number;
     unit_type?: string;
     supplier_id?: string | null;
+    supplier_item_code?: string | null;
     season_id?: string | null;
     color?: string;
+    price_uniform?: boolean;
     colors?: { color: string; unit_price_jpy: number | null; set_price_jpy: number | null }[];
     comp_1_label?: string; comp_1_pct?: number | null;
     comp_2_label?: string; comp_2_pct?: number | null;
@@ -97,29 +99,66 @@ export function MaterialForm({
   const formRef = useRef<HTMLFormElement>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Auto-save (edit page): debounce-submit on change. Validation in handleSubmit blocks
-  // invalid saves; the action returns "ok" without navigating away.
-  function scheduleSave() {
-    if (!autoSave || !id) return;
-    if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => formRef.current?.requestSubmit(), 700);
-  }
+  // Composition select: render the canonical grouped options, plus any managed
+  // options that aren't part of a group (shown under "Other").
+  const groupedComps = new Set(COMPOSITION_GROUPS.flatMap((g) => g.items));
+  const compExtras = compositionOptions.filter((o) => !groupedComps.has(o));
+
   const [comps, setComps] = useState<CompRow[]>(() => buildInitialComps(initialData));
   const [compError, setCompError] = useState<string | null>(null);
   const [colors, setColors] = useState<ColorRow[]>(() => buildInitialColors(initialData));
   const [colorError, setColorError] = useState<string | null>(null);
+  const [priceUniform, setPriceUniform] = useState<boolean>(initialData.price_uniform ?? true);
+  // Uniform Set ¥ seed: first colour's set price (or blank).
+  const [uniformSet, setUniformSet] = useState<string>(() => {
+    const first = buildInitialColors(initialData)[0];
+    return first?.setPrice ?? "";
+  });
 
   const total = comps.reduce((sum, r) => sum + (Number(r.pct) || 0), 0);
 
+  // When uniform, every colour's Set ¥ is the single uniform value.
   const colorsPayload = JSON.stringify(
     colors
       .filter((c) => c.color.trim())
       .map((c) => ({
         color: c.color.trim(),
         unit_price_jpy: c.unitPrice.trim() === "" ? null : Number(c.unitPrice),
-        set_price_jpy: c.setPrice.trim() === "" ? null : Number(c.setPrice),
+        set_price_jpy: priceUniform
+          ? (uniformSet.trim() === "" ? null : Number(uniformSet))
+          : (c.setPrice.trim() === "" ? null : Number(c.setPrice)),
       }))
   );
+
+  // Lightweight guard for auto-save. Requires ≥1 named colour and no duplicate
+  // colours (both would error server-side). Composition MAY be partial — it saves
+  // as a draft and the material simply shows "Incomplete" until it totals 100%.
+  function canAutosave(): boolean {
+    const named = colors.filter((c) => c.color.trim());
+    if (named.length === 0) return false;
+    const seen = new Set<string>();
+    for (const c of named) {
+      const k = c.color.trim().toLowerCase();
+      if (seen.has(k)) return false;
+      seen.add(k);
+    }
+    return true;
+  }
+
+  // Auto-save (edit modal): debounced. Dispatch the action directly with a FormData
+  // snapshot instead of form.requestSubmit(). Native submission (a) makes React 19
+  // auto-reset the form, reverting the field just edited, and (b) routes through the
+  // onSubmit gate that blocks EVERY save until composition totals 100% — so partial
+  // composition edits silently never persisted. Direct dispatch keeps state intact
+  // and lets partial edits save as a draft.
+  function scheduleSave() {
+    if (!autoSave || !id) return;
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => {
+      const form = formRef.current;
+      if (form && canAutosave()) startTransition(() => formAction(new FormData(form)));
+    }, 700);
+  }
 
   function handleCompChange(i: number, field: "label" | "pct", value: string) {
     setComps((prev) => prev.map((r, idx) => idx === i ? { ...r, [field]: value } : r));
@@ -142,8 +181,10 @@ export function MaterialForm({
   function removeColor(i: number) { if (colors.length > 1) { setColors((prev) => prev.filter((_, idx) => idx !== i)); scheduleSave(); } }
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
-    // In auto-save mode, block invalid saves silently (the on-screen indicators already
-    // show colour count / composition total) rather than flashing error text while typing.
+    // Auto-save persists via direct dispatch (scheduleSave); never let a native
+    // submit (e.g. pressing Enter in a field) run here — it would re-trigger the
+    // React 19 form-reset. This is only the validation gate for the manual create flow.
+    if (autoSave) { e.preventDefault(); return; }
     if (colors.filter((c) => c.color.trim()).length === 0) {
       e.preventDefault();
       if (!autoSave) setColorError("At least one colour is required");
@@ -170,9 +211,10 @@ export function MaterialForm({
   }
 
   return (
-    <form ref={formRef} action={formAction} onChange={scheduleSave} onSubmit={handleSubmit} className="flex flex-col gap-5">
+    <form ref={formRef} action={formAction} onChange={scheduleSave} onSubmit={handleSubmit} className="flex flex-col gap-4">
       {id && <input type="hidden" name="id" value={id} />}
       <input type="hidden" name="colors_json" value={colorsPayload} />
+      <input type="hidden" name="price_uniform" value={priceUniform ? "true" : "false"} />
       {pastColors.length > 0 && (
         <datalist id="past-colours">
           {pastColors.map((c) => <option key={c} value={c} />)}
@@ -233,6 +275,37 @@ export function MaterialForm({
                 ))}
               </select>
             </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Supplier</label>
+              <select name="supplier_id" defaultValue={initialData.supplier_id ?? ""} className={inputCls + " bg-white"}>
+                <option value="">— None —</option>
+                {suppliers.map((s) => (
+                  <option key={s.id} value={s.id}>{s.name}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Unit <span className="text-red-500">*</span></label>
+              <select name="unit_type" defaultValue={initialData.unit_type ?? ""} required className={inputCls + " bg-white"}>
+                <option value="">Select...</option>
+                {unitOptions.map((u) => (
+                  <option key={u.value} value={u.value}>{u.label}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">
+              Supplier Item Code
+              <span className="ml-1 text-gray-400 font-normal">(optional)</span>
+            </label>
+            <input
+              name="supplier_item_code"
+              defaultValue={initialData.supplier_item_code ?? ""}
+              placeholder="Supplier's own code for this material, e.g. WK2101"
+              className={inputCls}
+            />
           </div>
         </div>
       </div>
@@ -241,11 +314,33 @@ export function MaterialForm({
       <div>
         <SectionHeading>Colours <span className="normal-case font-normal tracking-normal text-gray-400">(at least one)</span></SectionHeading>
         {colorError && <p className="text-xs text-red-600 mb-2">{colorError}</p>}
+
+        {/* Set-price mode: one price for all colours (editable in the list), or per-colour. */}
+        <div className="flex items-center gap-4 mb-2 text-xs">
+          <span className="text-gray-500">Set ¥ pricing:</span>
+          <label className="flex items-center gap-1.5 cursor-pointer">
+            <input type="radio" name="_price_mode" checked={priceUniform} onChange={() => { setPriceUniform(true); scheduleSave(); }} /> Uniform (all colours)
+          </label>
+          <label className="flex items-center gap-1.5 cursor-pointer">
+            <input type="radio" name="_price_mode" checked={!priceUniform} onChange={() => { setPriceUniform(false); scheduleSave(); }} /> Per colour
+          </label>
+        </div>
+        {priceUniform && (
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-xs text-gray-500">Set ¥ (all colours)</span>
+            <input type="number" min="0" step="0.01" value={uniformSet}
+              onChange={(e) => { setUniformSet(e.target.value); scheduleSave(); }}
+              placeholder="0"
+              className="w-28 px-2 py-1.5 border border-gray-300 rounded-md text-sm text-right focus:outline-none focus:ring-2 focus:ring-gray-900" />
+            <span className="text-[11px] text-gray-400">— also editable from the Materials list</span>
+          </div>
+        )}
+
         <div className="flex flex-col gap-2">
           <div className="flex gap-2 items-center text-[11px] text-gray-400">
             <span className="flex-1">Colour (English)</span>
             <span className="w-24 text-right">Actual ¥</span>
-            <span className="w-24 text-right">Set ¥</span>
+            {!priceUniform && <span className="w-24 text-right">Set ¥</span>}
             <span className="w-4" />
           </div>
           {colors.map((row, i) => (
@@ -267,14 +362,16 @@ export function MaterialForm({
                 title="Actual Unit Price for this colour (blank = base)"
                 className="w-24 px-2 py-2 border border-gray-300 rounded-md text-sm text-right focus:outline-none focus:ring-2 focus:ring-gray-900"
               />
-              <input
-                type="number" min="0" step="0.01"
-                value={row.setPrice}
-                onChange={(e) => handleColorChange(i, "setPrice", e.target.value)}
-                placeholder="0"
-                title="Set Price for this colour — used in the product's Raw Cost (blank = base)"
-                className="w-24 px-2 py-2 border border-gray-300 rounded-md text-sm text-right focus:outline-none focus:ring-2 focus:ring-gray-900"
-              />
+              {!priceUniform && (
+                <input
+                  type="number" min="0" step="0.01"
+                  value={row.setPrice}
+                  onChange={(e) => handleColorChange(i, "setPrice", e.target.value)}
+                  placeholder="0"
+                  title="Set Price for this colour — used in the product's Raw Cost (blank = base)"
+                  className="w-24 px-2 py-2 border border-gray-300 rounded-md text-sm text-right focus:outline-none focus:ring-2 focus:ring-gray-900"
+                />
+              )}
               {colors.length > 1 && (
                 <button type="button" onClick={() => removeColor(i)} className="text-gray-300 hover:text-red-500 text-lg leading-none w-4">×</button>
               )}
@@ -286,33 +383,6 @@ export function MaterialForm({
           </button>
         </div>
         <p className="text-[11px] text-gray-400 mt-1.5"><span className="font-medium">Set ¥</span> per colour drives the product&apos;s Raw Cost; Actual ¥ is the real purchase price. Enter each colour&apos;s prices (they can differ, e.g. special dyeing).</p>
-      </div>
-
-      {/* ── Group 3: Sourcing & Pricing ── */}
-      <div>
-        <SectionHeading>Sourcing &amp; Pricing</SectionHeading>
-        <div className="flex flex-col gap-3">
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Supplier</label>
-            <select name="supplier_id" defaultValue={initialData.supplier_id ?? ""} className={inputCls + " bg-white"}>
-              <option value="">— None —</option>
-              {suppliers.map((s) => (
-                <option key={s.id} value={s.id}>{s.name}</option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Unit <span className="text-red-500">*</span></label>
-            <select name="unit_type" defaultValue={initialData.unit_type ?? ""} required className={inputCls + " bg-white"}>
-              <option value="">Select...</option>
-              {unitOptions.map((u) => (
-                <option key={u.value} value={u.value}>{u.label}</option>
-              ))}
-            </select>
-          </div>
-          <p className="text-[11px] text-gray-400">Prices are set per colour above (Actual ¥ / Set ¥).</p>
-        </div>
       </div>
 
       {/* ── Group 4: Composition ── */}
@@ -335,9 +405,25 @@ export function MaterialForm({
                 className="flex-1 px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-gray-900 bg-white"
               >
                 <option value="">— Select —</option>
-                {compositionOptions.map((item) => (
-                  <option key={item} value={item}>{item}</option>
+                {/* Keep the current (possibly imported/custom) value selectable even if
+                    it isn't one of the grouped options. */}
+                {row.label && !groupedComps.has(row.label) && (
+                  <option value={row.label}>{row.label}</option>
+                )}
+                {COMPOSITION_GROUPS.map((group) => (
+                  <optgroup key={group.label} label={group.label}>
+                    {group.items.map((item) => (
+                      <option key={item} value={item}>{item}</option>
+                    ))}
+                  </optgroup>
                 ))}
+                {compExtras.length > 0 && (
+                  <optgroup label="Other">
+                    {compExtras.map((item) => (
+                      <option key={item} value={item}>{item}</option>
+                    ))}
+                  </optgroup>
+                )}
               </select>
               <div className="flex items-center gap-1">
                 <input

@@ -14,7 +14,7 @@ export default async function ProductEditPage({ params }: { params: Promise<{ id
     "comp_4_label, comp_4_pct, comp_5_label, comp_5_pct, " +
     "colors:material_colors(id, color), seasons(name)";
 
-  const [productResult, seasonsResult, pastModelsResult, materialsResult, productColorsResult, formOptions] = await Promise.all([
+  const [productResult, seasonsResult, pastModelsResult, materialsResult, productColorsResult, formOptions, tagsResult] = await Promise.all([
     supabase
       .from("products")
       .select(
@@ -37,6 +37,7 @@ export default async function ProductEditPage({ params }: { params: Promise<{ id
     supabase.from("materials").select(MATERIAL_SELECT).order("name"),
     supabase.from("product_colors").select("material_color_id, sort_order").eq("product_id", id).order("sort_order"),
     getFormOptions(supabase),
+    supabase.from("product_tags").select("tag").eq("product_id", id),
   ]);
 
   const p = productResult.data as any;
@@ -61,6 +62,7 @@ export default async function ProductEditPage({ params }: { params: Promise<{ id
         pastModelNames={pastModelNames}
         categoryOptions={formOptions.productCategory}
         sexOptions={formOptions.productSex}
+        tagOptions={formOptions.productTag}
         accessoryCompositionOptions={formOptions.productAccessoryComposition}
         initialData={{
           season_id:            p.season_id,
@@ -103,6 +105,7 @@ export default async function ProductEditPage({ params }: { params: Promise<{ id
           lining_material_number: findMaterialNumber(p.lining_material_id),
           lining_material_color_id: p.lining_material_color_id ?? null,
           enabled_color_ids:      (productColorsResult.data ?? []).map((r: any) => r.material_color_id as string),
+          tags:                   (tagsResult.data ?? []).map((r: any) => r.tag as string),
         }}
         id={p.id}
       />

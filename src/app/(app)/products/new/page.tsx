@@ -38,6 +38,7 @@ export default async function NewProductPage() {
           pastModelNames={pastModelNames}
           categoryOptions={formOptions.productCategory}
           sexOptions={formOptions.productSex}
+          tagOptions={formOptions.productTag}
           accessoryCompositionOptions={formOptions.productAccessoryComposition}
         />
       </div>

@@ -25,6 +25,32 @@ function parseEnabledColorIds(formData: FormData): string[] {
   }
 }
 
+// Applied product tags (JSON array of tag strings from the managed vocabulary).
+function parseTags(formData: FormData): string[] {
+  try {
+    const raw = formData.get("tags") as string;
+    const arr = raw ? JSON.parse(raw) : [];
+    return Array.isArray(arr) ? Array.from(new Set(arr.filter((x: any) => typeof x === "string" && x))) : [];
+  } catch {
+    return [];
+  }
+}
+
+// Replace the product's tags with the given set (product_tags join).
+async function syncProductTags(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  productId: string,
+  tags: string[]
+): Promise<string | null> {
+  const { error: delErr } = await supabase.from("product_tags").delete().eq("product_id", productId);
+  if (delErr) return delErr.message;
+  if (tags.length > 0) {
+    const { error } = await supabase.from("product_tags").insert(tags.map((tag) => ({ product_id: productId, tag })));
+    if (error) return error.message;
+  }
+  return null;
+}
+
 // Orderable sizes are a JSON array of size strings (subset of SIZES). Stored as text[].
 function parseOrderableSizes(formData: FormData): string[] {
   try {
@@ -159,6 +185,7 @@ export async function createProduct(
   if (error) return error.message;
   const syncErr = await syncProductColors(supabase, data.id, parseEnabledColorIds(formData));
   if (syncErr) return syncErr;
+  await syncProductTags(supabase, data.id, parseTags(formData));
   revalidatePath("/products");
   redirect(`/products/${data.id}/edit`);
 }
@@ -172,11 +199,15 @@ export async function updateProduct(
   const fields = extractProductFields(formData);
   if (!fields.season_id)        return "Season is required";
   if (!fields.model_name)       return "Model name is required";
-  if (!fields.main_material_id) return "Main material is required";
+  // Main material is NOT required on edit — some imported products lack one, and
+  // basic info (Category/Sex/etc.) must still be editable. It stays required to
+  // *create* a product (enforced in the form + createProduct).
   const { error } = await supabase.from("products").update(fields).eq("id", id);
   if (error) return error.message;
   const syncErr = await syncProductColors(supabase, id, parseEnabledColorIds(formData));
   if (syncErr) return syncErr;
+  const tagErr = await syncProductTags(supabase, id, parseTags(formData));
+  if (tagErr) return tagErr;
   revalidatePath(`/products/${id}/edit`);
   revalidatePath("/products");
   return "ok";
@@ -300,4 +331,42 @@ export async function deleteProduct(productId: string): Promise<string | null> {
   if (error) return error.message;
   revalidatePath("/products");
   redirect("/products");
+}
+
+// ─── Bulk actions (products list) ────────────────────────────────────
+export async function bulkArchiveProducts(ids: string[], archived: boolean): Promise<string | null> {
+  if (!ids.length) return null;
+  const supabase = await createClient();
+  const { error } = await supabase.from("products").update({ is_invalid: archived }).in("id", ids);
+  if (error) return error.message;
+  revalidatePath("/products");
+  return null;
+}
+
+export async function bulkDeleteProducts(ids: string[]): Promise<string | null> {
+  if (!ids.length) return null;
+  const supabase = await createClient();
+  const { error } = await supabase.from("products").delete().in("id", ids);
+  if (error) {
+    if (error.code === "23503") return "Some products are used by orders and can't be deleted.";
+    return error.message;
+  }
+  revalidatePath("/products");
+  return null;
+}
+
+// Add or remove one tag across many products.
+export async function bulkSetProductTag(ids: string[], tag: string, add: boolean): Promise<string | null> {
+  if (!ids.length || !tag) return null;
+  const supabase = await createClient();
+  if (add) {
+    const rows = ids.map((product_id) => ({ product_id, tag }));
+    const { error } = await supabase.from("product_tags").upsert(rows, { onConflict: "product_id,tag", ignoreDuplicates: true });
+    if (error) return error.message;
+  } else {
+    const { error } = await supabase.from("product_tags").delete().eq("tag", tag).in("product_id", ids);
+    if (error) return error.message;
+  }
+  revalidatePath("/products");
+  return null;
 }

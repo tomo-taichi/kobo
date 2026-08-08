@@ -1,64 +1,29 @@
-import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { SupplierNewModal } from "@/components/supplier-new-modal";
-import { MaterialsSubNav } from "@/components/materials-sub-nav";
+import { SuppliersClient } from "@/components/suppliers-client";
 import { createSupplier } from "@/app/actions/suppliers";
 import { getListValues, DEFAULT_SUPPLIER_COUNTRIES } from "@/lib/list-options";
 
 export default async function SuppliersPage() {
   const supabase = await createClient();
-  const [{ data: suppliers }, countryOptions] = await Promise.all([
-    supabase.from("suppliers").select("id, name, primary_name, primary_title, country").order("name"),
+  const [{ data: suppliers }, { data: matRows }, countryOptions] = await Promise.all([
+    supabase.from("suppliers").select("id, name, country, address, company_phone, primary_name, primary_title, primary_mobile, primary_email, secondary_name, secondary_title, secondary_mobile, secondary_email, notes, archived").order("name"),
+    supabase.from("materials").select("supplier_id").not("supplier_id", "is", null),
     getListValues(supabase, "supplier_country", DEFAULT_SUPPLIER_COUNTRIES),
   ]);
 
+  const matCounts = new Map<string, number>();
+  for (const r of (matRows ?? []) as any[]) matCounts.set(r.supplier_id, (matCounts.get(r.supplier_id) ?? 0) + 1);
+  const withCounts = (suppliers ?? []).map((s: any) => ({ ...s, material_count: matCounts.get(s.id) ?? 0 }));
+
   return (
     <div className="space-y-6">
-      <MaterialsSubNav active="suppliers" />
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold text-gray-900">Suppliers</h1>
         <SupplierNewModal action={createSupplier} countryOptions={countryOptions} />
       </div>
 
-      <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="bg-gray-50 border-b border-gray-200">
-            <tr>
-              <th className="text-left px-4 py-3 font-medium text-gray-600">Supplier Name</th>
-              <th className="text-left px-4 py-3 font-medium text-gray-600">Primary Contact</th>
-              <th className="text-left px-4 py-3 font-medium text-gray-600">Country</th>
-              <th className="text-right px-4 py-3 font-medium text-gray-600">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {suppliers?.map((s) => {
-              const contact = [s.primary_name, s.primary_title].filter(Boolean).join(" / ");
-              return (
-                <tr key={s.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3 text-gray-900">{s.name}</td>
-                  <td className="px-4 py-3 text-gray-500">{contact || "—"}</td>
-                  <td className="px-4 py-3 text-gray-500">{s.country ?? "—"}</td>
-                  <td className="px-4 py-3 text-right">
-                    <Link
-                      href={`/suppliers/${s.id}/edit`}
-                      className="text-gray-500 hover:text-gray-900 text-xs underline"
-                    >
-                      Edit
-                    </Link>
-                  </td>
-                </tr>
-              );
-            })}
-            {!suppliers?.length && (
-              <tr>
-                <td colSpan={4} className="px-4 py-8 text-center text-gray-400 text-sm">
-                  No suppliers
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+      <SuppliersClient suppliers={withCounts as any} countryOptions={countryOptions} />
     </div>
   );
 }

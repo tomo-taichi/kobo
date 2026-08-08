@@ -90,6 +90,7 @@ export async function createMaterial(
   const category = formData.get("category") as string;
   const unit_type = formData.get("unit_type") as string;
   const supplier_id = (formData.get("supplier_id") as string) || null;
+  const supplier_item_code = (formData.get("supplier_item_code") as string)?.trim() || null;
   const colors = parseColors(formData);
   const color = colors[0]?.color ?? null;                   // legacy primary colour
   const unit_price_jpy = colors[0]?.unit_price_jpy ?? 0;    // base = first colour (per-colour is authoritative)
@@ -103,8 +104,9 @@ export async function createMaterial(
 
   const material_number = await nextMaterialNumber(supabase);
   const compositions = extractCompositions(formData);
+  const price_uniform = formData.get("price_uniform") !== "false";
   const { data: inserted, error } = await supabase.from("materials").insert({
-    name, category, unit_price_jpy, set_price_jpy, unit_type, supplier_id, color, season_id, material_number, ...compositions,
+    name, category, unit_price_jpy, set_price_jpy, unit_type, supplier_id, supplier_item_code, color, season_id, material_number, price_uniform, ...compositions,
   }).select("id").single();
   if (error) return error.message;
   const syncErr = await syncMaterialColors(supabase, (inserted as { id: string }).id, colors);
@@ -218,6 +220,7 @@ async function applyMaterialUpdate(formData: FormData): Promise<string | null> {
   const category = formData.get("category") as string;
   const unit_type = formData.get("unit_type") as string;
   const supplier_id = (formData.get("supplier_id") as string) || null;
+  const supplier_item_code = (formData.get("supplier_item_code") as string)?.trim() || null;
   const colors = parseColors(formData);
   const color = colors[0]?.color ?? null;                   // legacy primary colour
   const unit_price_jpy = colors[0]?.unit_price_jpy ?? 0;    // base = first colour (per-colour is authoritative)
@@ -227,8 +230,9 @@ async function applyMaterialUpdate(formData: FormData): Promise<string | null> {
   if (colors.length === 0) return "At least one colour is required";
 
   const compositions = extractCompositions(formData);
+  const price_uniform = formData.get("price_uniform") !== "false";
   const { error } = await supabase.from("materials").update({
-    name, category, unit_price_jpy, set_price_jpy, unit_type, supplier_id, color, season_id, ...compositions,
+    name, category, unit_price_jpy, set_price_jpy, unit_type, supplier_id, supplier_item_code, color, season_id, price_uniform, ...compositions,
   }).eq("id", id);
   if (error) return error.message;
   return await syncMaterialColors(supabase, id, colors);
@@ -253,4 +257,47 @@ export async function autosaveMaterial(
   if (err) return err;
   revalidatePath("/materials");
   return "ok";
+}
+
+// ─── Bulk list actions (default list-page spec) ───────────────────────
+export async function bulkArchiveMaterials(ids: string[], archived: boolean): Promise<string | null> {
+  if (!ids.length) return null;
+  const supabase = await createClient();
+  const { error } = await supabase.from("materials").update({ archived }).in("id", ids);
+  if (error) return error.message;
+  revalidatePath("/materials");
+  return null;
+}
+
+export async function bulkDeleteMaterials(ids: string[]): Promise<string | null> {
+  if (!ids.length) return null;
+  const supabase = await createClient();
+  const { error } = await supabase.from("materials").delete().in("id", ids);
+  if (error) {
+    if (error.code === "23503") return "Some materials are used by products/orders and can't be deleted. Archive them instead.";
+    return error.message;
+  }
+  revalidatePath("/materials");
+  return null;
+}
+
+// Uniform pricing: set the material's set_price on the material AND every colour.
+export async function updateMaterialUniformSetPrice(materialId: string, value: number): Promise<string | null> {
+  if (isNaN(value) || value < 0) return "Invalid number";
+  const supabase = await createClient();
+  const { error: baseErr } = await supabase.from("materials").update({ set_price_jpy: value }).eq("id", materialId);
+  if (baseErr) return baseErr.message;
+  const { error: colErr } = await supabase.from("material_colors").update({ set_price_jpy: value }).eq("material_id", materialId);
+  if (colErr) return colErr.message;
+  revalidatePath("/materials");
+  return null;
+}
+
+// Toggle a material's pricing mode (uniform vs per-colour).
+export async function setMaterialPriceUniform(materialId: string, uniform: boolean): Promise<string | null> {
+  const supabase = await createClient();
+  const { error } = await supabase.from("materials").update({ price_uniform: uniform }).eq("id", materialId);
+  if (error) return error.message;
+  revalidatePath("/materials");
+  return null;
 }

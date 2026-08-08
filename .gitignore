@@ -39,3 +39,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# FileMaker data imports (real customer data — never commit)
+/data/import/

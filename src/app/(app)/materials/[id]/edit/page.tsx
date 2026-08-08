@@ -12,7 +12,7 @@ export default async function MaterialEditPage({ params }: { params: Promise<{ i
   const [materialResult, suppliersResult, seasonsResult, pastColorsResult, materialColorsResult, materialOptions] = await Promise.all([
     supabase
       .from("materials")
-      .select("id, name, category, unit_price_jpy, set_price_jpy, unit_type, supplier_id, season_id, color, comp_1_label, comp_1_pct, comp_2_label, comp_2_pct, comp_3_label, comp_3_pct, comp_4_label, comp_4_pct, comp_5_label, comp_5_pct")
+      .select("id, name, category, unit_price_jpy, set_price_jpy, unit_type, supplier_id, season_id, color, price_uniform, comp_1_label, comp_1_pct, comp_2_label, comp_2_pct, comp_3_label, comp_3_pct, comp_4_label, comp_4_pct, comp_5_label, comp_5_pct")
       .eq("id", id)
       .single(),
     supabase.from("suppliers").select("id, name").order("name"),
@@ -62,6 +62,7 @@ export default async function MaterialEditPage({ params }: { params: Promise<{ i
             supplier_id:    m.supplier_id,
             season_id:      m.season_id,
             color:          m.color ?? "",
+            price_uniform:  m.price_uniform ?? true,
             colors,
             comp_1_label: m.comp_1_label ?? "", comp_1_pct: m.comp_1_pct,
             comp_2_label: m.comp_2_label ?? "", comp_2_pct: m.comp_2_pct,

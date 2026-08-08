@@ -49,3 +49,25 @@ export async function updateSupplier(
   revalidatePath("/suppliers");
   redirect("/suppliers");
 }
+
+// ─── Bulk list actions (default list-page spec) ───────────────────────
+export async function bulkArchiveSuppliers(ids: string[], archived: boolean): Promise<string | null> {
+  if (!ids.length) return null;
+  const supabase = await createClient();
+  const { error } = await supabase.from("suppliers").update({ archived }).in("id", ids);
+  if (error) return error.message;
+  revalidatePath("/suppliers");
+  return null;
+}
+
+export async function bulkDeleteSuppliers(ids: string[]): Promise<string | null> {
+  if (!ids.length) return null;
+  const supabase = await createClient();
+  const { error } = await supabase.from("suppliers").delete().in("id", ids);
+  if (error) {
+    if (error.code === "23503") return "Some suppliers are referenced by materials and can't be deleted. Archive them instead.";
+    return error.message;
+  }
+  revalidatePath("/suppliers");
+  return null;
+}

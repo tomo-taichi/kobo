@@ -53,6 +53,7 @@ type InitialData = {
   lining_material_color_id?: string | null;
   enabled_color_ids?: string[];
   orderable_sizes?: string[] | null;
+  tags?: string[];
 };
 
 type Props = {
@@ -65,6 +66,7 @@ type Props = {
   categoryOptions?: string[];
   sexOptions?: string[];
   accessoryCompositionOptions?: string[];
+  tagOptions?: string[];
 };
 
 const inputCls  = "w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-gray-900";
@@ -167,6 +169,7 @@ export function ProductForm({
   categoryOptions = [...PRODUCT_CATEGORIES],
   sexOptions = [...PRODUCT_SEXES],
   accessoryCompositionOptions = [...ACCESSORY_COMPOSITIONS],
+  tagOptions = [],
 }: Props) {
   const [result, formAction, pending] = useActionState(action, null);
   const formRef     = useRef<HTMLFormElement>(null);
@@ -184,6 +187,13 @@ export function ProductForm({
   // re-applies the default — unless the user has manually edited the selection (presets/checkboxes).
   const [category, setCategory] = useState<string>(initialData.product_category ?? "");
   const [sex, setSex] = useState<string>(initialData.product_sex ?? "");
+  const [tags, setTags] = useState<Set<string>>(() => new Set(initialData.tags ?? []));
+  // Managed tags plus any already on the product that are no longer in the list.
+  const tagChoices = Array.from(new Set([...tagOptions, ...(initialData.tags ?? [])]));
+  function toggleTag(t: string) {
+    setTags((prev) => { const n = new Set(prev); n.has(t) ? n.delete(t) : n.add(t); return n; });
+    scheduleSubmit(200);
+  }
   const [orderableSizes, setOrderableSizes] = useState<Set<string>>(
     () => new Set(initialData.orderable_sizes ?? defaultOrderableSizes(initialData.product_category, initialData.product_sex))
   );
@@ -229,7 +239,9 @@ export function ProductForm({
   }
 
   function scheduleSubmit(delay: number) {
-    if (!id || !mainMat) return;   // suppress auto-save when no main material
+    // Edit mode auto-saves. (Previously suppressed when no main material, which
+    // also blocked editing basic info like Category/Sex on such products.)
+    if (!id) return;
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => formRef.current?.requestSubmit(), delay);
   }
@@ -303,6 +315,7 @@ export function ProductForm({
               <select name="product_category" value={category} required className={selectCls}
                 onChange={(e) => handleCategoryChange(e.target.value)}>
                 <option value="">Select...</option>
+                {category && !categoryOptions.includes(category) && <option value={category}>{category}</option>}
                 {categoryOptions.map((c) => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
@@ -332,9 +345,31 @@ export function ProductForm({
               <select name="product_sex" value={sex} className={selectCls}
                 onChange={(e) => handleSexChange(e.target.value)}>
                 <option value="">—</option>
+                {sex && !sexOptions.includes(sex) && <option value={sex}>{sex}</option>}
                 {sexOptions.map((s) => <option key={s} value={s}>{s}</option>)}
               </select>
             </div>
+          </div>
+
+          {/* Tags — managed in Settings; multi-select for search/filter */}
+          <div>
+            <input type="hidden" name="tags" value={JSON.stringify([...tags])} />
+            <label className="block text-xs font-medium text-gray-600 mb-1">Tags</label>
+            {tagChoices.length === 0 ? (
+              <p className="text-xs text-gray-400">No tags yet — add them in Settings → Products → Tags.</p>
+            ) : (
+              <div className="flex flex-wrap gap-1.5">
+                {tagChoices.map((t) => {
+                  const on = tags.has(t);
+                  return (
+                    <button key={t} type="button" onClick={() => toggleTag(t)}
+                      className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${on ? "bg-indigo-600 text-white border-indigo-600" : "bg-white text-gray-600 border-gray-300 hover:border-gray-500"}`}>
+                      {t}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           <div className="flex gap-6">

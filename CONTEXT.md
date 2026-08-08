@@ -31,7 +31,11 @@ Customer User 向けの顧客専用画面（`src/app/(portal)`）。自社に紐
 ## Language
 
 **Season**:
-商品・受注を束ねるグループ単位。実際の季節コレクション（例: "26.2" = 2026年第2コレクション、"14AW" = 2014 Autumn/Winter）だけでなく、通年商品用の特殊グループ（"ALLSS"）や委託販売専用グループ（"委託"）も含む。名前は自由入力。
+商品・受注を束ねるグループ単位。名前は自由入力だが、命名規則がある：
+- **新形式 `YY.1` / `YY.2`**: `YY.1` = 20YY年 **SS**（Spring & Summer）コレクション、`YY.2` = 20YY年 **AW**（Autumn & Winter）コレクション。例: `26.1` = 2026 SS、`26.2` = 2026 AW。
+- **旧形式 `YYSS` / `YYAW`**: 例 `14AW` = 2014 Autumn/Winter（2013〜2022頃まで使用）。
+- **特殊グループ（季節に依存しない）**: `ALLSS`（= All Season。シーズンを問わず通年で使う Material / Product の登録先）、`委託`（委託販売専用グループ）。
+各 Season は `eur_jpy_rate`（EUR→JPY 換算レート）を持つ。
 _Avoid_: Collection（コレクションは Season の一種に過ぎない）
 
 **Order**:

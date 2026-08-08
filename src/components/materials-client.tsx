@@ -1,7 +1,7 @@
 "use client";
 
-import { Fragment, useState, useMemo, useRef, useCallback } from "react";
-import Link from "next/link";
+import { Fragment, useState, useMemo, useCallback, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import {
   MATERIAL_CATEGORIES,
   CATEGORY_LABELS,
@@ -9,13 +9,22 @@ import {
   isFabric,
   getMaterialStatus,
 } from "@/lib/material-constants";
-import { updateMaterialField, updateMaterialFirstColorPrice, duplicateMaterial, deleteMaterial } from "@/app/actions/materials";
+import { duplicateMaterial, deleteMaterial, updateMaterialUniformSetPrice, bulkArchiveMaterials, bulkDeleteMaterials, autosaveMaterial } from "@/app/actions/materials";
+import { BulkBar } from "@/components/bulk-bar";
+import { MaterialForm } from "@/components/material-form";
+
+type LabeledValue = { value: string; label: string };
+type MaterialOptions = { fabricCategories: LabeledValue[]; accessoryCategories: LabeledValue[]; units: LabeledValue[]; compositions: string[] };
 
 type CompEntry = { label: string | null; pct: number | null };
 type ColorEntry = { color: string; unitPrice: number | null; setPrice: number | null };
 
 type Material = {
   id: string;
+  material_number: string | null;
+  archived: boolean;
+  price_uniform: boolean;
+  main_product_count: number;
   name: string;
   category: string;
   unit_price_jpy: number;
@@ -23,6 +32,7 @@ type Material = {
   unit_type: string;
   color: string | null;
   supplier_id: string | null;
+  supplier_item_code: string | null;
   season_id: string | null;
   suppliers: { name: string } | null;
   seasons: { name: string } | null;
@@ -32,9 +42,8 @@ type Material = {
 
 type Supplier = { id: string; name: string };
 type Season   = { id: string; name: string };
-type SortKey  = "name_asc" | "name_desc" | "category_asc";
+type SortKey  = "material_number" | "name" | "category" | "unit_price";
 type GroupMode = "none" | "category" | "season";
-type EditCell = { id: string; field: string } | null;
 
 const GROUP_OPTIONS: { value: GroupMode; label: string }[] = [
   { value: "none",     label: "Flat" },
@@ -42,7 +51,63 @@ const GROUP_OPTIONS: { value: GroupMode; label: string }[] = [
   { value: "season",   label: "Season" },
 ];
 
-// Per-row delete with an always-on confirmation; removes the row from the list on success.
+function SearchIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" className="w-4 h-4 text-gray-400">
+      <circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" />
+    </svg>
+  );
+}
+function CopyIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+      <rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15V5a2 2 0 012-2h10" />
+    </svg>
+  );
+}
+function TagIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
+      <path d="M9.5 3H5a2 2 0 00-2 2v4.5a2 2 0 00.6 1.4l8.5 8.5a2 2 0 002.8 0l4.5-4.5a2 2 0 000-2.8L10.9 3.6A2 2 0 009.5 3zM6.5 7h.01" />
+    </svg>
+  );
+}
+function TrashIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+      <path d="M4 7h16M10 11v6M14 11v6M5 7l1 13a2 2 0 002 2h8a2 2 0 002-2l1-13M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3" />
+    </svg>
+  );
+}
+
+const firstUnitPrice = (m: Material) => m.colors[0]?.unitPrice ?? m.unit_price_jpy;
+const firstSetPrice = (m: Material) => m.colors[0]?.setPrice ?? m.set_price_jpy;
+
+const statusOf = (m: Material) => getMaterialStatus({
+  set_price_jpy: m.set_price_jpy,
+  comp_1_pct: m.comps[0]?.pct, comp_2_pct: m.comps[1]?.pct, comp_3_pct: m.comps[2]?.pct,
+  comp_4_pct: m.comps[3]?.pct, comp_5_pct: m.comps[4]?.pct,
+});
+
+// Compact status indicator (saves width vs a text pill).
+function StatusIcon({ status }: { status: string }) {
+  const complete = status === "Complete";
+  return (
+    <span title={status} className="inline-flex">
+      {complete ? (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 text-green-600">
+          <circle cx="12" cy="12" r="9" /><path d="M8.5 12.5l2.5 2.5 4.5-5" />
+        </svg>
+      ) : (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 text-amber-500">
+          <circle cx="12" cy="12" r="9" /><path d="M12 8v4M12 16h.01" />
+        </svg>
+      )}
+    </span>
+  );
+}
+
+// Per-row delete with confirmation. Trigger is an icon; stops row navigation.
 function MaterialDeleteButton({ materialId, name, onDeleted }: { materialId: string; name: string; onDeleted: () => void }) {
   const [open, setOpen]       = useState(false);
   const [pending, setPending] = useState(false);
@@ -58,7 +123,10 @@ function MaterialDeleteButton({ materialId, name, onDeleted }: { materialId: str
 
   return (
     <>
-      <button type="button" onClick={() => setOpen(true)} className="text-gray-400 hover:text-red-600 text-xs underline">Delete</button>
+      <button type="button" onClick={() => setOpen(true)} title="Delete"
+        className="inline-flex items-center justify-center w-7 h-7 rounded-md border border-gray-200 text-gray-400 hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition-colors">
+        <TrashIcon />
+      </button>
       {open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/40" onClick={() => !pending && setOpen(false)} />
@@ -88,96 +156,119 @@ function MaterialDeleteButton({ materialId, name, onDeleted }: { materialId: str
   );
 }
 
-function formatComps(comps: CompEntry[]) {
-  return comps
-    .filter((c) => c.label && (c.pct ?? 0) >= 1)
-    .map((c) => `${c.label?.split("-")[0]} ${c.pct}%`)
-    .join(" / ");
+// Composition entries (≥1%) → ["カシミヤ 100%", ...] one per line.
+function compLines(comps: CompEntry[]) {
+  return comps.filter((c) => c.label && (c.pct ?? 0) >= 1).map((c) => `${c.label?.split("-")[0]} ${c.pct}%`);
+}
+function coloursLabel(m: Material): string {
+  if (m.colors.length >= 2) return `${m.colors.length} colours`;
+  if (m.colors.length === 1) return m.colors[0].color;
+  return m.color ?? "—";
 }
 
 export function MaterialsClient({
   materials: initialMaterials,
   suppliers,
   seasons,
+  pastColors = [],
+  materialOptions,
+  initialCategory,
+  initialSeason,
+  initialSupplier = "",
 }: {
   materials: Material[];
   suppliers: Supplier[];
   seasons: Season[];
   pastColors?: string[];
+  materialOptions?: MaterialOptions;
+  initialCategory?: string;
+  initialSeason?: string;
+  initialSupplier?: string;
 }) {
+  const router = useRouter();
   const [materials, setMaterials] = useState(initialMaterials);
+  const [editMat, setEditMat] = useState<Material | null>(null);
 
-  // filter/sort state
   const [search, setSearch]       = useState("");
-  const [fCat, setFCat]           = useState("");
-  const [fSeason, setFSeason]     = useState("");
-  const [fSupplier, setFSupplier] = useState("");
+  const [fCat, setFCat]           = useState(initialCategory ?? "woven"); // default: Woven
+  const [fSeason, setFSeason]     = useState(initialSeason ?? (seasons[0]?.id ?? "")); // default: most recent season
+  const [fSupplier, setFSupplier] = useState(initialSupplier);
   const [fComp, setFComp]         = useState("");
-  const [sort, setSort]           = useState<SortKey>("name_asc");
+  const [fStatus, setFStatus]     = useState("");
+  const [sort, setSort]           = useState<{ key: SortKey; dir: 1 | -1 }>({ key: "name", dir: 1 });
   const [groupMode, setGroupMode] = useState<GroupMode>("none");
+  const [selected, setSelected]   = useState<Set<string>>(new Set());
+  const [showArchived, setShowArchived] = useState(false);
+  const [bulkPending, startBulk]  = useTransition();
 
-  // inline editing state (name / category / season only — colour & price are per-colour, edited in the form)
-  const [editCell, setEditCell]   = useState<EditCell>(null);
-  const [editValue, setEditValue] = useState("");
-  const [saving, setSaving]       = useState(false);
-  const inputRef = useRef<HTMLInputElement | HTMLSelectElement>(null);
+  const archivedCount = materials.filter((m) => m.archived).length;
+  const toggleSel = (id: string) => setSelected((p) => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const runBulk = (fn: () => Promise<string | null>) => startBulk(async () => {
+    const err = await fn(); if (err) alert(err); else { setSelected(new Set()); router.refresh(); }
+  });
 
-  const startEdit = useCallback((id: string, field: string, current: string) => {
-    setEditCell({ id, field });
-    setEditValue(current);
-    setTimeout(() => {
-      const el = inputRef.current;
-      if (el) { el.focus(); if ("select" in el) (el as HTMLInputElement).select(); }
-    }, 0);
-  }, []);
+  // Inline Set ¥ editing (double-click the cell)
+  const [editId, setEditId]   = useState<string | null>(null);
+  const [editVal, setEditVal] = useState("");
+  const [saving, setSaving]   = useState(false);
 
-  const commitEdit = useCallback(async () => {
-    if (!editCell) return;
+  const setSortKey = useCallback((key: SortKey) =>
+    setSort((s) => (s.key === key ? { key, dir: s.dir === 1 ? -1 : 1 } : { key, dir: 1 })), []);
+
+  const startEditSet = (m: Material) => { setEditId(m.id); setEditVal(String(firstSetPrice(m))); };
+  const commitSet = async () => {
+    if (!editId) return;
+    const id = editId, v = Number(editVal) || 0;
     setSaving(true);
-    const { id, field } = editCell;
-    if (field === "unit_price_jpy" || field === "set_price_jpy") {
-      const v = Number(editValue);
-      await updateMaterialFirstColorPrice(id, field, v);
-      const ck = field === "unit_price_jpy" ? "unitPrice" : "setPrice";
-      setMaterials((prev) => prev.map((m) => {
-        if (m.id !== id) return m;
-        const colors = m.colors.length > 0 ? m.colors.map((c, i) => (i === 0 ? { ...c, [ck]: v } : c)) : m.colors;
-        return { ...m, [field]: v, colors };
-      }));
-    } else {
-      await updateMaterialField(id, field as any, editValue);
-      setMaterials((prev) => prev.map((m) => {
-        if (m.id !== id) return m;
-        if (field === "name")      return { ...m, name: editValue };
-        if (field === "category")  return { ...m, category: editValue };
-        if (field === "season_id") return { ...m, season_id: editValue || null, seasons: seasons.find((s) => s.id === editValue) ?? null };
-        return m;
-      }));
-    }
+    await updateMaterialUniformSetPrice(id, v); // uniform pricing → all colours
+    setMaterials((prev) => prev.map((m) => {
+      if (m.id !== id) return m;
+      return { ...m, set_price_jpy: v, colors: m.colors.map((c) => ({ ...c, setPrice: v })) };
+    }));
     setSaving(false);
-    setEditCell(null);
-  }, [editCell, editValue, seasons]);
+    setEditId(null);
+  };
 
-  const cancelEdit = useCallback(() => setEditCell(null), []);
+  // Season filter order: "ALLSS" pinned first, then the rest as given (recency desc).
+  const seasonOrder = useMemo(() => {
+    const all = seasons.filter((s) => s.name === "ALLSS");
+    const rest = seasons.filter((s) => s.name !== "ALLSS");
+    return [...all, ...rest];
+  }, [seasons]);
 
-  const filtered = useMemo(() => {
-    let list = materials;
+  // Everything except the category filter — so the category segments show live counts.
+  const preCat = useMemo(() => {
+    let list = showArchived ? materials : materials.filter((m) => !m.archived);
     if (search.trim()) {
       const q = search.trim().toLowerCase();
-      list = list.filter((m) => m.name.toLowerCase().includes(q) || m.colors.some((c) => c.color.toLowerCase().includes(q)));
+      list = list.filter((m) => m.name.toLowerCase().includes(q) || (m.material_number ?? "").includes(q) || m.colors.some((c) => c.color.toLowerCase().includes(q)));
     }
-    if (fCat)      list = list.filter((m) => m.category === fCat);
     if (fSeason)   list = list.filter((m) => m.season_id === fSeason);
     if (fSupplier) list = list.filter((m) => m.supplier_id === fSupplier);
-    if (fComp)     list = list.filter((m) =>
-      m.comps.some((c) => c.label === fComp && (c.pct ?? 0) >= 1)
-    );
-    const sorted = [...list];
-    if (sort === "name_asc")          sorted.sort((a, b) => a.name.localeCompare(b.name, "en"));
-    else if (sort === "name_desc")    sorted.sort((a, b) => b.name.localeCompare(a.name, "en"));
-    else if (sort === "category_asc") sorted.sort((a, b) => a.category.localeCompare(b.category));
-    return sorted;
-  }, [materials, search, fCat, fSeason, fSupplier, fComp, sort]);
+    if (fComp)     list = list.filter((m) => m.comps.some((c) => c.label === fComp && (c.pct ?? 0) >= 1));
+    if (fStatus)   list = list.filter((m) => statusOf(m) === fStatus);
+    return list;
+  }, [materials, showArchived, search, fSeason, fSupplier, fComp, fStatus]);
+
+  const catCounts = useMemo(() => {
+    const m: Record<string, number> = {};
+    for (const x of preCat) m[x.category] = (m[x.category] ?? 0) + 1;
+    return m;
+  }, [preCat]);
+
+  const filtered = useMemo(() => {
+    const list = fCat ? preCat.filter((m) => m.category === fCat) : preCat;
+    const { key, dir } = sort;
+    const val = (m: Material): string | number =>
+      key === "material_number" ? Number(m.material_number ?? 0)
+      : key === "name" ? m.name.toLowerCase()
+      : key === "category" ? m.category
+      : firstUnitPrice(m);
+    return [...list].sort((a, b) => {
+      const av = val(a), bv = val(b);
+      return av < bv ? -dir : av > bv ? dir : 0;
+    });
+  }, [preCat, fCat, sort]);
 
   const grouped = useMemo(() => {
     if (groupMode === "none") return [] as [string, Material[]][];
@@ -190,160 +281,105 @@ export function MaterialsClient({
     return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0]));
   }, [filtered, groupMode]);
 
-  const hasFilter = search || fCat || fSeason || fSupplier || fComp;
+  const hasFilter = search || fCat || fSeason || fSupplier || fComp || fStatus;
 
-  const cellCls = "px-3 py-2.5 cursor-default select-none";
-  const editableCls = `${cellCls} hover:bg-yellow-50 cursor-pointer`;
-  const inputBaseCls = "w-full px-2 py-1 border-2 border-gray-900 rounded text-sm focus:outline-none bg-white";
-
-  function isEditing(id: string, field: string) {
-    return editCell?.id === id && editCell?.field === field;
-  }
-
-  function textCell(m: Material, field: "name", display: string | null) {
-    const editing = isEditing(m.id, field);
-    return editing ? (
-      <td className="px-3 py-1.5">
-        <input
-          ref={inputRef as React.RefObject<HTMLInputElement>}
-          type="text"
-          value={editValue}
-          onChange={(e) => setEditValue(e.target.value)}
-          onBlur={commitEdit}
-          onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); if (e.key === "Escape") cancelEdit(); }}
-          lang="en-GB"
-          spellCheck
-          disabled={saving}
-          className={inputBaseCls}
-        />
-      </td>
-    ) : (
-      <td className={editableCls} onDoubleClick={() => startEdit(m.id, field, display ?? "")}>
-        {display ?? <span className="text-gray-300">—</span>}
-      </td>
-    );
-  }
-
-  function selectCell(m: Material, field: "category" | "season_id", display: React.ReactNode, options: { value: string; label: string }[]) {
-    const editing = isEditing(m.id, field);
-    return editing ? (
-      <td className="px-3 py-1.5">
-        <select
-          ref={inputRef as React.RefObject<HTMLSelectElement>}
-          value={editValue}
-          onChange={(e) => { setEditValue(e.target.value); setTimeout(commitEdit, 0); }}
-          onBlur={commitEdit}
-          onKeyDown={(e) => { if (e.key === "Escape") cancelEdit(); }}
-          disabled={saving}
-          className={inputBaseCls + " bg-white"}
-        >
-          {field === "season_id" && <option value="">— None —</option>}
-          {options.map((o) => (
-            <option key={o.value} value={o.value}>{o.label}</option>
-          ))}
-        </select>
-      </td>
-    ) : (
-      <td className={editableCls} onDoubleClick={() => startEdit(m.id, field, field === "category" ? m.category : (m.season_id ?? ""))}>
-        {display}
-      </td>
-    );
-  }
-
-  function numberCell(m: Material, field: "unit_price_jpy" | "set_price_jpy", value: number) {
-    const editing = isEditing(m.id, field);
-    return editing ? (
-      <td className="px-3 py-1.5 text-right">
-        <input
-          ref={inputRef as React.RefObject<HTMLInputElement>}
-          type="number" min="0" step="1"
-          value={editValue}
-          onChange={(e) => setEditValue(e.target.value)}
-          onBlur={commitEdit}
-          onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); if (e.key === "Escape") cancelEdit(); }}
-          disabled={saving}
-          className={inputBaseCls + " text-right w-28"}
-        />
-      </td>
-    ) : (
-      <td className={editableCls + " text-right"} onDoubleClick={() => startEdit(m.id, field, String(value))}>
-        {value.toLocaleString("en-GB")}
-      </td>
-    );
-  }
+  const arrow = (key: SortKey) => (sort.key === key ? (sort.dir === 1 ? " ↑" : " ↓") : "");
+  const th = "px-3 py-2 text-xs font-medium text-gray-500 select-none";
+  const sTh = th + " cursor-pointer hover:text-gray-700";
+  const td = "px-3 py-2.5";
+  const segCls = (active: boolean) => `px-3 py-1 text-sm rounded-md transition-colors ${active ? "bg-white shadow-sm text-gray-900 font-medium" : "text-gray-500 hover:text-gray-700"}`;
+  const selCls = "px-2.5 py-1.5 border border-gray-200 rounded-lg text-sm bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-900/10";
+  const rowBtn = "inline-flex items-center justify-center w-7 h-7 rounded-md border border-gray-200 text-gray-400 hover:bg-gray-100 hover:text-gray-900 transition-colors";
 
   function renderRow(m: Material) {
-    const status = getMaterialStatus({
-      set_price_jpy: m.set_price_jpy,
-      comp_1_pct: m.comps[0]?.pct,
-      comp_2_pct: m.comps[1]?.pct,
-      comp_3_pct: m.comps[2]?.pct,
-      comp_4_pct: m.comps[3]?.pct,
-      comp_5_pct: m.comps[4]?.pct,
-    });
-    const categoryOptions = MATERIAL_CATEGORIES.map((c) => ({ value: c, label: CATEGORY_LABELS[c] }));
-    const seasonOptions = seasons.map((s) => ({ value: s.id, label: s.name }));
-    const firstUnit = m.colors[0]?.unitPrice ?? m.unit_price_jpy;
-    const firstSet  = m.colors[0]?.setPrice ?? m.set_price_jpy;
-
+    const status = statusOf(m);
+    const lines = compLines(m.comps);
+    const multi = m.colors.length >= 2;
+    const editing = editId === m.id;
+    const isSel = selected.has(m.id);
     return (
-      <tr key={m.id} className="hover:bg-gray-50/50">
-        {/* ID — not editable */}
-        <td className={`${cellCls} font-mono text-gray-400 text-xs`}>{m.id.slice(0, 8)}</td>
+      <tr key={m.id} onClick={() => setEditMat(m)}
+        className={`cursor-pointer transition-colors ${isSel ? "bg-gray-50" : "hover:bg-gray-50/70"} ${m.archived ? "opacity-50" : ""}`}>
+        <td className={td} onClick={(e) => e.stopPropagation()}>
+          <input type="checkbox" checked={isSel} onChange={() => toggleSel(m.id)} aria-label={`Select ${m.name}`} className="align-middle accent-gray-900" />
+        </td>
+        <td className={`${td} text-center`}><StatusIcon status={status} /></td>
+        <td className={`${td} font-mono text-gray-500 text-xs`}>
+          {m.material_number ?? "—"}
+          {m.archived && <span className="ml-1 text-[9px] px-1 py-0.5 rounded bg-gray-100 text-gray-400 align-middle">A</span>}
+        </td>
 
-        {/* Season — select */}
-        {selectCell(m, "season_id",
-          <span className="text-gray-500 text-xs">{m.seasons?.name ?? <span className="text-gray-300">—</span>}</span>,
-          seasonOptions
-        )}
-
-        {/* Category — select */}
-        {selectCell(m, "category",
-          <span className={`text-xs px-2 py-0.5 rounded-full ${isFabric(m.category) ? "bg-blue-50 text-blue-700" : "bg-orange-50 text-orange-700"}`}>
+        {/* Season + Category (stacked, saves width) */}
+        <td className={td}>
+          <span className={`inline-block text-xs px-2 py-0.5 rounded-md font-medium ${isFabric(m.category) ? "bg-blue-50 text-blue-700" : "bg-orange-50 text-orange-700"}`}>
             {CATEGORY_LABELS[m.category] ?? m.category}
-          </span>,
-          categoryOptions
-        )}
-
-        {/* Name — text */}
-        {textCell(m, "name", m.name)}
-
-        {/* Colour — all colours (first bold, as its price is shown). Read-only; edit per colour in the form */}
-        <td className={`${cellCls} text-xs`}>
-          {m.colors.length > 0
-            ? m.colors.map((c, i) => (
-                <span key={i} className={i === 0 ? "text-gray-800 font-medium" : "text-gray-500"}>
-                  {i > 0 ? ", " : ""}{c.color}
-                </span>
-              ))
-            : (m.color ?? <span className="text-gray-300">—</span>)}
-        </td>
-
-        {/* Composition — not editable */}
-        <td className={`${cellCls} text-gray-500 text-xs max-w-xs`}>
-          {formatComps(m.comps) || <span className="text-gray-300">—</span>}
-        </td>
-
-        {/* Unit Price — first colour's (double-click to edit) */}
-        {numberCell(m, "unit_price_jpy", firstUnit)}
-
-        {/* Set Price — first colour's (double-click to edit) */}
-        {numberCell(m, "set_price_jpy", firstSet)}
-
-        {/* Status — derived, not editable */}
-        <td className={`${cellCls} text-center`}>
-          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${status === "Complete" ? "bg-green-50 text-green-700" : "bg-yellow-50 text-yellow-700"}`}>
-            {status}
           </span>
+          <div className="text-xs text-gray-400 mt-0.5">{m.seasons?.name ?? "—"}</div>
         </td>
 
-        {/* Actions */}
-        <td className={`${cellCls} text-right whitespace-nowrap`}>
-          <div className="flex items-center justify-end gap-3">
+        <td className={td}>
+          {m.suppliers?.name && <div className="text-[10px] text-gray-400 leading-tight truncate max-w-[220px]" title={m.suppliers.name}>{m.suppliers.name}</div>}
+          <div className="font-medium text-gray-900">{m.name}</div>
+        </td>
+
+        {/* Colours — summarised; hover shows the full list (native tooltip) */}
+        <td
+          className={`${td} text-xs ${multi ? "text-gray-500 underline decoration-dotted" : "text-gray-800"}`}
+          title={multi ? m.colors.map((c) => c.color).join(", ") : undefined}
+        >
+          {coloursLabel(m)}
+        </td>
+
+        {/* Composition — one line per component */}
+        <td className={`${td} text-gray-500 text-xs`}>
+          {lines.length ? lines.map((l, i) => <div key={i} className="leading-tight">{l}</div>) : <span className="text-gray-300">—</span>}
+        </td>
+
+        <td className={`${td} text-right`}>{firstUnitPrice(m).toLocaleString("en-GB")}</td>
+
+        {/* Set ¥ — editable only when pricing is uniform (one price for all colours);
+            per-colour materials are read-only here (edit in the form). */}
+        <td className={`${td} text-right`} onClick={(e) => e.stopPropagation()} onDoubleClick={() => { if (m.price_uniform) startEditSet(m); }}>
+          {editing ? (
+            <input
+              autoFocus
+              type="number" min="0" step="1"
+              value={editVal}
+              onChange={(e) => setEditVal(e.target.value)}
+              onBlur={commitSet}
+              onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); if (e.key === "Escape") setEditId(null); }}
+              disabled={saving}
+              className="w-24 px-2 py-1 border-2 border-gray-900 rounded text-sm text-right focus:outline-none bg-white"
+            />
+          ) : m.price_uniform ? (
+            <span className="cursor-pointer hover:bg-yellow-50 rounded px-1 -mx-1" title="Double-click to edit (uniform price)">
+              {firstSetPrice(m).toLocaleString("en-GB")}
+            </span>
+          ) : (
+            <span className="text-gray-400" title="Per-colour pricing — edit in the material form">
+              {multi ? "per colour" : firstSetPrice(m).toLocaleString("en-GB")}
+            </span>
+          )}
+        </td>
+
+        {/* Products using this as main material + link to the filtered products list */}
+        <td className={`${td} text-center`} onClick={(e) => e.stopPropagation()}>
+          {m.main_product_count > 0 ? (
+            <a href={`/products?material=${m.id}`} target="_blank" rel="noopener" title={`${m.main_product_count} product(s) use this as main material`}
+              className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-md border border-gray-200 text-gray-500 hover:bg-gray-100 hover:text-gray-900">
+              <TagIcon /> {m.main_product_count}
+            </a>
+          ) : (
+            <span className="text-gray-300 text-xs">0</span>
+          )}
+        </td>
+
+        {/* Actions — icons; stop row navigation */}
+        <td className={`${td} text-right`} onClick={(e) => e.stopPropagation()}>
+          <div className="flex items-center justify-end gap-1">
             <form action={async () => { await duplicateMaterial(m.id); }}>
-              <button type="submit" className="text-gray-400 hover:text-blue-600 text-xs underline">Duplicate</button>
+              <button type="submit" title="Duplicate" className={rowBtn}><CopyIcon /></button>
             </form>
-            <Link href={`/materials/${m.id}/edit`} className="text-gray-400 hover:text-gray-900 text-xs underline">Edit</Link>
             <MaterialDeleteButton materialId={m.id} name={m.name} onDeleted={() => setMaterials((prev) => prev.filter((x) => x.id !== m.id))} />
           </div>
         </td>
@@ -352,32 +388,41 @@ export function MaterialsClient({
   }
 
   return (
-    <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-      {/* Filter / sort bar */}
-      <div className="px-4 py-3 border-b border-gray-100 space-y-2">
-        <input
-          type="text"
-          placeholder="Search by name or colour..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="w-full px-3 py-1.5 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
-        />
-        <div className="flex flex-wrap gap-2 items-center">
-          <select value={fCat} onChange={(e) => setFCat(e.target.value)} className="px-2 py-1.5 border border-gray-300 rounded-md text-sm bg-white">
-            <option value="">All Categories</option>
+    <div>
+      {/* Toolbar */}
+      <div className="mb-3 space-y-2">
+        <div className="flex items-center gap-3 flex-wrap">
+          <div className="flex rounded-lg bg-gray-100 p-0.5 flex-wrap">
+            <button type="button" onClick={() => setFCat("")} className={segCls(fCat === "")}>
+              All <span className="opacity-50">{preCat.length}</span>
+            </button>
             {MATERIAL_CATEGORIES.map((c) => (
-              <option key={c} value={c}>{CATEGORY_LABELS[c]}</option>
+              <button key={c} type="button" onClick={() => setFCat(c)} className={segCls(fCat === c)}>
+                {CATEGORY_LABELS[c]} <span className="opacity-50">{catCounts[c] ?? 0}</span>
+              </button>
             ))}
-          </select>
-          <select value={fSeason} onChange={(e) => setFSeason(e.target.value)} className="px-2 py-1.5 border border-gray-300 rounded-md text-sm bg-white">
+          </div>
+          <div className="ml-auto relative">
+            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none"><SearchIcon /></span>
+            <input
+              type="text"
+              placeholder="Search name, ID or colour..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-64 pl-8 pr-3 py-1.5 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-300"
+            />
+          </div>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <select value={fSeason} onChange={(e) => setFSeason(e.target.value)} className={selCls} aria-label="Season">
             <option value="">All Seasons</option>
-            {seasons.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            {seasonOrder.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
-          <select value={fSupplier} onChange={(e) => setFSupplier(e.target.value)} className="px-2 py-1.5 border border-gray-300 rounded-md text-sm bg-white">
+          <select value={fSupplier} onChange={(e) => setFSupplier(e.target.value)} className={selCls} aria-label="Supplier">
             <option value="">All Suppliers</option>
             {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
-          <select value={fComp} onChange={(e) => setFComp(e.target.value)} className="px-2 py-1.5 border border-gray-300 rounded-md text-sm bg-white">
+          <select value={fComp} onChange={(e) => setFComp(e.target.value)} className={selCls} aria-label="Composition">
             <option value="">All Compositions</option>
             {COMPOSITION_GROUPS.map((group) => (
               <optgroup key={group.label} label={group.label}>
@@ -387,77 +432,134 @@ export function MaterialsClient({
               </optgroup>
             ))}
           </select>
-
+          <select value={fStatus} onChange={(e) => setFStatus(e.target.value)} className={selCls} aria-label="Status">
+            <option value="">All Status</option>
+            <option value="Complete">Complete</option>
+            <option value="Incomplete">Incomplete</option>
+          </select>
           <div className="flex items-center gap-1 ml-auto">
-            <span className="text-xs text-gray-500">Group:</span>
-            {GROUP_OPTIONS.map((g) => (
-              <button key={g.value} type="button" onClick={() => setGroupMode(g.value)}
-                className={`px-2.5 py-1 text-xs rounded border transition-colors ${
-                  groupMode === g.value
-                    ? "bg-gray-900 text-white border-gray-900"
-                    : "bg-white text-gray-500 border-gray-300 hover:border-gray-500 hover:text-gray-800"
-                }`}>
-                {g.label}
-              </button>
-            ))}
+            <span className="text-xs text-gray-400">Group</span>
+            <div className="flex rounded-lg bg-gray-100 p-0.5">
+              {GROUP_OPTIONS.map((g) => (
+                <button key={g.value} type="button" onClick={() => setGroupMode(g.value)} className={segCls(groupMode === g.value)}>
+                  {g.label}
+                </button>
+              ))}
+            </div>
           </div>
-          <div className="flex items-center gap-1">
-            <span className="text-xs text-gray-500">Sort:</span>
-            <select value={sort} onChange={(e) => setSort(e.target.value as SortKey)} className="px-2 py-1.5 border border-gray-300 rounded-md text-sm bg-white">
-              <option value="name_asc">Name A→Z</option>
-              <option value="name_desc">Name Z→A</option>
-              <option value="category_asc">Category</option>
-            </select>
-          </div>
+          {archivedCount > 0 && (
+            <button onClick={() => setShowArchived((v) => !v)} className="text-xs text-gray-500 hover:text-gray-900 underline">
+              {showArchived ? "Hide archived" : `Show archived (${archivedCount})`}
+            </button>
+          )}
           {hasFilter && (
-            <button onClick={() => { setSearch(""); setFCat(""); setFSeason(""); setFSupplier(""); setFComp(""); }}
+            <button onClick={() => { setSearch(""); setFCat(""); setFSeason(""); setFSupplier(""); setFComp(""); setFStatus(""); }}
               className="text-xs text-gray-400 hover:text-gray-700 underline">Clear</button>
           )}
         </div>
       </div>
 
-      <table className="w-full text-sm">
-        <thead className="bg-gray-50 border-b border-gray-200">
-          <tr>
-            <th className="text-left px-3 py-3 font-medium text-gray-600 w-24">ID</th>
-            <th className="text-left px-3 py-3 font-medium text-gray-600">Season</th>
-            <th className="text-left px-3 py-3 font-medium text-gray-600">Category</th>
-            <th className="text-left px-3 py-3 font-medium text-gray-600 min-w-64">Name</th>
-            <th className="text-left px-3 py-3 font-medium text-gray-600">Colours</th>
-            <th className="text-left px-3 py-3 font-medium text-gray-600">Composition</th>
-            <th className="text-right px-3 py-3 font-medium text-gray-600">Unit Price (¥)</th>
-            <th className="text-right px-3 py-3 font-medium text-gray-600">Set Price (¥)</th>
-            <th className="text-center px-3 py-3 font-medium text-gray-600">Status</th>
-            <th className="px-3 py-3 font-medium text-gray-600"></th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-gray-100">
-          {groupMode === "none"
-            ? filtered.map(renderRow)
-            : grouped.map(([key, rows]) => (
-                <Fragment key={key}>
-                  <tr className="bg-gray-50/80 border-t border-b border-gray-200">
-                    <td colSpan={10} className="px-3 py-1.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                      {key} <span className="text-gray-400 font-normal">({rows.length})</span>
-                    </td>
-                  </tr>
-                  {rows.map(renderRow)}
-                </Fragment>
-              ))}
-          {!filtered.length && (
+      <div className="border border-gray-200 rounded-xl overflow-x-auto bg-white">
+        <table className="w-full text-sm">
+          <thead className="border-b border-gray-200">
             <tr>
-              <td colSpan={10} className="px-4 py-8 text-center text-gray-400 text-sm">
-                {hasFilter ? "No materials match the filters" : "No materials yet"}
-              </td>
+              <th className="px-3 py-2 w-8">
+                <input type="checkbox" aria-label="Select all"
+                  checked={filtered.length > 0 && filtered.every((m) => selected.has(m.id))}
+                  onChange={(e) => setSelected(e.target.checked ? new Set(filtered.map((m) => m.id)) : new Set())}
+                  className="align-middle accent-gray-900" />
+              </th>
+              <th className={th + " text-center w-10"}></th>
+              <th className={sTh + " text-left w-16"} onClick={() => setSortKey("material_number")}>ID{arrow("material_number")}</th>
+              <th className={sTh + " text-left"} onClick={() => setSortKey("category")}>Season / Category{arrow("category")}</th>
+              <th className={sTh + " text-left min-w-56"} onClick={() => setSortKey("name")}>Name{arrow("name")}</th>
+              <th className={th + " text-left"}>Colours</th>
+              <th className={th + " text-left"}>Composition</th>
+              <th className={sTh + " text-right whitespace-nowrap"} onClick={() => setSortKey("unit_price")}>Unit ¥{arrow("unit_price")}</th>
+              <th className={th + " text-right whitespace-nowrap"}>Set ¥</th>
+              <th className={th + " text-center w-16"}>Used in</th>
+              <th className={th + " w-16"}></th>
             </tr>
-          )}
-        </tbody>
-      </table>
-
-      <div className="px-4 py-2 text-xs text-gray-400 border-t border-gray-100">
-        {filtered.length} / {materials.length} items
-        <span className="ml-3 text-gray-300">— prices are the first colour&apos;s; double-click Name / Season / Category / Unit / Set Price to edit, or open Edit for all colours</span>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {groupMode === "none"
+              ? filtered.map(renderRow)
+              : grouped.map(([key, rows]) => (
+                  <Fragment key={key}>
+                    <tr className="bg-gray-50/80 border-t border-b border-gray-200">
+                      <td colSpan={11} className="px-3 py-1.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                        {key} <span className="text-gray-400 font-normal">({rows.length})</span>
+                      </td>
+                    </tr>
+                    {rows.map(renderRow)}
+                  </Fragment>
+                ))}
+            {!filtered.length && (
+              <tr>
+                <td colSpan={11} className="px-4 py-10 text-center text-gray-400 text-sm">
+                  {hasFilter ? "No materials match the filters" : "No materials yet"}
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
       </div>
+
+      <p className="mt-2 text-xs text-gray-400">{filtered.length} of {materials.length} materials — click a row to edit</p>
+
+      <BulkBar
+        count={selected.size}
+        pending={bulkPending}
+        onArchive={() => runBulk(() => bulkArchiveMaterials([...selected], true))}
+        onUnarchive={() => runBulk(() => bulkArchiveMaterials([...selected], false))}
+        onDelete={() => { if (confirm(`Delete ${selected.size} material(s)? This can't be undone.`)) runBulk(() => bulkDeleteMaterials([...selected])); }}
+        onClear={() => setSelected(new Set())}
+      />
+
+      {/* Edit modal (auto-saves) */}
+      {editMat && materialOptions && (
+        <div className="fixed inset-0 z-50 flex items-start justify-center p-4 overflow-y-auto">
+          <div className="absolute inset-0 bg-black/40" onClick={() => { setEditMat(null); router.refresh(); }} />
+          <div className="relative bg-white rounded-xl shadow-xl w-full max-w-2xl my-8">
+            <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100 sticky top-0 bg-white rounded-t-xl">
+              <h2 className="text-sm font-semibold text-gray-900">Edit material · <span className="font-mono text-gray-500">{editMat.material_number ?? "—"}</span></h2>
+              <button type="button" onClick={() => { setEditMat(null); router.refresh(); }} className="text-gray-400 hover:text-gray-900 text-sm">Close ✕</button>
+            </div>
+            <div className="p-5">
+              <MaterialForm
+                action={autosaveMaterial}
+                autoSave
+                suppliers={suppliers}
+                seasons={seasons}
+                pastColors={pastColors}
+                fabricCategoryOptions={materialOptions.fabricCategories}
+                accessoryCategoryOptions={materialOptions.accessoryCategories}
+                unitOptions={materialOptions.units}
+                compositionOptions={materialOptions.compositions}
+                id={editMat.id}
+                initialData={{
+                  name: editMat.name,
+                  category: editMat.category,
+                  unit_price_jpy: editMat.unit_price_jpy,
+                  set_price_jpy: editMat.set_price_jpy,
+                  unit_type: editMat.unit_type,
+                  supplier_id: editMat.supplier_id,
+                  supplier_item_code: editMat.supplier_item_code ?? "",
+                  season_id: editMat.season_id,
+                  color: editMat.color ?? "",
+                  price_uniform: editMat.price_uniform,
+                  colors: editMat.colors.map((c) => ({ color: c.color, unit_price_jpy: c.unitPrice, set_price_jpy: c.setPrice })),
+                  comp_1_label: editMat.comps[0]?.label ?? "", comp_1_pct: editMat.comps[0]?.pct ?? null,
+                  comp_2_label: editMat.comps[1]?.label ?? "", comp_2_pct: editMat.comps[1]?.pct ?? null,
+                  comp_3_label: editMat.comps[2]?.label ?? "", comp_3_pct: editMat.comps[2]?.pct ?? null,
+                  comp_4_label: editMat.comps[3]?.label ?? "", comp_4_pct: editMat.comps[3]?.pct ?? null,
+                  comp_5_label: editMat.comps[4]?.label ?? "", comp_5_pct: editMat.comps[4]?.pct ?? null,
+                }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -8,7 +8,7 @@ export default async function NewOrderPage() {
   const today = new Date().toISOString().split("T")[0];
 
   const [customersResult, seasonsResult] = await Promise.all([
-    supabase.from("customers").select("id, name, currency").order("name"),
+    supabase.from("customers").select("id, name, currency").neq("contract_status", "Archived").order("name"),
     supabase.from("seasons").select("id, name, eur_jpy_rate").order("name"),
   ]);
 
