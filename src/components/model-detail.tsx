@@ -194,6 +194,7 @@ function VersionHistory({ modelId, versions, seasons }: { modelId: string; versi
       {editVer && (
         <ModelVersionEditModal
           versionId={editVer}
+          versionIds={versions.map((v) => v.id)}
           onClose={() => setEditVer(null)}
           onDone={() => { setEditVer(null); router.refresh(); }}
         />

@@ -38,7 +38,7 @@ export function ModelsClient({ models, tagOptions }: { models: ModelRow[]; tagOp
   const [fCat, setFCat] = useState("Coat"); // default category view
   const [showNew, setShowNew] = useState(false);
   const [editing, setEditing] = useState<ModelRow | null>(null);
-  const [editVer, setEditVer] = useState<string | null>(null);
+  const [editVer, setEditVer] = useState<{ id: string; ids: string[] } | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [tagMenuOpen, setTagMenuOpen] = useState(false);
   const [pending, startBulk] = useTransition();
@@ -190,7 +190,7 @@ export function ModelsClient({ models, tagOptions }: { models: ModelRow[]; tagOp
                         {m.versions.length ? (
                           <div className="flex flex-wrap gap-1.5">
                             {m.versions.map((v) => (
-                              <button key={v.id} type="button" onClick={() => setEditVer(v.id)}
+                              <button key={v.id} type="button" onClick={() => setEditVer({ id: v.id, ids: m.versions.map((x) => x.id) })}
                                 className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-md border border-gray-200 bg-white text-gray-600 hover:border-gray-900 hover:text-gray-900">
                                 <span className="font-medium">{v.season}</span>
                                 <span className="text-gray-400">· {v.status}</span>
@@ -255,7 +255,8 @@ export function ModelsClient({ models, tagOptions }: { models: ModelRow[]; tagOp
       )}
       {editVer && (
         <ModelVersionEditModal
-          versionId={editVer}
+          versionId={editVer.id}
+          versionIds={editVer.ids}
           onClose={() => setEditVer(null)}
           onDone={() => { setEditVer(null); router.refresh(); }}
         />
