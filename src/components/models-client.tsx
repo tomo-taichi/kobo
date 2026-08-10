@@ -134,7 +134,6 @@ export function ModelsClient({ models, tagOptions }: { models: ModelRow[]; tagOp
               <th className="text-left px-4 py-2.5 font-medium text-gray-600">Sex</th>
               <th className="text-center px-4 py-2.5 font-medium text-gray-600">Versions</th>
               <th className="text-center px-4 py-2.5 font-medium text-gray-600">Products</th>
-              <th className="text-left px-4 py-2.5 font-medium text-gray-600">Tags</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
@@ -151,8 +150,17 @@ export function ModelsClient({ models, tagOptions }: { models: ModelRow[]; tagOp
                     <td className={`${td} text-gray-400 font-mono text-xs`} title={m.id}>{m.id.slice(0, 8)}</td>
                     <td className={`${td} text-gray-500`}>{m.category}</td>
                     <td className={`${td} text-gray-900`}>
-                      {m.name}
-                      {m.archived && <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-500 align-middle">Archived</span>}
+                      <div className="flex items-center gap-1.5">
+                        <span>{m.name}</span>
+                        {m.archived && <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-500">Archived</span>}
+                      </div>
+                      {m.tags.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-0.5">
+                          {m.tags.map((t) => (
+                            <span key={t} className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-600 whitespace-nowrap">{t}</span>
+                          ))}
+                        </div>
+                      )}
                     </td>
                     <td className={`${td} text-gray-500`}>{m.sexes.length ? m.sexes.join(", ") : "—"}</td>
                     <td className={`${td} text-center`} onClick={(e) => e.stopPropagation()}>
@@ -163,19 +171,11 @@ export function ModelsClient({ models, tagOptions }: { models: ModelRow[]; tagOp
                       </button>
                     </td>
                     <td className={`${td} text-center text-gray-500`}>{m.product_count}</td>
-                    <td className={td} onClick={(e) => e.stopPropagation()}>
-                      <div className="flex flex-wrap gap-1">
-                        {m.tags.map((t) => (
-                          <span key={t} className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-600 whitespace-nowrap">{t}</span>
-                        ))}
-                        {!m.tags.length && <span className="text-gray-300 text-xs">—</span>}
-                      </div>
-                    </td>
                   </tr>
                   {isOpen && (
                     <tr className="bg-gray-50/60">
                       <td></td>
-                      <td colSpan={7} className="px-4 py-2">
+                      <td colSpan={6} className="px-4 py-2">
                         {m.versions.length ? (
                           <div className="flex flex-wrap gap-1.5">
                             {m.versions.map((v) => (
@@ -196,7 +196,7 @@ export function ModelsClient({ models, tagOptions }: { models: ModelRow[]; tagOp
               );
             })}
             {!shown.length && (
-              <tr><td colSpan={8} className="px-4 py-8 text-center text-gray-400 text-sm">{search || fCat ? "No models match" : "No models"}</td></tr>
+              <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-400 text-sm">{search || fCat ? "No models match" : "No models"}</td></tr>
             )}
           </tbody>
         </table>
