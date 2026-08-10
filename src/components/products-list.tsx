@@ -4,6 +4,7 @@ import { Fragment, useState, useMemo, useTransition, useRef, useEffect } from "r
 import { useRouter } from "next/navigation";
 import { duplicateProduct, deleteProduct, bulkArchiveProducts, bulkDeleteProducts, bulkSetProductTag, bulkSetProductFinalized, setProductFinalized, getProductEditData, setProductRetailPrice, setProductMarkup } from "@/app/actions/products";
 import { ProductEditModal } from "@/components/product-edit-modal";
+import { catRank, CATEGORY_ICON } from "@/lib/product-constants";
 
 export type ProductRow = {
   id: string;
@@ -38,18 +39,7 @@ const GROUP_OPTIONS: { value: GroupMode; label: string }[] = [
   { value: "material", label: "By Material" },
 ];
 
-// Fixed display order for the category filter (canonical labels). Anything not
-// listed is appended at the end.
-const CATEGORY_ORDER = [
-  "Coat", "Jacket", "Trousers", "Knitwear", "Shirt", "T-shirt",
-  "Accessories", "Watch", "Eyewear", "Shoes", "Bag", "Other",
-];
-const catRank = (c: string) => { const i = CATEGORY_ORDER.indexOf(c); return i === -1 ? CATEGORY_ORDER.length : i; };
-// Emoji icon per category (tooltip shows the name).
-const CATEGORY_ICON: Record<string, string> = {
-  Coat: "🧥", Jacket: "🥼", Trousers: "👖", Knitwear: "🧶", Shirt: "👔", "T-shirt": "👕",
-  Accessories: "💍", Watch: "⌚", Eyewear: "👓", Shoes: "👟", Bag: "👜", Other: "📦",
-};
+// Category filter display order + icons now live in product-constants (shared with the Models list).
 
 function fmtId(raw: string | null): string {
   if (!raw) return "—";

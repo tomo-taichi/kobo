@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { bulkArchiveModels, bulkDeleteModels, createModel } from "@/app/actions/models";
 import { BulkBar } from "@/components/bulk-bar";
 import { MODEL_CATEGORIES } from "@/lib/model-constants";
+import { CATEGORY_ICON, catRank } from "@/lib/product-constants";
 
 export type ModelRow = {
   id: string;
@@ -28,18 +29,36 @@ export function ModelsClient({ models }: { models: ModelRow[] }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [showArchived, setShowArchived] = useState(false);
   const [search, setSearch] = useState("");
-  const [category, setCategory] = useState("");
+  const [fCat, setFCat] = useState("");
   const [showNew, setShowNew] = useState(false);
   const [pending, startBulk] = useTransition();
 
   const archivedCount = models.filter((m) => m.archived).length;
-  const shown = useMemo(() => {
+
+  // Everything except the category filter → drives live per-category counts.
+  const preCat = useMemo(() => {
     let list = showArchived ? models : models.filter((m) => !m.archived);
-    if (category) list = list.filter((m) => m.category === category);
     const q = search.trim().toLowerCase();
     if (q) list = list.filter((m) => m.name.toLowerCase().includes(q));
     return list;
-  }, [models, showArchived, category, search]);
+  }, [models, showArchived, search]);
+
+  const catCounts = useMemo(() => {
+    const acc: Record<string, number> = {};
+    for (const m of preCat) acc[m.category] = (acc[m.category] ?? 0) + 1;
+    return acc;
+  }, [preCat]);
+  const categories = useMemo(
+    () => Object.keys(catCounts).sort((a, b) => catRank(a) - catRank(b) || a.localeCompare(b)),
+    [catCounts]
+  );
+
+  const shown = useMemo(
+    () => (fCat ? preCat.filter((m) => m.category === fCat) : preCat),
+    [preCat, fCat]
+  );
+  const seg = (active: boolean) =>
+    `px-3 py-1 text-sm rounded-md transition-colors ${active ? "bg-white shadow-sm text-gray-900 font-medium" : "text-gray-500 hover:text-gray-700"}`;
 
   const toggle = (id: string) =>
     setSelected((p) => { const n = new Set(p); if (n.has(id)) n.delete(id); else n.add(id); return n; });
@@ -57,6 +76,18 @@ export function ModelsClient({ models }: { models: ModelRow[] }) {
   return (
     <div>
       <div className="mb-3 flex items-center gap-3 flex-wrap">
+        {/* Category filter — icon segmented control (matches the Products list) */}
+        <div className="flex rounded-lg bg-gray-100 p-0.5 flex-wrap">
+          <button type="button" onClick={() => setFCat("")} className={seg(fCat === "")} title="All categories">
+            All <span className="opacity-50">{preCat.length}</span>
+          </button>
+          {categories.map((c) => (
+            <button key={c} type="button" onClick={() => setFCat(c)} className={seg(fCat === c) + " flex items-center gap-1"} title={c} aria-label={c}>
+              <span className="text-base leading-none">{CATEGORY_ICON[c] ?? "🏷"}</span>
+              <span className="opacity-50 text-xs">{catCounts[c] ?? 0}</span>
+            </button>
+          ))}
+        </div>
         <div className="relative">
           <span className="absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none"><SearchIcon /></span>
           <input
@@ -67,17 +98,6 @@ export function ModelsClient({ models }: { models: ModelRow[] }) {
             className="w-64 pl-8 pr-3 py-1.5 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-300"
           />
         </div>
-        <select
-          value={category}
-          onChange={(e) => setCategory(e.target.value)}
-          className="px-2 py-1.5 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-gray-900/10"
-        >
-          <option value="">All Categories</option>
-          {MODEL_CATEGORIES.map((c) => (
-            <option key={c} value={c}>{c}</option>
-          ))}
-        </select>
-        <span className="text-xs text-gray-400">{shown.length} of {models.length}</span>
         {archivedCount > 0 && (
           <button onClick={() => setShowArchived((v) => !v)} className="text-xs text-gray-500 hover:text-gray-900 underline">
             {showArchived ? "Hide archived" : `Show archived (${archivedCount})`}
@@ -126,7 +146,7 @@ export function ModelsClient({ models }: { models: ModelRow[] }) {
               );
             })}
             {!shown.length && (
-              <tr><td colSpan={5} className="px-4 py-8 text-center text-gray-400 text-sm">{search || category ? "No models match" : "No models"}</td></tr>
+              <tr><td colSpan={5} className="px-4 py-8 text-center text-gray-400 text-sm">{search || fCat ? "No models match" : "No models"}</td></tr>
             )}
           </tbody>
         </table>
