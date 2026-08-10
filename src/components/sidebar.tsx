@@ -34,7 +34,7 @@ const BRAND_LINKS = [
   { href: "/seasons", label: "Seasons", icon: "calendar" },
   { href: "/materials", label: "Materials", icon: "layers", sub: [{ href: "/suppliers", label: "Suppliers" }] },
   { href: "/customers", label: "Customers", icon: "users" },
-  { href: "/products", label: "Products", icon: "tag" },
+  { href: "/products", label: "Products", icon: "tag", sub: [{ href: "/models", label: "Models" }] },
   { href: "/orders", label: "Orders", icon: "receipt" },
   { href: "/settings", label: "Settings", icon: "cog" },
 ];
