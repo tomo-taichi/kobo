@@ -119,18 +119,48 @@ export function ModelVersionEditModal({
   );
 }
 
+// Colour picker for a material row. No "no colour" option: a single-colour material is
+// auto-selected upstream; a multi-colour material shows a disabled "Colour…" prompt until chosen.
+function MaterialColorSelect({
+  colors,
+  value,
+  disabled,
+  onChange,
+}: {
+  colors: { id: string; color: string }[];
+  value: string | null;
+  disabled: boolean;
+  onChange: (v: string | null) => void;
+}) {
+  if (!colors.length) return <select disabled className={inputCls + " w-32"}><option>—</option></select>;
+  return (
+    <select value={value ?? ""} disabled={disabled} onChange={(e) => onChange(e.target.value || null)} className={inputCls + " w-32"}>
+      {value == null && colors.length > 1 && <option value="" disabled>Colour…</option>}
+      {colors.map((c) => (<option key={c.id} value={c.id}>{c.color}</option>))}
+    </select>
+  );
+}
+
 function VersionEditorBody({ bundle, onClose, onDone }: { bundle: ModelVersionEditBundle; onClose: () => void; onDone: () => void }) {
   const { data, materials, laborRate } = bundle;
   const readOnly = data.status !== "active";
   const matById = useMemo(() => new Map(materials.map((m) => [m.id, m])), [materials]);
   const setPriceOf = (id: string) => Number(matById.get(id)?.set_price_jpy ?? 0);
+  // A material with exactly one colour is auto-selected; otherwise keep the stored colour.
+  const colorFor = (materialId: string, current: string | null): string | null => {
+    if (current) return current;
+    const cs = matById.get(materialId)?.colors ?? [];
+    return cs.length === 1 ? cs[0].id : null;
+  };
 
   const initialLining = data.materials.find((m) => m.role === "lining");
   const [lining, setLining] = useState<Lining>(
-    initialLining ? { material_id: initialLining.material_id, material_color_id: initialLining.material_color_id, usage_amount: initialLining.usage_amount } : null
+    initialLining
+      ? { material_id: initialLining.material_id, material_color_id: colorFor(initialLining.material_id, initialLining.material_color_id), usage_amount: initialLining.usage_amount }
+      : null
   );
   const [rows, setRows] = useState<Row[]>(() =>
-    data.materials.filter((m) => m.role !== "lining").map((m) => ({ key: newRowKey(), ...m }))
+    data.materials.filter((m) => m.role !== "lining").map((m) => ({ key: newRowKey(), ...m, material_color_id: colorFor(m.material_id, m.material_color_id) }))
   );
   const [sizes, setSizes] = useState<Set<string>>(() => new Set(data.orderableSizes));
   const [accessory, setAccessory] = useState(data.accessoryComposition);
@@ -151,8 +181,9 @@ function VersionEditorBody({ bundle, onClose, onDone }: { bundle: ModelVersionEd
   const removeRow = (key: string) => setRows((rs) => rs.filter((r) => r.key !== key));
   const addRow = () => setRows((rs) => [...rs, { key: newRowKey(), role: OTHER_ROLES[0], material_id: "", material_color_id: null, usage_amount: 0 }]);
   const pickMaterial = (m: PickableMaterial) => {
-    if (pickingKey === "lining") setLining((l) => ({ material_id: m.id, material_color_id: null, usage_amount: l?.usage_amount ?? 0 }));
-    else if (pickingKey) updateRow(pickingKey, { material_id: m.id, material_color_id: null });
+    const autoColor = m.colors && m.colors.length === 1 ? m.colors[0].id : null; // single colour → auto-select
+    if (pickingKey === "lining") setLining((l) => ({ material_id: m.id, material_color_id: autoColor, usage_amount: l?.usage_amount ?? 0 }));
+    else if (pickingKey) updateRow(pickingKey, { material_id: m.id, material_color_id: autoColor });
   };
   const toggleSize = (s: string) => setSizes((p) => { const n = new Set(p); if (n.has(s)) n.delete(s); else n.add(s); return n; });
   const catPreset = (k: ManufacturingCostKey) => MANUFACTURING_HOUR_PRESETS[k][data.category as ManufacturingCategory] ?? 0;
@@ -229,11 +260,8 @@ function VersionEditorBody({ bundle, onClose, onDone }: { bundle: ModelVersionEd
                 <span className="text-gray-400">Select material…</span>
               )}
             </button>
-            <select value={lining.material_color_id ?? ""} disabled={readOnly || !liningColors.length}
-              onChange={(e) => setLining((l) => (l ? { ...l, material_color_id: e.target.value || null } : l))} className={inputCls + " w-32"}>
-              <option value="">{liningColors.length ? "(no colour)" : "—"}</option>
-              {liningColors.map((c) => (<option key={c.id} value={c.id}>{c.color}</option>))}
-            </select>
+            <MaterialColorSelect colors={liningColors} value={lining.material_color_id} disabled={readOnly}
+              onChange={(v) => setLining((l) => (l ? { ...l, material_color_id: v } : l))} />
             <input type="number" step="0.01" min="0" value={lining.usage_amount} disabled={readOnly}
               onChange={(e) => setLining((l) => (l ? { ...l, usage_amount: Number(e.target.value) } : l))} className={inputCls + " w-24 text-right"} />
             <span className="text-xs text-gray-400 w-12">{liningMat?.unit_type ?? ""}</span>
@@ -267,11 +295,8 @@ function VersionEditorBody({ bundle, onClose, onDone }: { bundle: ModelVersionEd
                     <span className="text-gray-400">Select material…</span>
                   )}
                 </button>
-                <select value={row.material_color_id ?? ""} disabled={readOnly || !colors.length}
-                  onChange={(e) => updateRow(row.key, { material_color_id: e.target.value || null })} className={inputCls + " w-32"}>
-                  <option value="">{colors.length ? "(no colour)" : "—"}</option>
-                  {colors.map((c) => (<option key={c.id} value={c.id}>{c.color}</option>))}
-                </select>
+                <MaterialColorSelect colors={colors} value={row.material_color_id} disabled={readOnly}
+                  onChange={(v) => updateRow(row.key, { material_color_id: v })} />
                 <input type="number" step="0.01" min="0" value={row.usage_amount} disabled={readOnly}
                   onChange={(e) => updateRow(row.key, { usage_amount: Number(e.target.value) })} className={inputCls + " w-24 text-right"} />
                 <span className="text-xs text-gray-400 w-12">{mat?.unit_type ?? ""}</span>
