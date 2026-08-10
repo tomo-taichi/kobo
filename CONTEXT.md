@@ -22,6 +22,7 @@ taichimurakami ブランドの商品管理・受注管理・書類発行・量�
     8. **状態遷移は Deprecate / 復帰のみ**（`setModelVersionStatus`。復帰の既定は `deprecated→frozen`、`active` へ戻すのは同 season に active が無い時のみ）。freeze は Phase 4 の batch 連動、影響 Product 警告は Phase 6。
   - **Phase 2 の非対象**（別フェーズ）: version→Product の live 読み替え・即時反映（Phase 3/4。Phase 2 は master レコード編集に留まる）、作成フロー Season→Model→Version→メイン素材と Product 側 Model 詳細セクション（Phase 3）、素材コスト伝播・staleness（Phase 4）、Retail ガイド更新・OC out-of-date（Phase 5）、Deprecate 時の影響 Product 警告一覧（Phase 6）。
   - **以降**: Phase 3（作成フロー・Product の Model 詳細セクション）→ Phase 4（version 読み替え・cost 伝播・staleness）→ Phase 5（Retail ガイド更新）→ Phase 6（Deprecation UX）。
+- **技術的負債（スコープ外・いつか別途対応）**: リポジトリ全体で `eslint` 218 errors のベースライン（大半は `as any` 由来の `@typescript-eslint/no-explicit-any`）。build は eslint を gate しないため、当面のコード変更の受け入れ基準は **tsc + build + vitest**（＋新規 lint エラーを増やさない）。
 
 ## 認証
 
