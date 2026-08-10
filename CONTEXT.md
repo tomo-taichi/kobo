@@ -64,12 +64,33 @@ _Avoid_: 言語を currency から導出すること（明示の language 設定
 受注確認書。商品リスト（Product名・カラー・数量）と価格を表示。**B2B は Retail（参考）と Wholesale の両方**、**B2C は Retail のみ**（Wholesale 非表示）。Deposit 金額も記載。本文言語は Document Language に従う。
 
 **Model**:
-アイテムの型。カテゴリ（coat/jacket など）と性別（men/women/unisex）を持つマスターデータ。285件。1つの Model から複数の Product が派生する。
-_Avoid_: Item type, Template
+アイテムの型（例: Mountain Parka）。**identity = (name, category)**（同名でも category が違えば別 Model。sex は identity に含めない）。1つの Model から複数の Product が派生する。**category は Model が持ち Product は継承**。**sex は Product 側**が持つ（Model では扱わない）。**構成情報**——メイン以外の Material とその用尺（Lining 含む）・Orderable Sizes・Accessories Composition——を **Model Version** 側で共有管理する。ただし例外が2つ（**Tags** と **Manufacturing cost**）：どちらも Model の値を **Product 作成時に初期値としてコピー**（beginning setup）し、以後は **Product 側で独立に編集**する（実際のメイン素材に応じて調整）。Model 側の値は既定テンプレートとして残り、コピー後の Model 編集は既存 Product に波及しない。Tags は Product ごとに追加・削除できる。Product はそれ以外（Season・メイン素材とその用尺・カラー・価格など）を持つ。構成は時間とともに小改良されるため **Model Version** で版管理する。
+_Avoid_: Item type
+
+**Model Version**:
+同一 Model の構成の「版」。Model 名は変えずに一部仕様（例: ポケット仕様）を改訂した各世代。各 Product は 1 つの Model Version を参照し、どの版を使っているか追跡できる。状態：
+- **Active**: 編集可能。編集は同版を参照する**量産前 Product に即時反映（ライブ）**。新規 Product の既定版。
+- **Frozen**: 凍結。ある Product の **ProductionBatch 生成（量産開始）** 時に、その版が凍結される。以後その版は編集不可。
+- **Deprecated**: 手動。新規 Product では選択不可だが履歴として保持。
+
+凍結後に構成を変えるときは**新しい Version を作成**（copy-forward）し、今後の Product にのみ適用する（量産中 Product は凍結版のまま）。**量産中への反映は自動では行わず**、必要時のみ手動で新版を該当 Batch に適用し、影響する MaterialOrder を「要再確認」としてフラグする（最終発注数は手入力のため）。構成は Version で共有するが、**金額（原価・卸/上代）は Product 側に確定値として保持**し、Model 編集で過去 Product の価格は自動変更されない（→ ADR-0011）。非メイン素材は通常 `ALLSS` の**特定レコードに束縛**し、価格はそのレコード値（season 非依存）。**Version は (Model, Season) で一意**——1 つの Season につき最大 1 版で、同一 Season に複数版は作れない。よって版の履歴＝シーズンの並び。新しい Season の版は直前の版から **copy-forward** で作成する。Product は自身の **production season** を持ち、構成が変わらない限り旧 Version を再利用する（`Product.season ≥ Version.season`、構成を変えた新 Season のみ新 Version を作る）。各 Version は**前版からの変更点を記す memo（changelog）**を持つ。
 
 **Product**:
-実際の商品。特定の Season・素材・カラー・価格を持つ。2,966件。全商品の83%は既存 Product の Duplicate（複製）で作成される。
+実際の商品。特定の Season・（メイン）素材・カラー・価格を持ち、1つの Model（の Version）から派生する。全商品の大半は既存 Product の Duplicate（複製）で作成される。
 _Avoid_: Item（UIラベルとしては使うが、エンティティ名は Product）
+
+**Retail Price（採用小売価格）**:
+Product（カラー単位）の採用小売価格。**ロックはしない**。各価格の横に**販売数**（その価格で Order に追加された数量）を表示する。既存 Order で使われている価格を変更しようとすると**確認ポップアップ**を出す（該当 Order を一覧表示し「以下の Order の価格も更新しますか？」Yes / No）：
+- **Yes** → 該当 Order の価格（`order_items`）を更新する。該当 Order の **OC が発行済みなら、OC 生成セクションに「Alert」アイコン**を表示し「OC が最新でない可能性」を知らせる。
+- **No** → 既存 Order は据え置き、**新しい価格を追加**して以降の新規 Order に使う（実質の価格版管理）。
+
+既存 Order は発注時に `order_items` に価格を確定済み（過去は原則不変。Yes を選んだ場合のみ明示的に更新される）。
+
+**Cost Finalised（原価確定フラグ）**:
+従来の「cost lock」を**フラグ**に置き換えたもの。**量産開始（ProductionBatch 生成）で自動的に cost-finalised** となり、以降その Product の原価は Material set cost の更新に影響されない（スナップショット固定 → Q10 の (Q)）。ハードな編集ロックではなく、ステータス表示＋自動再計算の抑制として働く（必要に応じ手動で finalise / 解除）。
+
+**Staleness flag（陳腐化フラグ）**:
+Product に表示する可視化フラグ。**old version** = 参照する Model Version が最新でない。**old price** = 確定原価が、その後更新された Material set cost（メイン素材・モデル素材のいずれか）を反映していない。いずれも**自動更新はせず**、「今すぐ更新するか次回からにするか」をユーザーが判断するための表示（手動＋フラグ方針）。
 
 **Sample**:
 `is_sample=true` の Product。受注会で実物を展示するサンプル商品。通常通り Order に追加できる。
@@ -81,7 +102,7 @@ _Avoid_: Item（UIラベルとしては使うが、エンティティ名は Prod
 既存 Product を複製して新しい Product を作る操作。全商品の83%がこの方法で作成される。`duplicated_from` は「どこからコピーしたか」という履歴のみで、複製元との継続的な同期関係はない。
 
 **Material**:
-原材料の総称。Fabric と Accessory Material の2つのサブタイプがある。
+原材料の総称。Fabric と Accessory Material の2つのサブタイプがある。価格は**レコード単位**で持ち、`season_id` は主に**検索・絞り込み用のフラグ**（同一アイテムがシーズン別に別レコードとして登録され得る）。量産で本当に重要なのは Material の season ではなく **Order の season**。非メイン素材（Lining / 芯地 / 付属など）は通常 season 非依存で `ALLSS` に登録する。raw cost（`unit_price_jpy`）と set cost（`set_price_jpy`）は**同一レコードを上書き更新**する（値上がり時も複製しない）。set cost が原価計算に使われ、更新すると **Model と量産前 Product の原価・Ideal WS が再計算**される。**cost-finalised（量産開始済み）Product はスナップショット固定**で影響を受けない。**採用済み Final Retail は据え置き**（自動変更しない）。（→ ADR-0011）
 _Avoid_: 素材（日本語 UI ラベルとしては使うが、エンティティ名は Material）
 
 **Fabric**:
