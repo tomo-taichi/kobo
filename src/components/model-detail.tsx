@@ -4,6 +4,7 @@ import { useActionState, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { updateModel, setModelTags, createModelVersionCopyForward } from "@/app/actions/models";
+import { ModelVersionEditModal } from "@/components/model-version-editor";
 import { MODEL_CATEGORIES, MODEL_VERSION_STATUS_LABELS, type ModelVersionStatus } from "@/lib/model-constants";
 
 export type VersionRow = {
@@ -141,6 +142,7 @@ function DefaultTags({ modelId, initial, options }: { modelId: string; initial: 
 function VersionHistory({ modelId, versions, seasons }: { modelId: string; versions: VersionRow[]; seasons: { id: string; name: string }[] }) {
   const router = useRouter();
   const [showCopy, setShowCopy] = useState(false);
+  const [editVer, setEditVer] = useState<string | null>(null);
   const td = "px-4 py-2.5";
   return (
     <div>
@@ -164,7 +166,7 @@ function VersionHistory({ modelId, versions, seasons }: { modelId: string; versi
           </thead>
           <tbody className="divide-y divide-gray-100">
             {versions.map((v) => (
-              <tr key={v.id} onClick={() => router.push(`/models/${modelId}/versions/${v.id}/edit`)} className="cursor-pointer hover:bg-gray-50">
+              <tr key={v.id} onClick={() => setEditVer(v.id)} className="cursor-pointer hover:bg-gray-50">
                 <td className={`${td} text-gray-900`}>{v.season}</td>
                 <td className={td}><StatusBadge status={v.status} /></td>
                 <td className={`${td} text-center text-gray-500`}>{v.product_count}</td>
@@ -180,7 +182,22 @@ function VersionHistory({ modelId, versions, seasons }: { modelId: string; versi
           </tbody>
         </table>
       </div>
-      {showCopy && <CopyForwardModal modelId={modelId} versions={versions} seasons={seasons} onClose={() => setShowCopy(false)} />}
+      {showCopy && (
+        <CopyForwardModal
+          modelId={modelId}
+          versions={versions}
+          seasons={seasons}
+          onClose={() => setShowCopy(false)}
+          onCreated={(id) => { setShowCopy(false); router.refresh(); setEditVer(id); }}
+        />
+      )}
+      {editVer && (
+        <ModelVersionEditModal
+          versionId={editVer}
+          onClose={() => setEditVer(null)}
+          onDone={() => { setEditVer(null); router.refresh(); }}
+        />
+      )}
     </div>
   );
 }
@@ -190,11 +207,13 @@ function CopyForwardModal({
   versions,
   seasons,
   onClose,
+  onCreated,
 }: {
   modelId: string;
   versions: VersionRow[];
   seasons: { id: string; name: string }[];
   onClose: () => void;
+  onCreated: (versionId: string) => void;
 }) {
   // Default source = the latest version (list is sorted ascending by season).
   const [sourceId, setSourceId] = useState(versions.length ? versions[versions.length - 1].id : "");
@@ -203,8 +222,9 @@ function CopyForwardModal({
 
   const create = () =>
     start(async () => {
-      const err = await createModelVersionCopyForward(modelId, seasonId, sourceId);
-      if (err) alert(err); // success redirects to the new version's editor
+      const res = await createModelVersionCopyForward(modelId, seasonId, sourceId);
+      if ("error" in res) alert(res.error);
+      else onCreated(res.versionId); // opens the new version's edit popup
     });
 
   return (

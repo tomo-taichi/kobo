@@ -1,8 +1,7 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
-import Link from "next/link";
-import { updateModelVersion } from "@/app/actions/models";
+import { useEffect, useMemo, useState, useTransition } from "react";
+import { getModelVersionEditData, updateModelVersion, deleteModelVersion } from "@/app/actions/models";
 import { MaterialPickerModal, type PickableMaterial } from "@/components/material-picker";
 import {
   MODEL_VERSION_MATERIAL_ROLES,
@@ -21,12 +20,7 @@ import {
 } from "@/lib/presets";
 import { calcMfgAmountFromHours } from "@/lib/pricing";
 
-// Monotonic client-only counter for stable React keys on dynamic material rows.
-let ROW_SEQ = 0;
-const newRowKey = () => `r${ROW_SEQ++}`;
-
 export type VersionEditData = {
-  modelId: string;
   modelName: string;
   category: string;
   versionId: string;
@@ -37,23 +31,72 @@ export type VersionEditData = {
   accessoryComposition: string;
   minutes: { cutting: number; sewing: number; knitting: number; thread: number; finish: number; packing: number };
   materials: { role: string; material_id: string; material_color_id: string | null; usage_amount: number }[];
+  productCount: number;
 };
+export type ModelVersionEditBundle = { data: VersionEditData; materials: PickableMaterial[]; laborRate: number };
 
 type Row = { key: string; role: string; material_id: string; material_color_id: string | null; usage_amount: number };
 
+let ROW_SEQ = 0;
+const newRowKey = () => `r${ROW_SEQ++}`;
 const MFG_KEYS: ManufacturingCostKey[] = ["cutting", "sewing", "knitting", "thread", "finish", "packing"];
 const fmt = (n: number) => n.toLocaleString();
 const inputCls = "px-2 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-gray-900 disabled:bg-gray-50 disabled:text-gray-400";
 
-export function ModelVersionEditor({
-  data,
-  materials,
-  laborRate,
+// Self-contained popup: fetches the version bundle on open, renders the editor.
+export function ModelVersionEditModal({
+  versionId,
+  onClose,
+  onDone,
 }: {
-  data: VersionEditData;
-  materials: PickableMaterial[];
-  laborRate: number;
+  versionId: string;
+  onClose: () => void;
+  onDone: () => void;
 }) {
+  const [bundle, setBundle] = useState<ModelVersionEditBundle | null>(null);
+  const [missing, setMissing] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    getModelVersionEditData(versionId).then((b) => {
+      if (!alive) return;
+      if (b) setBundle(b as ModelVersionEditBundle);
+      else setMissing(true);
+    });
+    return () => { alive = false; };
+  }, [versionId]);
+
+  const statusLabel = bundle
+    ? MODEL_VERSION_STATUS_LABELS[bundle.data.status as ModelVersionStatus] ?? bundle.data.status
+    : "";
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center p-3 sm:p-4 overflow-y-auto">
+      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+      <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-3xl my-4">
+        <div className="flex items-center justify-between gap-3 px-5 py-3 border-b border-gray-200 sticky top-0 bg-white rounded-t-xl z-10">
+          <h2 className="text-sm font-semibold text-gray-900 truncate">
+            {bundle ? `${bundle.data.modelName} · ${bundle.data.season} version` : "Version"}
+            {bundle && <span className="ml-2 text-[11px] px-2 py-0.5 rounded-full font-medium bg-gray-100 text-gray-600">{statusLabel}</span>}
+          </h2>
+          <button type="button" onClick={onClose} className="text-gray-400 hover:text-gray-900 text-sm shrink-0">Close ✕</button>
+        </div>
+        <div className="p-4 sm:p-5">
+          {missing ? (
+            <p className="text-sm text-gray-500 py-8 text-center">Version not found.</p>
+          ) : !bundle ? (
+            <p className="text-sm text-gray-400 py-8 text-center">Loading…</p>
+          ) : (
+            <VersionEditorBody bundle={bundle} onClose={onClose} onDone={onDone} />
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function VersionEditorBody({ bundle, onClose, onDone }: { bundle: ModelVersionEditBundle; onClose: () => void; onDone: () => void }) {
+  const { data, materials, laborRate } = bundle;
   const readOnly = data.status !== "active";
   const matById = useMemo(() => new Map(materials.map((m) => [m.id, m])), [materials]);
 
@@ -71,6 +114,7 @@ export function ModelVersionEditor({
   const [changelog, setChangelog] = useState(data.changelog);
   const [pickingKey, setPickingKey] = useState<string | null>(null);
   const [pending, start] = useTransition();
+  const [deleting, startDelete] = useTransition();
 
   const updateRow = (key: string, patch: Partial<Row>) =>
     setRows((rs) => rs.map((r) => (r.key === key ? { ...r, ...patch } : r)));
@@ -110,29 +154,35 @@ export function ModelVersionEditor({
           usage_amount: r.usage_amount,
         })),
       });
-      if (err) alert(err); // success redirects to /models/[id]
+      if (err) alert(err);
+      else onDone();
     });
   };
 
-  const statusLabel = MODEL_VERSION_STATUS_LABELS[data.status as ModelVersionStatus] ?? data.status;
+  const del = () => {
+    if (data.productCount > 0) {
+      alert(`This version is used by ${data.productCount} product(s) and can't be deleted.`);
+      return;
+    }
+    if (!confirm(`Delete this ${data.season} version? This can't be undone.`)) return;
+    startDelete(async () => {
+      const err = await deleteModelVersion(data.versionId);
+      if (err) alert(err);
+      else onDone();
+    });
+  };
 
   return (
-    <div className="space-y-6 max-w-4xl">
-      <Link href={`/models/${data.modelId}`} className="text-sm text-gray-500 hover:text-gray-900">← {data.modelName}</Link>
-      <div className="flex items-center gap-3">
-        <h1 className="text-2xl font-semibold text-gray-900">{data.season} version</h1>
-        <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-gray-100 text-gray-600">{statusLabel}</span>
-      </div>
-
+    <div className="space-y-5">
       {readOnly && (
         <div className="bg-amber-50 border border-amber-200 text-amber-800 rounded-lg px-4 py-3 text-sm">
-          This version is <b>{statusLabel}</b> and read-only. To change the recipe, create a new version (copy-forward) from the model page.
+          This version is read-only. To change the recipe, create a new version (copy-forward) from the model page.
         </div>
       )}
 
       {/* ── Non-main materials ── */}
-      <section className="bg-white border border-gray-200 rounded-xl p-4">
-        <h2 className="text-sm font-medium text-gray-700 mb-1">Non-main materials &amp; 用尺</h2>
+      <section>
+        <h3 className="text-sm font-medium text-gray-700 mb-1">Non-main materials &amp; 用尺</h3>
         <p className="text-[11px] text-gray-400 mb-3">Shared recipe (lining, interfacing, accessories…). The main material stays on each Product.</p>
         <div className="space-y-2">
           {rows.map((row) => {
@@ -175,10 +225,10 @@ export function ModelVersionEditor({
       </section>
 
       {/* ── Orderable sizes ── */}
-      <section className="bg-white border border-gray-200 rounded-xl p-4">
-        <h2 className="text-sm font-medium text-gray-700 mb-3">Orderable sizes</h2>
+      <section>
+        <h3 className="text-sm font-medium text-gray-700 mb-2">Orderable sizes</h3>
         {!readOnly && (
-          <div className="flex flex-wrap gap-1.5 mb-3">
+          <div className="flex flex-wrap gap-1.5 mb-2">
             {ORDERABLE_SIZE_PRESETS.map((p) => (
               <button key={p.key} type="button" onClick={() => setSizes(new Set(p.sizes))}
                 className="px-2.5 py-1 rounded-full border border-gray-300 text-xs text-gray-600 hover:border-gray-900 hover:text-gray-900">{p.label}</button>
@@ -199,8 +249,8 @@ export function ModelVersionEditor({
       </section>
 
       {/* ── Accessory composition ── */}
-      <section className="bg-white border border-gray-200 rounded-xl p-4">
-        <h2 className="text-sm font-medium text-gray-700 mb-3">Accessory composition</h2>
+      <section>
+        <h3 className="text-sm font-medium text-gray-700 mb-2">Accessory composition</h3>
         <select value={accessory} disabled={readOnly} onChange={(e) => setAccessory(e.target.value)} className={inputCls + " w-full max-w-md"}>
           <option value="">None</option>
           {ACCESSORY_COMPOSITIONS.map((a) => (<option key={a} value={a}>{a}</option>))}
@@ -209,9 +259,9 @@ export function ModelVersionEditor({
       </section>
 
       {/* ── Manufacturing template ── */}
-      <section className="bg-white border border-gray-200 rounded-xl p-4">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-sm font-medium text-gray-700">Manufacturing template <span className="text-gray-400">(hours × ¥{fmt(laborRate)}/h)</span></h2>
+      <section>
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="text-sm font-medium text-gray-700">Manufacturing template <span className="text-gray-400">(hours × ¥{fmt(laborRate)}/h)</span></h3>
           {!readOnly && (
             <button type="button" onClick={() => setHours({ cutting: catPreset("cutting"), sewing: catPreset("sewing"), knitting: catPreset("knitting"), thread: catPreset("thread"), finish: catPreset("finish"), packing: catPreset("packing") })}
               className="text-xs px-3 py-1.5 rounded-md border border-gray-300 text-gray-600 hover:bg-gray-50">Apply {data.category} presets</button>
@@ -228,26 +278,32 @@ export function ModelVersionEditor({
             </div>
           ))}
         </div>
-        <p className="mt-3 text-xs text-gray-500">Total: {formatHours(totalHours)}h · ¥{fmt(totalYen)}</p>
+        <p className="mt-2 text-xs text-gray-500">Total: {formatHours(totalHours)}h · ¥{fmt(totalYen)}</p>
       </section>
 
       {/* ── Changelog ── */}
-      <section className="bg-white border border-gray-200 rounded-xl p-4">
-        <h2 className="text-sm font-medium text-gray-700 mb-1">Changelog</h2>
-        <p className="text-[11px] text-gray-400 mb-3">What changed from the previous version.</p>
-        <textarea value={changelog} disabled={readOnly} onChange={(e) => setChangelog(e.target.value)} rows={3}
-          className={inputCls + " w-full"} placeholder="e.g. Slimmer sleeve, added pocket facing" />
+      <section>
+        <h3 className="text-sm font-medium text-gray-700 mb-1">Changelog</h3>
+        <textarea value={changelog} disabled={readOnly} onChange={(e) => setChangelog(e.target.value)} rows={2}
+          className={inputCls + " w-full"} placeholder="What changed from the previous version" />
       </section>
 
-      {!readOnly && (
-        <div className="flex gap-2">
-          <button type="button" onClick={save} disabled={pending}
-            className="px-5 py-2 bg-gray-900 text-white text-sm rounded-md hover:bg-gray-700 disabled:opacity-50">
-            {pending ? "Saving..." : "Save version"}
-          </button>
-          <Link href={`/models/${data.modelId}`} className="px-5 py-2 text-sm rounded-md border border-gray-300 text-gray-600 hover:bg-gray-50">Cancel</Link>
+      {/* ── Footer ── */}
+      <div className="flex items-center justify-between pt-1 border-t border-gray-100 -mx-1 px-1">
+        <button type="button" onClick={del} disabled={deleting}
+          className="text-sm text-red-600 hover:text-red-700 disabled:opacity-50 pt-3" title={data.productCount > 0 ? `Used by ${data.productCount} product(s)` : undefined}>
+          {deleting ? "Deleting…" : "Delete version"}
+        </button>
+        <div className="flex gap-2 pt-3">
+          <button type="button" onClick={onClose} className="px-4 py-2 text-sm rounded-md border border-gray-300 text-gray-600 hover:bg-gray-50">Cancel</button>
+          {!readOnly && (
+            <button type="button" onClick={save} disabled={pending}
+              className="px-5 py-2 bg-gray-900 text-white text-sm rounded-md hover:bg-gray-700 disabled:opacity-50">
+              {pending ? "Saving..." : "Save version"}
+            </button>
+          )}
         </div>
-      )}
+      </div>
 
       {pickingKey && <MaterialPickerModal materials={materials} onSelect={pickMaterial} onClose={() => setPickingKey(null)} />}
     </div>

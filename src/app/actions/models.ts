@@ -4,6 +4,101 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { MODEL_CATEGORIES, MODEL_VERSION_MATERIAL_ROLES, type ModelVersionMaterialRole } from "@/lib/model-constants";
+import type { ModelVersionEditBundle } from "@/components/model-version-editor";
+
+// Shared with the version editor: one materials query covering picker + colours + set price.
+const MV_MATERIAL_SELECT =
+  "id, name, color, category, material_number, set_price_jpy, unit_type, " +
+  "comp_1_label, comp_1_pct, comp_2_label, comp_2_pct, comp_3_label, comp_3_pct, " +
+  "comp_4_label, comp_4_pct, comp_5_label, comp_5_pct, " +
+  "colors:material_colors(id, color), seasons(name)";
+
+// Load everything the version-edit popup needs (version recipe + materials catalogue +
+// labor rate). Returns null when the version doesn't exist.
+export async function getModelVersionEditData(versionId: string): Promise<ModelVersionEditBundle | null> {
+  const supabase = await createClient();
+  const { data: version } = await supabase
+    .from("model_versions")
+    .select(
+      "id, model_id, status, changelog, orderable_sizes, accessory_composition, " +
+        "cutting_minutes, sewing_minutes, knitting_minutes, thread_minutes, finish_minutes, packing_minutes, seasons(name)"
+    )
+    .eq("id", versionId)
+    .single();
+  if (!version) return null;
+  const v = version as unknown as {
+    id: string; model_id: string; status: string; changelog: string | null;
+    orderable_sizes: string[] | null; accessory_composition: string | null;
+    cutting_minutes: number; sewing_minutes: number; knitting_minutes: number;
+    thread_minutes: number; finish_minutes: number; packing_minutes: number;
+    seasons: { name: string } | { name: string }[] | null;
+  };
+
+  const [{ data: model }, { data: matRows }, { data: materials }, { data: settings }, { count: productCount }] =
+    await Promise.all([
+      supabase.from("models").select("id, name, category").eq("id", v.model_id).single(),
+      supabase
+        .from("model_version_materials")
+        .select("role, material_id, material_color_id, usage_amount, sort_order")
+        .eq("model_version_id", versionId)
+        .order("sort_order"),
+      supabase.from("materials").select(MV_MATERIAL_SELECT).order("name"),
+      supabase.from("company_settings").select("labor_rate_jpy_per_hour").single(),
+      supabase.from("products").select("id", { count: "exact", head: true }).eq("model_version_id", versionId),
+    ]);
+  if (!model) return null;
+  const m = model as unknown as { name: string; category: string };
+  const seasonName = Array.isArray(v.seasons) ? v.seasons[0]?.name : v.seasons?.name;
+
+  return {
+    data: {
+      modelName: m.name,
+      category: m.category,
+      versionId: v.id,
+      season: seasonName ?? "—",
+      status: v.status,
+      changelog: v.changelog ?? "",
+      orderableSizes: v.orderable_sizes ?? [],
+      accessoryComposition: v.accessory_composition ?? "",
+      minutes: {
+        cutting: Number(v.cutting_minutes),
+        sewing: Number(v.sewing_minutes),
+        knitting: Number(v.knitting_minutes),
+        thread: Number(v.thread_minutes),
+        finish: Number(v.finish_minutes),
+        packing: Number(v.packing_minutes),
+      },
+      materials: ((matRows ?? []) as unknown as {
+        role: string; material_id: string; material_color_id: string | null; usage_amount: number;
+      }[]).map((mm) => ({
+        role: mm.role,
+        material_id: mm.material_id,
+        material_color_id: mm.material_color_id,
+        usage_amount: Number(mm.usage_amount),
+      })),
+      productCount: productCount ?? 0,
+    },
+    materials: (materials ?? []) as unknown as ModelVersionEditBundle["materials"],
+    laborRate: Number((settings as { labor_rate_jpy_per_hour: number } | null)?.labor_rate_jpy_per_hour) || 2000,
+  };
+}
+
+// Delete a version. Guard: refuse if any Product references it (products FK is ON DELETE
+// SET NULL, so a delete would silently unlink them — we block instead, per "never lose data").
+// model_version_materials cascade-delete with the version.
+export async function deleteModelVersion(versionId: string): Promise<string | null> {
+  const supabase = await createClient();
+  const { data: ver } = await supabase.from("model_versions").select("id, model_id").eq("id", versionId).single();
+  if (!ver) return "Version not found.";
+  const modelId = (ver as unknown as { model_id: string }).model_id;
+  const { count } = await supabase.from("products").select("id", { count: "exact", head: true }).eq("model_version_id", versionId);
+  if ((count ?? 0) > 0) return `This version is used by ${count} product(s) — it can't be deleted.`;
+  const { error } = await supabase.from("model_versions").delete().eq("id", versionId);
+  if (error) return error.message;
+  revalidatePath("/models");
+  revalidatePath(`/models/${modelId}`);
+  return null;
+}
 
 export async function createModel(
   _state: string | null,
@@ -167,9 +262,9 @@ export async function updateModelVersion(versionId: string, input: UpdateVersion
     if (iErr) return iErr.message;
   }
 
+  revalidatePath("/models");
   revalidatePath(`/models/${ver.model_id}`);
-  revalidatePath(`/models/${ver.model_id}/versions/${versionId}/edit`);
-  redirect(`/models/${ver.model_id}`);
+  return null; // popup handles close + refresh
 }
 
 // Copy-forward: create a new ACTIVE version for a target season, cloning an existing
@@ -179,9 +274,9 @@ export async function createModelVersionCopyForward(
   modelId: string,
   seasonId: string,
   sourceVersionId: string
-): Promise<string | null> {
-  if (!seasonId) return "Please choose a target season.";
-  if (!sourceVersionId) return "Please choose a version to copy from.";
+): Promise<{ versionId: string } | { error: string }> {
+  if (!seasonId) return { error: "Please choose a target season." };
+  if (!sourceVersionId) return { error: "Please choose a version to copy from." };
   const supabase = await createClient();
 
   const { data: src, error: sErr } = await supabase
@@ -192,7 +287,7 @@ export async function createModelVersionCopyForward(
     )
     .eq("id", sourceVersionId)
     .single();
-  if (sErr || !src) return sErr?.message ?? "Source version not found.";
+  if (sErr || !src) return { error: sErr?.message ?? "Source version not found." };
   const source = src as unknown as {
     model_id: string;
     orderable_sizes: string[] | null;
@@ -200,7 +295,7 @@ export async function createModelVersionCopyForward(
     cutting_minutes: number; sewing_minutes: number; knitting_minutes: number;
     thread_minutes: number; finish_minutes: number; packing_minutes: number;
   };
-  if (source.model_id !== modelId) return "Source version belongs to a different model.";
+  if (source.model_id !== modelId) return { error: "Source version belongs to a different model." };
 
   const { data: created, error: cErr } = await supabase
     .from("model_versions")
@@ -222,18 +317,18 @@ export async function createModelVersionCopyForward(
     .single();
   if (cErr) {
     // Partial unique (model_id, season_id) WHERE status='active'.
-    if (cErr.code === "23505") return "An active version already exists for that season — edit it, or deprecate it first.";
-    return cErr.message;
+    if (cErr.code === "23505") return { error: "An active version already exists for that season — edit it, or deprecate it first." };
+    return { error: cErr.message };
   }
   const newId = (created as unknown as { id: string } | null)?.id;
-  if (!newId) return "Failed to create the version.";
+  if (!newId) return { error: "Failed to create the version." };
 
   const { data: mats, error: mErr } = await supabase
     .from("model_version_materials")
     .select("role, material_id, material_color_id, usage_amount, sort_order")
     .eq("model_version_id", sourceVersionId)
     .order("sort_order");
-  if (mErr) return mErr.message;
+  if (mErr) return { error: mErr.message };
   const srcMats = (mats ?? []) as unknown as {
     role: string; material_id: string; material_color_id: string | null; usage_amount: number; sort_order: number;
   }[];
@@ -241,11 +336,12 @@ export async function createModelVersionCopyForward(
     const { error: iErr } = await supabase
       .from("model_version_materials")
       .insert(srcMats.map((m) => ({ model_version_id: newId, ...m })));
-    if (iErr) return iErr.message;
+    if (iErr) return { error: iErr.message };
   }
 
+  revalidatePath("/models");
   revalidatePath(`/models/${modelId}`);
-  redirect(`/models/${modelId}/versions/${newId}/edit`);
+  return { versionId: newId }; // caller opens the new version's edit popup
 }
 
 // Save a Model's editable attributes + default tags in one call, WITHOUT redirecting

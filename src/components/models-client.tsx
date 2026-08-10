@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { bulkArchiveModels, bulkDeleteModels, bulkSetModelTag, createModel, saveModel } from "@/app/actions/models";
 import { BulkBar } from "@/components/bulk-bar";
+import { ModelVersionEditModal } from "@/components/model-version-editor";
 import { MODEL_CATEGORIES } from "@/lib/model-constants";
 import { CATEGORY_ICON, catRank } from "@/lib/product-constants";
 
@@ -37,6 +38,7 @@ export function ModelsClient({ models, tagOptions }: { models: ModelRow[]; tagOp
   const [fCat, setFCat] = useState("Coat"); // default category view
   const [showNew, setShowNew] = useState(false);
   const [editing, setEditing] = useState<ModelRow | null>(null);
+  const [editVer, setEditVer] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [tagMenuOpen, setTagMenuOpen] = useState(false);
   const [pending, startBulk] = useTransition();
@@ -188,7 +190,7 @@ export function ModelsClient({ models, tagOptions }: { models: ModelRow[]; tagOp
                         {m.versions.length ? (
                           <div className="flex flex-wrap gap-1.5">
                             {m.versions.map((v) => (
-                              <button key={v.id} type="button" onClick={() => router.push(`/models/${m.id}/versions/${v.id}/edit`)}
+                              <button key={v.id} type="button" onClick={() => setEditVer(v.id)}
                                 className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-md border border-gray-200 bg-white text-gray-600 hover:border-gray-900 hover:text-gray-900">
                                 <span className="font-medium">{v.season}</span>
                                 <span className="text-gray-400">· {v.status}</span>
@@ -249,6 +251,13 @@ export function ModelsClient({ models, tagOptions }: { models: ModelRow[]; tagOp
           options={tagOptions}
           onClose={() => setEditing(null)}
           onSaved={() => { setEditing(null); router.refresh(); }}
+        />
+      )}
+      {editVer && (
+        <ModelVersionEditModal
+          versionId={editVer}
+          onClose={() => setEditVer(null)}
+          onDone={() => { setEditVer(null); router.refresh(); }}
         />
       )}
     </div>
