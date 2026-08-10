@@ -369,9 +369,11 @@ export async function mergeModels(survivorId: string, loserIds: string[]): Promi
     seen.add(r.season_id);
   }
 
-  // Reassign versions and default tags, then delete the losers.
+  // Reassign versions, the legacy products.model_id link, and default tags, then delete.
   const { error: vErr } = await supabase.from("model_versions").update({ model_id: survivorId }).in("model_id", losers);
   if (vErr) return vErr.message;
+  const { error: pErr } = await supabase.from("products").update({ model_id: survivorId }).in("model_id", losers);
+  if (pErr) return pErr.message;
   const { data: loserTags } = await supabase.from("model_tags").select("tag").in("model_id", losers);
   const tags = Array.from(new Set(((loserTags ?? []) as { tag: string }[]).map((t) => t.tag)));
   if (tags.length) {
