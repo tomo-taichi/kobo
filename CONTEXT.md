@@ -7,6 +7,11 @@ taichimurakami ブランドの商品管理・受注管理・書類発行・量�
 - **現在の優先タスク**: **ADR-0009（量産管理システム）** の完成（Brand 側）。これを最優先で進める。
 - **Customer Portal（ADR-0008）**: **設計のみ完了・実装は保留中**。Phase 1（Foundation）の計画まで策定済みだが未着手。
 - Customer Portal の実装は **ADR-0009 完了後に再開**する予定。
+- **ADR-0011（Model DB & versioning）Phase 1 = 本番適用済み**:
+  - スキーマ: `model_versions` / `model_version_materials` / `model_tags` / `products.model_version_id`（＋ RLS `is_internal()` ＋ grants）、`models` の identity `unique(name, category)`、`models.gender` は NULL 許容、`model_versions` は **active 限定の部分ユニーク**（frozen は同一 season に複数可、active は 1 season 1 版）、旧 `models.category` CHECK は削除。
+  - バックフィル: **Models 714 / Versions 936（全 frozen）/ model_version_materials 2,613 / products 紐付け 1,921**。既存 product の列・データは**無変更**（dual-write。version からの読み替えは未実施）。`model_tags` は空。
+  - バックアップ: JSON＋`pg_dump` の二重オフサイトを取得済み（`data/backups/`, gitignore）。
+  - **次**: Phase 2（Models 一覧・Model/Version 編集 UI）→ Phase 3（作成フロー Season→Model→Version→メイン素材、Product 編集の Model 詳細セクション）→ 以降（version 読み替え、staleness/価格版、Deprecation UX）。
 
 ## 認証
 
