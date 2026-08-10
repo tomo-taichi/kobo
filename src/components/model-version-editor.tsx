@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, useTransition } from "react";
-import { getModelVersionEditData, updateModelVersion, deleteModelVersion } from "@/app/actions/models";
+import { getModelVersionEditData, updateModelVersion, deleteModelVersion, duplicateModelVersion } from "@/app/actions/models";
 import { MaterialPickerModal, type PickableMaterial } from "@/components/material-picker";
 import {
   MODEL_VERSION_MATERIAL_ROLES,
@@ -47,16 +47,26 @@ const sectionCls = "border border-gray-200 rounded-lg p-4";
 
 // Self-contained popup: fetches the version bundle on open, and lets you slide
 // prev/next through the model's versions.
+function DuplicateIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+      <rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15V5a2 2 0 012-2h10" />
+    </svg>
+  );
+}
+
 export function ModelVersionEditModal({
   versionId,
   versionIds,
   onClose,
   onDone,
+  onDuplicated,
 }: {
   versionId: string;
   versionIds: string[];
   onClose: () => void;
   onDone: () => void;
+  onDuplicated: (newVersionId: string) => void;
 }) {
   // Ensure the opened version is always in the slide list (e.g. a just-created copy-forward
   // version isn't in the parent's stale list yet).
@@ -110,7 +120,7 @@ export function ModelVersionEditModal({
           ) : !ready ? (
             <p className="text-sm text-gray-400 py-8 text-center">Loading…</p>
           ) : (
-            <VersionEditorBody key={bundle.data.versionId} bundle={bundle} onClose={onClose} onDone={onDone} />
+            <VersionEditorBody key={bundle.data.versionId} bundle={bundle} onClose={onClose} onDone={onDone} onDuplicated={onDuplicated} />
           )}
         </div>
       </div>
@@ -140,7 +150,7 @@ function MaterialColorSelect({
   );
 }
 
-function VersionEditorBody({ bundle, onClose, onDone }: { bundle: ModelVersionEditBundle; onClose: () => void; onDone: () => void }) {
+function VersionEditorBody({ bundle, onClose, onDone, onDuplicated }: { bundle: ModelVersionEditBundle; onClose: () => void; onDone: () => void; onDuplicated: (newVersionId: string) => void }) {
   const { data, materials, laborRate, roleLabels } = bundle;
   const roleLabel = (r: string) => roleLabels[r] ?? r;
   const readOnly = data.status !== "active";
@@ -176,6 +186,7 @@ function VersionEditorBody({ bundle, onClose, onDone }: { bundle: ModelVersionEd
   const [pickingKey, setPickingKey] = useState<string | null>(null); // "lining" | row.key
   const [pending, start] = useTransition();
   const [deleting, startDelete] = useTransition();
+  const [duplicating, startDup] = useTransition();
 
   const updateRow = (key: string, patch: Partial<Row>) => setRows((rs) => rs.map((r) => (r.key === key ? { ...r, ...patch } : r)));
   const removeRow = (key: string) => setRows((rs) => rs.filter((r) => r.key !== key));
@@ -217,6 +228,13 @@ function VersionEditorBody({ bundle, onClose, onDone }: { bundle: ModelVersionEd
       else onDone();
     });
   };
+
+  const duplicate = () =>
+    startDup(async () => {
+      const res = await duplicateModelVersion(data.versionId);
+      if ("error" in res) alert(res.error);
+      else onDuplicated(res.versionId); // opens the new active copy
+    });
 
   const del = () => {
     if (data.productCount > 0) { alert(`This version is used by ${data.productCount} product(s) and can't be deleted.`); return; }
@@ -386,10 +404,17 @@ function VersionEditorBody({ bundle, onClose, onDone }: { bundle: ModelVersionEd
 
       {/* ── Footer ── */}
       <div className="flex items-center justify-between pt-1">
-        <button type="button" onClick={del} disabled={deleting}
-          className="text-sm text-red-600 hover:text-red-700 disabled:opacity-50" title={data.productCount > 0 ? `Used by ${data.productCount} product(s)` : undefined}>
-          {deleting ? "Deleting…" : "Delete version"}
-        </button>
+        <div className="flex items-center gap-3">
+          <button type="button" onClick={duplicate} disabled={duplicating}
+            className="inline-flex items-center gap-1.5 text-sm text-gray-600 hover:text-gray-900 disabled:opacity-50"
+            title="Duplicate into a new active version for this season">
+            <DuplicateIcon /> {duplicating ? "Duplicating…" : "Duplicate"}
+          </button>
+          <button type="button" onClick={del} disabled={deleting}
+            className="text-sm text-red-600 hover:text-red-700 disabled:opacity-50" title={data.productCount > 0 ? `Used by ${data.productCount} product(s)` : undefined}>
+            {deleting ? "Deleting…" : "Delete version"}
+          </button>
+        </div>
         <div className="flex gap-2">
           <button type="button" onClick={onClose} className="px-4 py-2 text-sm rounded-md border border-gray-300 text-gray-600 hover:bg-gray-50">Cancel</button>
           {!readOnly && (

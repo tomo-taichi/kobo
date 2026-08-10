@@ -255,10 +255,12 @@ export function ModelsClient({ models, tagOptions }: { models: ModelRow[]; tagOp
       )}
       {editVer && (
         <ModelVersionEditModal
+          key={editVer.id}
           versionId={editVer.id}
           versionIds={editVer.ids}
           onClose={() => setEditVer(null)}
           onDone={() => { setEditVer(null); router.refresh(); }}
+          onDuplicated={(newId) => { router.refresh(); setEditVer({ id: newId, ids: [...editVer.ids, newId] }); }}
         />
       )}
     </div>

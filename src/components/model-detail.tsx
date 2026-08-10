@@ -212,10 +212,12 @@ function VersionHistory({ modelId, versions, seasons }: { modelId: string; versi
       )}
       {editVer && (
         <ModelVersionEditModal
+          key={editVer}
           versionId={editVer}
           versionIds={versions.map((v) => v.id)}
           onClose={() => setEditVer(null)}
           onDone={() => { setEditVer(null); router.refresh(); }}
+          onDuplicated={(newId) => { router.refresh(); setEditVer(newId); }}
         />
       )}
     </div>

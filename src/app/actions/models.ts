@@ -347,6 +347,21 @@ export async function createModelVersionCopyForward(
   return { versionId: newId }; // caller opens the new version's edit popup
 }
 
+// Duplicate a version into a new ACTIVE version for the SAME season (clones recipe +
+// materials). Reuses copy-forward. Blocks (via the partial unique) if that season
+// already has an active version — then use copy-forward to a different season.
+export async function duplicateModelVersion(sourceVersionId: string): Promise<{ versionId: string } | { error: string }> {
+  const supabase = await createClient();
+  const { data: src } = await supabase
+    .from("model_versions")
+    .select("model_id, season_id")
+    .eq("id", sourceVersionId)
+    .single();
+  if (!src) return { error: "Version not found." };
+  const s = src as unknown as { model_id: string; season_id: string };
+  return createModelVersionCopyForward(s.model_id, s.season_id, sourceVersionId);
+}
+
 // Save a Model's editable attributes + default tags in one call, WITHOUT redirecting
 // (used by the list-page edit popup, which stays on /models). identity = (name, category).
 export async function saveModel(id: string, name: string, category: string, tags: string[]): Promise<string | null> {
