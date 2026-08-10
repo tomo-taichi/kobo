@@ -3,7 +3,7 @@
 import { Fragment, useState, useMemo, useTransition, useActionState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { bulkArchiveModels, bulkDeleteModels, bulkSetModelTag, createModel, saveModel } from "@/app/actions/models";
+import { bulkArchiveModels, bulkDeleteModels, bulkSetModelTag, createModel, saveModel, mergeModels } from "@/app/actions/models";
 import { BulkBar } from "@/components/bulk-bar";
 import { ModelVersionEditModal } from "@/components/model-version-editor";
 import { MODEL_CATEGORIES } from "@/lib/model-constants";
@@ -39,6 +39,7 @@ export function ModelsClient({ models, tagOptions }: { models: ModelRow[]; tagOp
   const [showNew, setShowNew] = useState(false);
   const [editing, setEditing] = useState<ModelRow | null>(null);
   const [editVer, setEditVer] = useState<{ id: string; ids: string[] } | null>(null);
+  const [mergeOpen, setMergeOpen] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [tagMenuOpen, setTagMenuOpen] = useState(false);
   const [pending, startBulk] = useTransition();
@@ -64,6 +65,18 @@ export function ModelsClient({ models, tagOptions }: { models: ModelRow[]; tagOp
   );
 
   const shown = useMemo(() => (fCat ? preCat.filter((m) => m.category === fCat) : preCat), [preCat, fCat]);
+
+  // Group rows by normalized (case/space-insensitive) name so same-name models cluster
+  // and duplicates are easy to spot / merge.
+  const groups = useMemo(() => {
+    const norm = (n: string) => n.trim().toLowerCase().replace(/\s+/g, " ");
+    const map = new Map<string, ModelRow[]>();
+    for (const m of shown) { const k = norm(m.name); const a = map.get(k) ?? []; a.push(m); map.set(k, a); }
+    return [...map.values()]
+      .map((rows) => [...rows].sort((a, b) => a.category.localeCompare(b.category) || a.name.localeCompare(b.name)))
+      .sort((a, b) => a[0].name.toLowerCase().localeCompare(b[0].name.toLowerCase()));
+  }, [shown]);
+
   const seg = (active: boolean) =>
     `px-3 py-1 text-sm rounded-md transition-colors ${active ? "bg-white shadow-sm text-gray-900 font-medium" : "text-gray-500 hover:text-gray-700"}`;
 
@@ -139,7 +152,19 @@ export function ModelsClient({ models, tagOptions }: { models: ModelRow[]; tagOp
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {shown.map((m) => {
+            {groups.map((g) => (
+              <Fragment key={`g:${g[0].id}`}>
+                {g.length > 1 && (
+                  <tr className="bg-amber-50/40">
+                    <td></td>
+                    <td colSpan={6} className="px-4 py-1.5 text-xs">
+                      <span className="font-medium text-gray-700">{g[0].name}</span>
+                      <span className="text-gray-400"> · {g.length} models</span>
+                      <span className="ml-2 text-amber-700">merge candidates — select &amp; Merge</span>
+                    </td>
+                  </tr>
+                )}
+                {g.map((m) => {
               const isSel = selected.has(m.id);
               const isOpen = expanded.has(m.id);
               return (
@@ -205,7 +230,9 @@ export function ModelsClient({ models, tagOptions }: { models: ModelRow[]; tagOp
                   )}
                 </Fragment>
               );
-            })}
+                })}
+              </Fragment>
+            ))}
             {!shown.length && (
               <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-400 text-sm">{search || fCat ? "No models match" : "No models"}</td></tr>
             )}
@@ -221,6 +248,10 @@ export function ModelsClient({ models, tagOptions }: { models: ModelRow[]; tagOp
         onDelete={() => { if (confirm(`Delete ${selected.size} model(s)? Models with versions are kept (archive them instead).`)) runBulk(() => bulkDeleteModels([...selected])); }}
         onClear={() => { setSelected(new Set()); setTagMenuOpen(false); }}
       >
+        {selected.size >= 2 && (
+          <button type="button" disabled={pending} onClick={() => setMergeOpen(true)}
+            className="px-3 py-1 rounded-lg hover:bg-white/10 disabled:opacity-50">Merge…</button>
+        )}
         {/* Bulk tag — same managed vocabulary as Products */}
         <div className="relative">
           <button type="button" disabled={pending} onClick={() => setTagMenuOpen((v) => !v)}
@@ -263,6 +294,63 @@ export function ModelsClient({ models, tagOptions }: { models: ModelRow[]; tagOp
           onDuplicated={(newId) => { router.refresh(); setEditVer({ id: newId, ids: [...editVer.ids, newId] }); }}
         />
       )}
+      {mergeOpen && (
+        <MergeModal
+          models={models.filter((m) => selected.has(m.id))}
+          onClose={() => setMergeOpen(false)}
+          onMerged={() => { setMergeOpen(false); setSelected(new Set()); router.refresh(); }}
+        />
+      )}
+    </div>
+  );
+}
+
+function MergeModal({ models, onClose, onMerged }: { models: ModelRow[]; onClose: () => void; onMerged: () => void }) {
+  const [survivorId, setSurvivorId] = useState(
+    () => [...models].sort((a, b) => b.version_count - a.version_count || a.id.localeCompare(b.id))[0]?.id ?? ""
+  );
+  const [pending, start] = useTransition();
+  const categories = Array.from(new Set(models.map((m) => m.category)));
+  const survivor = models.find((m) => m.id === survivorId);
+  const merge = () =>
+    start(async () => {
+      const losers = models.map((m) => m.id).filter((id) => id !== survivorId);
+      const err = await mergeModels(survivorId, losers);
+      if (err) alert(err);
+      else onMerged();
+    });
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+      <div className="relative bg-white rounded-xl shadow-xl w-full max-w-lg p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-base font-semibold text-gray-900">Merge {models.length} models</h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none" aria-label="Close">✕</button>
+        </div>
+        <p className="text-xs text-gray-500 mb-3">Pick the model to keep (survivor). All versions, products, and default tags from the others move to it, then the others are deleted.</p>
+        {categories.length > 1 && (
+          <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2 mb-3">
+            These models have different categories ({categories.join(", ")}). The merged model keeps the survivor&apos;s category.
+          </p>
+        )}
+        <div className="flex flex-col gap-1.5 mb-4 max-h-72 overflow-y-auto">
+          {models.map((m) => (
+            <label key={m.id} className={`flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer ${survivorId === m.id ? "border-gray-900 bg-gray-50" : "border-gray-200 hover:border-gray-400"}`}>
+              <input type="radio" name="survivor" checked={survivorId === m.id} onChange={() => setSurvivorId(m.id)} className="accent-gray-900" />
+              <span className="text-sm text-gray-900 flex-1">{m.name}</span>
+              <span className="text-xs text-gray-400">{m.category} · {m.version_count} ver · {m.product_count} prod</span>
+            </label>
+          ))}
+        </div>
+        <div className="flex gap-2 justify-end">
+          <button type="button" onClick={onClose} className="px-4 py-2 text-sm rounded-md border border-gray-300 text-gray-600 hover:bg-gray-50">Cancel</button>
+          <button type="button" onClick={merge} disabled={pending || !survivorId}
+            className="px-4 py-2 bg-gray-900 text-white text-sm rounded-md hover:bg-gray-700 disabled:opacity-50">
+            {pending ? "Merging…" : `Merge into "${survivor?.name ?? ""}"`}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

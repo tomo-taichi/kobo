@@ -347,6 +347,47 @@ export async function createModelVersionCopyForward(
   return { versionId: newId }; // caller opens the new version's edit popup
 }
 
+// Merge one or more "loser" models into a survivor: reassign the losers' versions and
+// default tags to the survivor, then delete the losers. Versions/products are preserved
+// (products link via model_version_id, which is untouched). Guarded so it never creates
+// two ACTIVE versions in one season for the survivor (partial unique).
+export async function mergeModels(survivorId: string, loserIds: string[]): Promise<string | null> {
+  const supabase = await createClient();
+  const losers = Array.from(new Set(loserIds.filter((id) => id && id !== survivorId)));
+  if (!losers.length) return "Pick at least one other model to merge into the survivor.";
+
+  // Active-version-per-season guard across survivor + losers.
+  const { data: av, error: avErr } = await supabase
+    .from("model_versions")
+    .select("season_id")
+    .eq("status", "active")
+    .in("model_id", [survivorId, ...losers]);
+  if (avErr) return avErr.message;
+  const seen = new Set<string>();
+  for (const r of (av ?? []) as { season_id: string }[]) {
+    if (seen.has(r.season_id)) return "Merge blocked: the survivor would end up with two active versions in one season. Deprecate/freeze one first.";
+    seen.add(r.season_id);
+  }
+
+  // Reassign versions and default tags, then delete the losers.
+  const { error: vErr } = await supabase.from("model_versions").update({ model_id: survivorId }).in("model_id", losers);
+  if (vErr) return vErr.message;
+  const { data: loserTags } = await supabase.from("model_tags").select("tag").in("model_id", losers);
+  const tags = Array.from(new Set(((loserTags ?? []) as { tag: string }[]).map((t) => t.tag)));
+  if (tags.length) {
+    const { error: tErr } = await supabase
+      .from("model_tags")
+      .upsert(tags.map((tag) => ({ model_id: survivorId, tag })), { onConflict: "model_id,tag", ignoreDuplicates: true });
+    if (tErr) return tErr.message;
+  }
+  const { error: dErr } = await supabase.from("models").delete().in("id", losers); // model_tags cascade; versions already moved
+  if (dErr) return dErr.message;
+
+  revalidatePath("/models");
+  revalidatePath(`/models/${survivorId}`);
+  return null;
+}
+
 // Duplicate a version into a new ACTIVE version for the SAME season (clones recipe +
 // materials). Reuses copy-forward. Blocks (via the partial unique) if that season
 // already has an active version — then use copy-forward to a different season.
