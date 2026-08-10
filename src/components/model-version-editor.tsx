@@ -97,11 +97,18 @@ export function ModelVersionEditModal({
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
       <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-3xl my-4">
         <div className="flex items-center justify-between gap-3 px-5 py-3 border-b border-gray-200 sticky top-0 bg-white rounded-t-xl z-10">
-          <div className="flex items-center gap-3 min-w-0">
+          <div className="flex items-center gap-2 min-w-0">
             <h2 className="text-sm font-semibold text-gray-900 truncate">
               {ready ? `${bundle.data.modelName} · ${bundle.data.season} version` : "Version"}
-              {ready && <span className="ml-2 text-[11px] px-2 py-0.5 rounded-full font-medium bg-gray-100 text-gray-600">{statusLabel}</span>}
             </h2>
+            {ready && <span className="shrink-0 text-[11px] px-2 py-0.5 rounded-full font-medium bg-gray-100 text-gray-600">{statusLabel}</span>}
+            {ready && (
+              <a href={`/products?version=${bundle.data.versionId}`} target="_blank" rel="noopener"
+                title="View the products using this version"
+                className="shrink-0 text-[11px] px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-600 hover:bg-indigo-100">
+                {bundle.data.productCount} {bundle.data.productCount === 1 ? "product" : "products"}
+              </a>
+            )}
           </div>
           <div className="flex items-center gap-2 shrink-0">
             {ids.length > 1 && (
