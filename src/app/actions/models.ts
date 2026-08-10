@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { MODEL_CATEGORIES } from "@/lib/model-constants";
+import { MODEL_CATEGORIES, MODEL_VERSION_MATERIAL_ROLES, type ModelVersionMaterialRole } from "@/lib/model-constants";
 
 export async function createModel(
   _state: string | null,
@@ -97,6 +97,79 @@ export async function updateModel(
   revalidatePath("/models");
   revalidatePath(`/models/${id}`);
   redirect(`/models/${id}`);
+}
+
+export type VersionMaterialInput = {
+  role: string;
+  material_id: string;
+  material_color_id: string | null;
+  usage_amount: number;
+};
+export type UpdateVersionInput = {
+  changelog: string | null;
+  orderable_sizes: string[];
+  accessory_composition: string | null;
+  // Manufacturing template, in MINUTES (the client converts hours → minutes).
+  minutes: { cutting: number; sewing: number; knitting: number; thread: number; finish: number; packing: number };
+  materials: VersionMaterialInput[];
+};
+
+// Edit a Model Version's shared recipe (non-main materials + 用尺), orderable sizes,
+// accessory composition, manufacturing-time template, and changelog. ONLY active
+// versions are editable — frozen/deprecated are read-only (change via copy-forward).
+export async function updateModelVersion(versionId: string, input: UpdateVersionInput): Promise<string | null> {
+  const supabase = await createClient();
+  const { data: ver, error: vErr } = await supabase
+    .from("model_versions")
+    .select("id, model_id, status")
+    .eq("id", versionId)
+    .single();
+  if (vErr || !ver) return vErr?.message ?? "Version not found";
+  if (ver.status !== "active")
+    return `This version is ${ver.status} and can't be edited. Create a new version (copy-forward) to change the recipe.`;
+
+  for (const m of input.materials) {
+    if (!MODEL_VERSION_MATERIAL_ROLES.includes(m.role as ModelVersionMaterialRole))
+      return `Invalid material role: ${m.role}`;
+    if (!m.material_id) return "Each material row needs a material selected.";
+    if (!(Number(m.usage_amount) >= 0)) return "Usage amount must be zero or more.";
+  }
+
+  const { error: uErr } = await supabase
+    .from("model_versions")
+    .update({
+      changelog: input.changelog?.trim() || null,
+      orderable_sizes: input.orderable_sizes,
+      accessory_composition: input.accessory_composition?.trim() || null,
+      cutting_minutes: input.minutes.cutting,
+      sewing_minutes: input.minutes.sewing,
+      knitting_minutes: input.minutes.knitting,
+      thread_minutes: input.minutes.thread,
+      finish_minutes: input.minutes.finish,
+      packing_minutes: input.minutes.packing,
+    })
+    .eq("id", versionId);
+  if (uErr) return uErr.message;
+
+  // Replace the non-main material set (delete + insert, sort_order = array order).
+  const { error: dErr } = await supabase.from("model_version_materials").delete().eq("model_version_id", versionId);
+  if (dErr) return dErr.message;
+  if (input.materials.length) {
+    const rows = input.materials.map((m, i) => ({
+      model_version_id: versionId,
+      role: m.role,
+      material_id: m.material_id,
+      material_color_id: m.material_color_id,
+      usage_amount: Number(m.usage_amount),
+      sort_order: i,
+    }));
+    const { error: iErr } = await supabase.from("model_version_materials").insert(rows);
+    if (iErr) return iErr.message;
+  }
+
+  revalidatePath(`/models/${ver.model_id}`);
+  revalidatePath(`/models/${ver.model_id}/versions/${versionId}/edit`);
+  redirect(`/models/${ver.model_id}`);
 }
 
 // Default tags for the Model — copied into product_tags at product creation (Phase 3).

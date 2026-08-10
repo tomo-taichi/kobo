@@ -57,7 +57,7 @@ export function ModelDetail({ data, tagOptions }: { data: ModelDetailData; tagOp
         <DefaultTags modelId={data.id} initial={data.tags} options={tagOptions} />
       </div>
 
-      <VersionHistory versions={data.versions} />
+      <VersionHistory modelId={data.id} versions={data.versions} />
     </div>
   );
 }
@@ -138,7 +138,8 @@ function DefaultTags({ modelId, initial, options }: { modelId: string; initial: 
   );
 }
 
-function VersionHistory({ versions }: { versions: VersionRow[] }) {
+function VersionHistory({ modelId, versions }: { modelId: string; versions: VersionRow[] }) {
+  const router = useRouter();
   const td = "px-4 py-2.5";
   return (
     <div>
@@ -153,21 +154,23 @@ function VersionHistory({ versions }: { versions: VersionRow[] }) {
               <th className="text-center px-4 py-2.5 font-medium text-gray-600">Materials</th>
               <th className="text-center px-4 py-2.5 font-medium text-gray-600">Sizes</th>
               <th className="text-left px-4 py-2.5 font-medium text-gray-600">Changelog</th>
+              <th className="text-right px-4 py-2.5 font-medium text-gray-600"></th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {versions.map((v) => (
-              <tr key={v.id} className="hover:bg-gray-50">
+              <tr key={v.id} onClick={() => router.push(`/models/${modelId}/versions/${v.id}/edit`)} className="cursor-pointer hover:bg-gray-50">
                 <td className={`${td} text-gray-900`}>{v.season}</td>
                 <td className={td}><StatusBadge status={v.status} /></td>
                 <td className={`${td} text-center text-gray-500`}>{v.product_count}</td>
                 <td className={`${td} text-center text-gray-500`}>{v.material_count}</td>
                 <td className={`${td} text-center text-gray-500`}>{v.sizes_count}</td>
                 <td className={`${td} text-gray-500 max-w-xs truncate`} title={v.changelog ?? ""}>{v.changelog ?? "—"}</td>
+                <td className={`${td} text-right text-xs text-gray-400`}>{v.status === "active" ? "Edit →" : "View →"}</td>
               </tr>
             ))}
             {!versions.length && (
-              <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-400 text-sm">No versions yet</td></tr>
+              <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-400 text-sm">No versions yet</td></tr>
             )}
           </tbody>
         </table>
