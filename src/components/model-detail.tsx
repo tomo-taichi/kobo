@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { updateModel, setModelTags, createModelVersionCopyForward } from "@/app/actions/models";
 import { ModelVersionEditModal } from "@/components/model-version-editor";
 import { MODEL_CATEGORIES, MODEL_VERSION_STATUS_LABELS, type ModelVersionStatus } from "@/lib/model-constants";
+import { formatHours } from "@/lib/presets";
 
 export type VersionRow = {
   id: string;
@@ -17,6 +18,9 @@ export type VersionRow = {
   updated_at: string;
   product_count: number;
   material_count: number;
+  lining_label: string; // lining material name, or "None"
+  total_cost: number; // non-main materials + manufacturing (¥)
+  mfg_hours: number;
 };
 
 export type ModelDetailData = {
@@ -151,15 +155,18 @@ function VersionHistory({ modelId, versions, seasons }: { modelId: string; versi
         <button type="button" onClick={() => setShowCopy(true)}
           className="text-xs px-3 py-1.5 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50">New version (copy-forward)</button>
       </div>
-      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+      <div className="bg-white border border-gray-200 rounded-xl overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-gray-50 border-b border-gray-200">
             <tr>
               <th className="text-left px-4 py-2.5 font-medium text-gray-600">Season</th>
               <th className="text-left px-4 py-2.5 font-medium text-gray-600">Status</th>
+              <th className="text-left px-4 py-2.5 font-medium text-gray-600">Lining</th>
               <th className="text-center px-4 py-2.5 font-medium text-gray-600">Products</th>
               <th className="text-center px-4 py-2.5 font-medium text-gray-600">Materials</th>
               <th className="text-center px-4 py-2.5 font-medium text-gray-600">Sizes</th>
+              <th className="text-right px-4 py-2.5 font-medium text-gray-600">Total</th>
+              <th className="text-right px-4 py-2.5 font-medium text-gray-600">Mfg</th>
               <th className="text-left px-4 py-2.5 font-medium text-gray-600">Changelog</th>
               <th className="text-right px-4 py-2.5 font-medium text-gray-600"></th>
             </tr>
@@ -167,17 +174,29 @@ function VersionHistory({ modelId, versions, seasons }: { modelId: string; versi
           <tbody className="divide-y divide-gray-100">
             {versions.map((v) => (
               <tr key={v.id} onClick={() => setEditVer(v.id)} className="cursor-pointer hover:bg-gray-50">
-                <td className={`${td} text-gray-900`}>{v.season}</td>
+                <td className={`${td} text-gray-900 whitespace-nowrap`}>{v.season}</td>
                 <td className={td}><StatusBadge status={v.status} /></td>
-                <td className={`${td} text-center text-gray-500`}>{v.product_count}</td>
+                <td className={`${td} text-gray-500 max-w-[10rem] truncate`} title={v.lining_label}>
+                  {v.lining_label === "None" ? <span className="text-gray-300">None</span> : v.lining_label}
+                </td>
+                <td className={`${td} text-center`} onClick={(e) => e.stopPropagation()}>
+                  {v.product_count > 0 ? (
+                    <a href={`/products?version=${v.id}`} target="_blank" rel="noopener" title="View linked products"
+                      className="inline-flex items-center text-xs px-2 py-1 rounded-md border border-gray-200 text-gray-500 hover:bg-gray-100 hover:text-gray-900">{v.product_count}</a>
+                  ) : (
+                    <span className="text-gray-300 text-xs">0</span>
+                  )}
+                </td>
                 <td className={`${td} text-center text-gray-500`}>{v.material_count}</td>
                 <td className={`${td} text-center text-gray-500`}>{v.sizes_count}</td>
+                <td className={`${td} text-right text-gray-700 font-mono whitespace-nowrap`}>¥{v.total_cost.toLocaleString()}</td>
+                <td className={`${td} text-right text-gray-500 whitespace-nowrap`}>{formatHours(v.mfg_hours)}h</td>
                 <td className={`${td} text-gray-500 max-w-xs truncate`} title={v.changelog ?? ""}>{v.changelog ?? "—"}</td>
-                <td className={`${td} text-right text-xs text-gray-400`}>{v.status === "active" ? "Edit →" : "View →"}</td>
+                <td className={`${td} text-right text-xs text-gray-400 whitespace-nowrap`}>{v.status === "active" ? "Edit →" : "View →"}</td>
               </tr>
             ))}
             {!versions.length && (
-              <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-400 text-sm">No versions yet</td></tr>
+              <tr><td colSpan={10} className="px-4 py-8 text-center text-gray-400 text-sm">No versions yet</td></tr>
             )}
           </tbody>
         </table>

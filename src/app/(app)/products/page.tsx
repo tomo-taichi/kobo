@@ -3,9 +3,9 @@ import { createClient } from "@/lib/supabase/server";
 import { ProductsList } from "@/components/products-list";
 import { getListValues } from "@/lib/list-options";
 
-export default async function ProductsPage({ searchParams }: { searchParams: Promise<{ material?: string; model?: string }> }) {
+export default async function ProductsPage({ searchParams }: { searchParams: Promise<{ material?: string; model?: string; version?: string }> }) {
   const supabase = await createClient();
-  const { material: materialFilter, model: modelFilter } = await searchParams;
+  const { material: materialFilter, model: modelFilter, version: versionFilter } = await searchParams;
 
   // Products can exceed Supabase's 1000-row per-request cap (1900+), so page through.
   const PRODUCT_SELECT =
@@ -50,10 +50,11 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
 
   const tagOptions = await getListValues(supabase, "product_tag", []);
 
-  // Optional filters: main material (Materials "Used in" icon) or model (Models "Products" count).
+  // Optional filters: main material (Materials "Used in"), model, or a single version.
   let filteredProducts = products;
   let materialName: string | null = null;
   let modelName: string | null = null;
+  let versionLabel: string | null = null;
   if (materialFilter) {
     filteredProducts = products.filter((p) => p.main_material_id === materialFilter);
     materialName = products.find((p) => p.main_material_id === materialFilter)?.main_m_name ?? null;
@@ -65,6 +66,13 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
     const versionIds = new Set(((vers ?? []) as unknown as { id: string }[]).map((v) => v.id));
     filteredProducts = products.filter((p) => p.model_version_id && versionIds.has(p.model_version_id));
     modelName = (mdl as unknown as { name: string } | null)?.name ?? null;
+  } else if (versionFilter) {
+    filteredProducts = products.filter((p) => p.model_version_id === versionFilter);
+    const { data: vinfo } = await supabase.from("model_versions").select("seasons(name), models(name)").eq("id", versionFilter).single();
+    const vi = vinfo as unknown as { seasons: { name: string } | { name: string }[] | null; models: { name: string } | { name: string }[] | null } | null;
+    const s = vi ? (Array.isArray(vi.seasons) ? vi.seasons[0]?.name : vi.seasons?.name) : null;
+    const mn = vi ? (Array.isArray(vi.models) ? vi.models[0]?.name : vi.models?.name) : null;
+    versionLabel = [mn, s].filter(Boolean).join(" · ") || "version";
   }
 
   return (
@@ -97,11 +105,20 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
         </div>
       )}
 
+      {versionFilter && (
+        <div className="flex items-center justify-between gap-3 bg-indigo-50 border border-indigo-200 rounded-lg px-4 py-2 text-sm">
+          <span className="text-indigo-800">
+            Showing products for version <b>{versionLabel ?? "—"}</b> ({filteredProducts.length})
+          </span>
+          <Link href="/products" className="text-indigo-600 hover:underline text-xs">Clear filter</Link>
+        </div>
+      )}
+
       <ProductsList
         products={filteredProducts as any}
         seasons={seasonsResult.data ?? []}
         tagOptions={tagOptions}
-        initialCategory={materialFilter || modelFilter ? "" : "Coat"}
+        initialCategory={materialFilter || modelFilter || versionFilter ? "" : "Coat"}
       />
     </div>
   );
