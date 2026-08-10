@@ -220,9 +220,9 @@ function VersionEditorBody({ bundle, onClose, onDone }: { bundle: ModelVersionEd
             )}
           </div>
         ) : (
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-2">
             <button type="button" disabled={readOnly} onClick={() => setPickingKey("lining")}
-              className="flex-1 min-w-48 text-left px-2 py-1.5 border border-gray-300 rounded text-sm hover:border-gray-500 disabled:bg-gray-50 disabled:hover:border-gray-300">
+              className="flex-1 min-w-0 truncate text-left px-2 py-1.5 border border-gray-300 rounded text-sm hover:border-gray-500 disabled:bg-gray-50 disabled:hover:border-gray-300">
               {liningMat ? (
                 <span className="text-gray-900">{liningMat.name}{liningMat.material_number && <span className="ml-1.5 text-gray-400 font-mono text-xs">{liningMat.material_number}</span>}</span>
               ) : (
@@ -255,12 +255,12 @@ function VersionEditorBody({ bundle, onClose, onDone }: { bundle: ModelVersionEd
             const colors = mat?.colors ?? [];
             const rowCost = row.material_id ? setPriceOf(row.material_id) * row.usage_amount : 0;
             return (
-              <div key={row.key} className="flex flex-wrap items-center gap-2">
+              <div key={row.key} className="flex items-center gap-2">
                 <select value={row.role} disabled={readOnly} onChange={(e) => updateRow(row.key, { role: e.target.value })} className={inputCls + " w-36"}>
                   {OTHER_ROLES.map((r) => (<option key={r} value={r}>{MODEL_VERSION_MATERIAL_ROLE_LABELS[r]}</option>))}
                 </select>
                 <button type="button" disabled={readOnly} onClick={() => setPickingKey(row.key)}
-                  className="flex-1 min-w-48 text-left px-2 py-1.5 border border-gray-300 rounded text-sm hover:border-gray-500 disabled:bg-gray-50 disabled:hover:border-gray-300">
+                  className="flex-1 min-w-0 truncate text-left px-2 py-1.5 border border-gray-300 rounded text-sm hover:border-gray-500 disabled:bg-gray-50 disabled:hover:border-gray-300">
                   {mat ? (
                     <span className="text-gray-900">{mat.name}{mat.material_number && <span className="ml-1.5 text-gray-400 font-mono text-xs">{mat.material_number}</span>}</span>
                   ) : (
