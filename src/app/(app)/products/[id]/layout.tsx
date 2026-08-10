@@ -1,7 +1,6 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { ProductTabNav } from "@/components/product-tab-nav";
 import { DeleteProductButton } from "@/components/delete-product-button";
 import { DuplicateProductButton } from "@/components/duplicate-product-button";
 
@@ -37,7 +36,6 @@ export default async function ProductDetailLayout({
         <p className="text-2xl font-semibold text-gray-900">{p.name || "—"}</p>
         <p className="text-xs text-gray-400 mt-1">No. {p.product_number ?? p.id}</p>
       </div>
-      <ProductTabNav id={id} />
       {children}
     </div>
   );

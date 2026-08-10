@@ -1,8 +1,9 @@
 "use client";
 
-import { Fragment, useState, useMemo, useTransition } from "react";
+import { Fragment, useState, useMemo, useTransition, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { duplicateProduct, deleteProduct, bulkArchiveProducts, bulkDeleteProducts, bulkSetProductTag } from "@/app/actions/products";
+import { duplicateProduct, deleteProduct, bulkArchiveProducts, bulkDeleteProducts, bulkSetProductTag, bulkSetProductFinalized, setProductFinalized, getProductEditData, setProductRetailPrice, setProductMarkup } from "@/app/actions/products";
+import { ProductEditModal } from "@/components/product-edit-modal";
 
 export type ProductRow = {
   id: string;
@@ -13,13 +14,16 @@ export type ProductRow = {
   product_sex: string | null;
   is_sample: boolean;
   is_invalid: boolean;
+  status?: string;
   main_material_id?: string | null;
   wholesale_eur: number | null;
   retail_price_eur: number | null;
+  markup_rate: number | null;
+  retail_rate: number | null;
   main_m_name: string | null;
   main_m_color: string | null;
   seasons: { id: string; name: string } | null;
-  product_colors?: { retail_price_eur: number | null; wholesale_eur: number | null; material_colors: { color: string } | null }[];
+  product_colors?: { retail_price_eur: number | null; wholesale_eur: number | null; markup_rate: number | null; retail_rate: number | null; material_colors: { color: string } | null }[];
   main_thumbs?: string[];
   tags?: string[];
 };
@@ -72,10 +76,21 @@ function colourNamesOf(p: ProductRow): string {
 const colourCount = (p: ProductRow) => (p.product_colors ?? []).length;
 const idealWsOf = (p: ProductRow) => priceRange((p.product_colors ?? []).map((c) => Number(c.wholesale_eur ?? 0)), p.wholesale_eur);
 const retailOf = (p: ProductRow) => priceRange((p.product_colors ?? []).map((c) => Number(c.retail_price_eur ?? 0)), p.retail_price_eur);
+// Retail (ref) = Ideal WS × retail multiplier (captured per product). A suggestion.
+const retailRefOf = (p: ProductRow) => priceRange(
+  (p.product_colors ?? []).map((c) => Number(c.wholesale_eur ?? 0) * Number(c.retail_rate ?? 0)),
+  p.wholesale_eur != null && p.retail_rate != null ? Number(p.wholesale_eur) * Number(p.retail_rate) : null,
+);
 const retailNum = (p: ProductRow) => {
   const xs = (p.product_colors ?? []).map((c) => Number(c.retail_price_eur ?? 0)).filter((v) => v > 0);
   return xs.length ? Math.min(...xs) : Number(p.retail_price_eur ?? 0);
 };
+const markupNum = (p: ProductRow) => {
+  const xs = (p.product_colors ?? []).map((c) => Number(c.markup_rate ?? 0)).filter((v) => v > 0);
+  return xs.length ? Math.min(...xs) : Number(p.markup_rate ?? 0);
+};
+// Nudge a numeric string by delta, snapped to 0.1 and clamped at 0.
+const step01 = (val: string, delta: number) => String(Math.max(0, Math.round((Number(val || 0) + delta) * 10) / 10));
 
 function SearchIcon() {
   return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" className="w-4 h-4 text-gray-400"><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" /></svg>;
@@ -87,6 +102,13 @@ function TrashIcon() {
   return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4"><path d="M4 7h16M10 11v6M14 11v6M5 7l1 13a2 2 0 002 2h8a2 2 0 002-2l1-13M9 7V4a1 1 0 011-1h4a1 1 0 011 1v3" /></svg>;
 }
 
+function LockClosedIcon() {
+  return <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"><rect x="4.5" y="10.5" width="15" height="10" rx="2" /><path d="M8 10.5V7a4 4 0 118 0v3.5" /></svg>;
+}
+function LockOpenIcon() {
+  return <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"><rect x="4.5" y="10.5" width="15" height="10" rx="2" /><path d="M8 10.5V7a4 4 0 017.5-2" /></svg>;
+}
+
 const rowBtn = "inline-flex items-center justify-center w-7 h-7 rounded-md border border-gray-200 text-gray-400 hover:bg-gray-100 hover:text-gray-900 transition-colors";
 
 // Shrink the model name font so long names stay on one line within a fixed width.
@@ -96,6 +118,36 @@ function modelFontClass(name: string): string {
   if (n > 26) return "text-[11px]";
   if (n > 20) return "text-[13px]";
   return "text-sm";
+}
+
+// Always-editable markup dial for a list row: − / value / +, 0.1 steps, debounced save.
+function RowMarkup({ productId, value, locked }: { productId: string; value: number; locked: boolean }) {
+  const router = useRouter();
+  const [val, setVal] = useState(value ? String(value) : "");
+  const [, start] = useTransition();
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => { setVal(value ? String(value) : ""); }, [value]);
+  const commit = (v: string) => start(async () => { const err = await setProductMarkup(productId, Number(v) || 0); if (err) alert(err); else router.refresh(); });
+  const schedule = (v: string) => { if (timer.current) clearTimeout(timer.current); timer.current = setTimeout(() => commit(v), 700); };
+  const set = (v: string) => { setVal(v); schedule(v); };
+  const bump = (d: number) => { if (locked) return; set(step01(val, d)); };
+  const btn = "w-5 h-5 flex items-center justify-center rounded border border-gray-300 text-gray-600 hover:bg-gray-100 leading-none disabled:opacity-40";
+  return (
+    <div className="inline-flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
+      <button type="button" tabIndex={-1} disabled={locked} onMouseDown={(e) => e.preventDefault()} onClick={() => bump(-0.1)} className={btn}>−</button>
+      <input type="number" min="0" step="0.1" value={val} disabled={locked}
+        onChange={(e) => set(e.target.value)}
+        onBlur={() => { if (timer.current) clearTimeout(timer.current); commit(val); }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") e.currentTarget.blur();
+          else if (e.key === "ArrowUp") { e.preventDefault(); bump(0.1); }
+          else if (e.key === "ArrowDown") { e.preventDefault(); bump(-0.1); }
+        }}
+        title={locked ? "Cost locked" : "Markup ×"}
+        className="w-11 px-1 py-0.5 border border-gray-300 rounded text-xs text-right focus:outline-none focus:ring-1 focus:ring-gray-900 bg-white disabled:bg-gray-50" />
+      <button type="button" tabIndex={-1} disabled={locked} onMouseDown={(e) => e.preventDefault()} onClick={() => bump(0.1)} className={btn}>+</button>
+    </div>
+  );
 }
 
 function DupButton({ productId }: { productId: string }) {
@@ -148,7 +200,8 @@ function RowDeleteButton({ productId, label }: { productId: string; label: strin
 export function ProductsList({ products, seasons, tagOptions = [], initialCategory = "Coat" }: { products: ProductRow[]; seasons: Season[]; tagOptions?: string[]; initialCategory?: string }) {
   const router = useRouter();
   const [search, setSearch]       = useState("");
-  const [fSeason, setFSeason]     = useState("");
+  const [fSeasons, setFSeasons]   = useState<Set<string>>(new Set());
+  const [seasonMenuOpen, setSeasonMenuOpen] = useState(false);
   const [fCat, setFCat]           = useState(initialCategory); // default category view
   const [fSex, setFSex]           = useState("");
   const [fSample, setFSample]     = useState("");
@@ -158,6 +211,29 @@ export function ProductsList({ products, seasons, tagOptions = [], initialCatego
   const [selected, setSelected]   = useState<Set<string>>(new Set());
   const [tagMenuOpen, setTagMenuOpen] = useState(false);
   const [bulkPending, startBulk]  = useTransition();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [editBundle, setEditBundle] = useState<any | null>(null);
+  const [openingId, setOpeningId]   = useState<string | null>(null);
+  const [retailEdit, setRetailEdit] = useState<{ id: string; val: string } | null>(null);
+
+  const openEdit = async (id: string) => {
+    setOpeningId(id);
+    const b = await getProductEditData(id);
+    setOpeningId(null);
+    if (b) setEditBundle(b);
+  };
+  const commitRetail = () => {
+    if (!retailEdit) return;
+    const { id, val } = retailEdit;
+    const v = Number(val) || 0;
+    setRetailEdit(null);
+    startBulk(async () => { const err = await setProductRetailPrice(id, v); if (err) alert(err); else router.refresh(); });
+  };
+  const toggleSeason = (id: string) => setFSeasons((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const toggleLock = (p: ProductRow) => startBulk(async () => {
+    const err = await setProductFinalized(p.id, p.status !== "final");
+    if (err) alert(err); else router.refresh();
+  });
 
   const toggleSel = (id: string) => setSelected((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const clearSel = () => setSelected(new Set());
@@ -188,14 +264,14 @@ export function ProductsList({ products, seasons, tagOptions = [], initialCatego
           || (p.tags ?? []).some((t) => t.toLowerCase().includes(q));
         if (!hit) return false;
       }
-      if (fSeason && p.seasons?.id !== fSeason) return false;
+      if (fSeasons.size > 0 && !fSeasons.has(p.seasons?.id ?? "")) return false;
       if (fSex && p.product_sex !== fSex) return false;
       if (fSample === "sample" && !p.is_sample) return false;
       if (fSample === "production" && p.is_sample) return false;
       if (fTag && !(p.tags ?? []).includes(fTag)) return false;
       return true;
     });
-  }, [products, search, fSeason, fSex, fSample, fTag]);
+  }, [products, search, fSeasons, fSex, fSample, fTag]);
 
   const catCounts = useMemo(() => {
     const m: Record<string, number> = {};
@@ -230,7 +306,7 @@ export function ProductsList({ products, seasons, tagOptions = [], initialCatego
     return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0]));
   }, [filtered, groupMode]);
 
-  const hasFilters = search || fSeason || fCat || fSex || fSample || fTag;
+  const hasFilters = search || fSeasons.size > 0 || fCat || fSex || fSample || fTag;
 
   const arrow = (key: SortKey) => (sort.key === key ? (sort.dir === 1 ? " ↑" : " ↓") : "");
   const th = "px-3 py-2 text-xs font-medium text-gray-500 select-none";
@@ -244,10 +320,17 @@ export function ProductsList({ products, seasons, tagOptions = [], initialCatego
     const thumb = (p.main_thumbs ?? [])[0];
     const isSel = selected.has(p.id);
     return (
-      <tr key={p.id} onClick={() => window.open(`/products/${p.id}/edit`, "_blank", "noopener")}
-        className={`cursor-pointer transition-colors ${isSel ? "bg-gray-50" : "hover:bg-gray-50/70"} ${p.is_invalid ? "opacity-40" : ""}`}>
+      <tr key={p.id} onClick={() => openEdit(p.id)}
+        className={`cursor-pointer transition-colors ${isSel ? "bg-gray-50" : "hover:bg-gray-50/70"} ${p.is_invalid ? "opacity-40" : ""} ${openingId === p.id ? "animate-pulse" : ""}`}>
         <td className={td} onClick={(e) => e.stopPropagation()}>
           <input type="checkbox" checked={isSel} onChange={() => toggleSel(p.id)} aria-label={`Select ${p.model_name ?? ""}`} className="align-middle accent-gray-900" />
+        </td>
+        <td className={`${td} text-center`} onClick={(e) => e.stopPropagation()}>
+          <button type="button" onClick={() => toggleLock(p)} disabled={bulkPending}
+            title={p.status === "final" ? "Cost locked — click to unlock" : "Cost unlocked — click to lock"}
+            className={`inline-flex ${p.status === "final" ? "text-amber-600" : "text-gray-300 hover:text-gray-500"}`}>
+            {p.status === "final" ? <LockClosedIcon /> : <LockOpenIcon />}
+          </button>
         </td>
 
         {/* Category + Season above the ID */}
@@ -297,8 +380,34 @@ export function ProductsList({ products, seasons, tagOptions = [], initialCatego
           </div>
         </td>
 
-        <td className={`${td} text-right font-mono text-gray-400 text-xs`}>{idealWsOf(p)}</td>
-        <td className={`${td} text-right font-mono font-semibold text-gray-700`}>{retailOf(p)}</td>
+        <td className={`${td} text-right`} onClick={(e) => e.stopPropagation()}>
+          <div className="font-mono text-gray-400 text-xs">{idealWsOf(p)}</div>
+          <div className="mt-0.5 flex justify-end">
+            <RowMarkup productId={p.id} value={markupNum(p)} locked={p.status === "final"} />
+          </div>
+        </td>
+        <td className={`${td} text-right font-mono font-semibold text-gray-700`}
+          onClick={(e) => e.stopPropagation()}
+          onDoubleClick={() => { if (p.status !== "final") setRetailEdit({ id: p.id, val: String(retailNum(p) || "") }); }}>
+          <div className="flex items-center justify-end gap-1.5">
+            {retailEdit?.id === p.id ? (
+              <input autoFocus type="number" min="0" step="0.01" value={retailEdit.val}
+                onChange={(e) => setRetailEdit({ id: p.id, val: e.target.value })}
+                onBlur={commitRetail}
+                onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); if (e.key === "Escape") setRetailEdit(null); }}
+                className="w-20 px-1.5 py-0.5 border-2 border-gray-900 rounded text-sm text-right focus:outline-none bg-white" />
+            ) : (
+              <span title={p.status === "final" ? "Retail locked" : "Double-click to edit retail (applies to all colours)"}
+                className={p.status === "final" ? "text-gray-500" : "cursor-pointer hover:bg-yellow-50 rounded px-1 -mx-1"}>{retailOf(p)}</span>
+            )}
+            <button type="button" onClick={() => toggleLock(p)} disabled={bulkPending}
+              title={p.status === "final" ? "Cost locked — click to unlock" : "Lock cost & retail"}
+              className={`inline-flex shrink-0 ${p.status === "final" ? "text-amber-600" : "text-gray-300 hover:text-gray-600"}`}>
+              {p.status === "final" ? <LockClosedIcon /> : <LockOpenIcon />}
+            </button>
+          </div>
+          <div className="text-[11px] font-normal text-gray-400 mt-0.5" title="Reference retail = Ideal WS × retail multiplier">ref {retailRefOf(p)}</div>
+        </td>
         <td className={`${td} text-right`} onClick={(e) => e.stopPropagation()}>
           <div className="flex items-center justify-end gap-1">
             <DupButton productId={p.id} />
@@ -332,10 +441,28 @@ export function ProductsList({ products, seasons, tagOptions = [], initialCatego
           </div>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          <select value={fSeason} onChange={(e) => setFSeason(e.target.value)} className={selCls} aria-label="Season">
-            <option value="">All Seasons</option>
-            {seasonOrder.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-          </select>
+          <div className="relative">
+            <button type="button" onClick={() => setSeasonMenuOpen((v) => !v)} className={selCls + " flex items-center gap-1.5"} aria-label="Seasons">
+              {fSeasons.size === 0 ? "All Seasons" : `${fSeasons.size} season${fSeasons.size > 1 ? "s" : ""}`}
+              <span className="text-gray-400">▾</span>
+            </button>
+            {seasonMenuOpen && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setSeasonMenuOpen(false)} />
+                <div className="absolute z-20 mt-1 left-0 bg-white border border-gray-200 rounded-lg shadow-xl py-1 min-w-44 max-h-72 overflow-y-auto">
+                  {fSeasons.size > 0 && (
+                    <button type="button" onClick={() => setFSeasons(new Set())} className="w-full text-left px-3 py-1 text-xs text-gray-400 hover:text-gray-700">Clear seasons</button>
+                  )}
+                  {seasonOrder.map((s) => (
+                    <label key={s.id} className="flex items-center gap-2 px-3 py-1 hover:bg-gray-50 text-sm cursor-pointer">
+                      <input type="checkbox" checked={fSeasons.has(s.id)} onChange={() => toggleSeason(s.id)} className="accent-gray-900" />
+                      {s.name}
+                    </label>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
           <select value={fSex} onChange={(e) => setFSex(e.target.value)} className={selCls} aria-label="Sex">
             <option value="">All Sex</option>
             {sexes.map((s) => <option key={s} value={s}>{s}</option>)}
@@ -358,7 +485,7 @@ export function ProductsList({ products, seasons, tagOptions = [], initialCatego
             </div>
           </div>
           {hasFilters && (
-            <button onClick={() => { setSearch(""); setFSeason(""); setFCat(""); setFSex(""); setFSample(""); setFTag(""); }} className="text-xs text-gray-400 hover:text-gray-700 underline">Clear</button>
+            <button onClick={() => { setSearch(""); setFSeasons(new Set()); setFCat(""); setFSex(""); setFSample(""); setFTag(""); }} className="text-xs text-gray-400 hover:text-gray-700 underline">Clear</button>
           )}
         </div>
       </div>
@@ -373,10 +500,11 @@ export function ProductsList({ products, seasons, tagOptions = [], initialCatego
                   onChange={(e) => setSelected(e.target.checked ? new Set(filtered.map((p) => p.id)) : new Set())}
                   className="align-middle accent-gray-900" />
               </th>
+              <th className={th + " text-center w-8"} title="Cost lock"></th>
               <th className={sTh + " text-left w-28"} onClick={() => setSortKey("id")}>Cat / Season / ID{arrow("id")}</th>
               <th className={sTh + " text-left"} onClick={() => setSortKey("model")}>Product{arrow("model")}</th>
               <th className={sTh + " text-left"} onClick={() => setSortKey("material")}>Material / Colour{arrow("material")}</th>
-              <th className={th + " text-right whitespace-nowrap"}>WS €</th>
+              <th className={th + " text-right whitespace-nowrap"}>Ideal WS €<span className="text-gray-300"> · ×Mk</span></th>
               <th className={sTh + " text-right whitespace-nowrap"} onClick={() => setSortKey("retail")}>Retail €{arrow("retail")}</th>
               <th className={th + " w-16"}></th>
             </tr>
@@ -387,7 +515,7 @@ export function ProductsList({ products, seasons, tagOptions = [], initialCatego
               : grouped.map(([key, rows]) => (
                   <Fragment key={key}>
                     <tr className="bg-gray-50/80 border-t border-b border-gray-200">
-                      <td colSpan={7} className="px-3 py-1.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                      <td colSpan={8} className="px-3 py-1.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">
                         {key} <span className="text-gray-400 font-normal">({rows.length})</span>
                       </td>
                     </tr>
@@ -395,7 +523,7 @@ export function ProductsList({ products, seasons, tagOptions = [], initialCatego
                   </Fragment>
                 ))}
             {!filtered.length && (
-              <tr><td colSpan={7} className="px-4 py-10 text-center text-gray-400 text-sm">{hasFilters ? "No products match the filters" : "No products yet"}</td></tr>
+              <tr><td colSpan={8} className="px-4 py-10 text-center text-gray-400 text-sm">{hasFilters ? "No products match the filters" : "No products yet"}</td></tr>
             )}
           </tbody>
         </table>
@@ -435,6 +563,11 @@ export function ProductsList({ products, seasons, tagOptions = [], initialCatego
             )}
           </div>
           <span className="w-px h-5 bg-white/15" />
+          <button type="button" disabled={bulkPending} onClick={() => runBulk(() => bulkSetProductFinalized([...selected], true))}
+            className="px-3 py-1 rounded-lg hover:bg-white/10 disabled:opacity-50" title="Lock cost & retail for selected">Lock retail</button>
+          <button type="button" disabled={bulkPending} onClick={() => runBulk(() => bulkSetProductFinalized([...selected], false))}
+            className="px-3 py-1 rounded-lg hover:bg-white/10 disabled:opacity-50" title="Unlock selected">Unlock</button>
+          <span className="w-px h-5 bg-white/15" />
           <button type="button" disabled={bulkPending}
             onClick={() => { if (confirm(`Delete ${selected.size} product(s)? This can't be undone.`)) runBulk(() => bulkDeleteProducts([...selected])); }}
             className="px-3 py-1 rounded-lg text-red-300 hover:bg-white/10 disabled:opacity-50">Delete</button>
@@ -442,6 +575,8 @@ export function ProductsList({ products, seasons, tagOptions = [], initialCatego
           <button type="button" onClick={clearSel} className="px-2 py-1 rounded-lg text-gray-400 hover:bg-white/10" aria-label="Clear selection">✕</button>
         </div>
       )}
+
+      {editBundle && <ProductEditModal bundle={editBundle} onClose={() => setEditBundle(null)} />}
     </div>
   );
 }

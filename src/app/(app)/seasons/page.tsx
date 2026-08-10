@@ -6,7 +6,7 @@ import { createSeason } from "@/app/actions/seasons";
 export default async function SeasonsPage() {
   const supabase = await createClient();
   const [{ data: seasons }, { data: stats }] = await Promise.all([
-    supabase.from("seasons").select("id, name, eur_jpy_rate, archived, created_at").order("name", { ascending: false }),
+    supabase.from("seasons").select("id, name, eur_jpy_rate, client_discount_rate, archived, created_at").order("name", { ascending: false }),
     supabase.rpc("get_season_stats"),
   ]);
 

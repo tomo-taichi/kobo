@@ -6,32 +6,36 @@ import { updatePricingSettings } from "@/app/actions/company-settings";
 
 // ADR-0009 Phase 3 (Settings › Pricing) — global default EUR rate + labor rate.
 // Read-only until "Edit"; Save is enabled only when a value actually changed.
-export function PricingSettingsForm({ costEurRate, laborRate }: { costEurRate: number; laborRate: number }) {
+export function PricingSettingsForm({ costEurRate, laborRate, clientDiscount }: { costEurRate: number; laborRate: number; clientDiscount: number }) {
   const [editing, setEditing] = useState(false);
   const [eur, setEur] = useState(String(costEurRate));
   const [labor, setLabor] = useState(String(laborRate));
+  const discPct = Math.round(clientDiscount * 100);
+  const [disc, setDisc] = useState(String(discPct));
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const router = useRouter();
 
-  const dirty = Number(eur) !== costEurRate || Number(labor) !== laborRate;
-  const valid = Number(eur) > 0 && Number(labor) > 0;
+  const dirty = Number(eur) !== costEurRate || Number(labor) !== laborRate || Number(disc) !== discPct;
+  const valid = Number(eur) > 0 && Number(labor) > 0 && Number(disc) >= 0 && Number(disc) < 100;
 
   const startEdit = () => {
     setEur(String(costEurRate));
     setLabor(String(laborRate));
+    setDisc(String(discPct));
     setError(null);
     setEditing(true);
   };
   const cancel = () => {
     setEur(String(costEurRate));
     setLabor(String(laborRate));
+    setDisc(String(discPct));
     setError(null);
     setEditing(false);
   };
   const save = () =>
     startTransition(async () => {
-      const err = await updatePricingSettings(Number(eur), Number(labor));
+      const err = await updatePricingSettings(Number(eur), Number(labor), Number(disc) / 100);
       if (err) {
         setError(err);
       } else {
@@ -70,6 +74,18 @@ export function PricingSettingsForm({ costEurRate, laborRate }: { costEurRate: n
             <div className="text-sm text-gray-900 font-mono">{laborRate}</div>
           )}
           <p className="text-[11px] text-gray-400 mt-1">Manufacturing amount = work hours × this rate.</p>
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">Client discount (% off retail)</label>
+          {editing ? (
+            <div className="flex items-center gap-1">
+              <input type="number" min="0" max="99" step="1" value={disc} onChange={(e) => setDisc(e.target.value)} className={inputCls} />
+              <span className="text-sm text-gray-500">%</span>
+            </div>
+          ) : (
+            <div className="text-sm text-gray-900 font-mono">{discPct}%</div>
+          )}
+          <p className="text-[11px] text-gray-400 mt-1">Default client discount (fallback). Each <span className="font-medium">season</span> can set its own (Seasons page); a product captures its season&apos;s discount at creation. Existing products are unchanged.</p>
         </div>
       </div>
 

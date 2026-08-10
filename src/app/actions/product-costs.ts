@@ -36,12 +36,16 @@ export async function updateProductCosts(
   const { data: product } = await supabase
     .from("products")
     .select(`
+      status,
       main_material_id,
       main_mat:materials!main_material_id(set_price_jpy),
       lining_mat:materials!lining_material_id(set_price_jpy)
     `)
     .eq("id", productId)
     .single();
+
+  // Finalised products are locked — reject cost edits (the UI also disables them).
+  if ((product as any)?.status === "final") return "Product is finalised — unlock to edit.";
 
   const mainMaterialId = (product as any)?.main_material_id ?? null;
   const mainBase       = Number((product as any)?.main_mat?.set_price_jpy   ?? 0);
@@ -153,6 +157,7 @@ export async function updateProductCosts(
     .eq("id", productId);
   if (error) return error.message;
 
-  revalidatePath(`/products/${productId}/costs`);
+  // Materials & Cost now lives on the /edit page (merged view).
+  revalidatePath(`/products/${productId}/edit`);
   return null;
 }

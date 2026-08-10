@@ -20,7 +20,7 @@ export default async function SettingsPage() {
   const readyDomains = SETTINGS_GROUPS.flatMap((g) => g.domains.filter((d) => d.ready).map((d) => d.domain));
   const [entries, settingsRes, mfgPresets, banks] = await Promise.all([
     Promise.all(readyDomains.map(async (d) => [d, await getListOptions(supabase, d)] as const)),
-    supabase.from("company_settings").select("cost_eur_rate_default, labor_rate_jpy_per_hour").limit(1).maybeSingle(),
+    supabase.from("company_settings").select("cost_eur_rate_default, labor_rate_jpy_per_hour, client_discount_rate").limit(1).maybeSingle(),
     getManufacturingPresets(supabase),
     getBanks(supabase),
   ]);
@@ -36,6 +36,7 @@ export default async function SettingsPage() {
         <PricingSettingsForm
           costEurRate={Number(settings.cost_eur_rate_default) || 130}
           laborRate={Number(settings.labor_rate_jpy_per_hour) || 2000}
+          clientDiscount={settings.client_discount_rate != null ? Number(settings.client_discount_rate) : 0.65}
         />
       ),
     },

@@ -11,7 +11,7 @@ type Stat = {
   order_customers: number; billed_eur: number; paid_eur: number; unpaid_customers: number;
   products_by_category: Record<string, number>; total_units: number;
 };
-type Season = { id: string; name: string; eur_jpy_rate: number | null; archived: boolean; stat: Stat | null };
+type Season = { id: string; name: string; eur_jpy_rate: number | null; client_discount_rate: number | null; archived: boolean; stat: Stat | null };
 
 const eur = (v: number) => `€${Math.round(v).toLocaleString("en-US")}`;
 const jpy = (v: number) => `¥${Math.round(v).toLocaleString("en-US")}`;
@@ -53,7 +53,7 @@ function SeasonCard({ s, selected, onToggle, onEdit }: { s: Season; selected: bo
         <input type="checkbox" checked={selected} onChange={onToggle} aria-label={`Select ${s.name}`} className="accent-gray-900" />
         <Link href={`/seasons/${s.id}`} className="text-base font-semibold text-gray-900 hover:underline">{s.name}</Link>
         {s.archived && <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-500">Archived</span>}
-        <span className="ml-auto text-xs text-gray-400">{s.eur_jpy_rate != null ? `¥${Number(s.eur_jpy_rate)}/€` : "—"}</span>
+        <span className="ml-auto text-xs text-gray-400">{s.eur_jpy_rate != null ? `¥${Number(s.eur_jpy_rate)}/€` : "—"}{s.client_discount_rate != null ? ` · −${Math.round(Number(s.client_discount_rate) * 100)}%` : ""}</span>
         <button type="button" onClick={onEdit} title="Edit" className="inline-flex items-center justify-center w-7 h-7 rounded-md border border-gray-200 text-gray-400 hover:bg-gray-100 hover:text-gray-900">
           <EditIcon />
         </button>
@@ -109,11 +109,12 @@ function SeasonCard({ s, selected, onToggle, onEdit }: { s: Season; selected: bo
 function EditModal({ season, onClose, onSaved }: { season: Season; onClose: () => void; onSaved: () => void }) {
   const [name, setName] = useState(season.name);
   const [rate, setRate] = useState(season.eur_jpy_rate != null ? String(season.eur_jpy_rate) : "");
+  const [disc, setDisc] = useState(season.client_discount_rate != null ? String(Math.round(Number(season.client_discount_rate) * 100)) : "65");
   const [error, setError] = useState<string | null>(null);
   const [saving, startSave] = useTransition();
 
   const save = () => startSave(async () => {
-    const err = await updateSeasonFields(season.id, name, Number(rate));
+    const err = await updateSeasonFields(season.id, name, Number(rate), Number(disc) / 100);
     if (err) setError(err);
     else onSaved();
   });
@@ -134,10 +135,18 @@ function EditModal({ season, onClose, onSaved }: { season: Season; onClose: () =
             <label className="block text-xs font-medium text-gray-600 mb-1">Exchange Rate (JPY/EUR) <span className="text-red-500">*</span></label>
             <input value={rate} onChange={(e) => setRate(e.target.value)} type="number" step="0.01" min="0" className={inputCls} placeholder="e.g. 130" />
           </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Client discount (% off retail) <span className="text-red-500">*</span></label>
+            <div className="flex items-center gap-1">
+              <input value={disc} onChange={(e) => setDisc(e.target.value)} type="number" step="1" min="0" max="99" className={inputCls} placeholder="e.g. 65" />
+              <span className="text-sm text-gray-500">%</span>
+            </div>
+            <p className="text-[11px] text-gray-400 mt-1">Retail (ref) = Ideal WS ÷ (1 − discount). Applied to products newly created in this season.</p>
+          </div>
         </div>
         <div className="flex justify-end gap-2 pt-1">
           <button type="button" onClick={onClose} disabled={saving} className="px-4 py-2 text-sm border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 disabled:opacity-50">Cancel</button>
-          <button type="button" onClick={save} disabled={saving || !name.trim() || !(Number(rate) > 0)} className="px-4 py-2 text-sm bg-gray-900 text-white rounded-md hover:bg-gray-700 disabled:opacity-50">
+          <button type="button" onClick={save} disabled={saving || !name.trim() || !(Number(rate) > 0) || !(Number(disc) >= 0 && Number(disc) < 100)} className="px-4 py-2 text-sm bg-gray-900 text-white rounded-md hover:bg-gray-700 disabled:opacity-50">
             {saving ? "Saving…" : "Save"}
           </button>
         </div>

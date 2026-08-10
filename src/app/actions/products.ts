@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { loadProductEditBundle } from "@/lib/product-edit-data";
 
 function num(v: FormDataEntryValue | null): number | null {
   const s = (v as string)?.trim();
@@ -181,7 +182,17 @@ export async function createProduct(
   if (!fields.model_name)       return "Model name is required";
   if (!fields.main_material_id) return "Main material is required";
   const productNumber = await nextProductNumber(supabase);
-  const { data, error } = await supabase.from("products").insert({ ...fields, product_number: productNumber }).select("id").single();
+  // Capture the client discount as this product's retail multiplier (retail =
+  // Ideal WS × multiplier). Prefer the SEASON's discount (like the season's EUR
+  // rate), falling back to the company default. Later changes won't affect it.
+  const { data: season } = await supabase.from("seasons").select("client_discount_rate").eq("id", fields.season_id).maybeSingle();
+  let d = Number((season as { client_discount_rate?: number } | null)?.client_discount_rate);
+  if (!(d >= 0 && d < 1)) {
+    const { data: cs } = await supabase.from("company_settings").select("client_discount_rate").limit(1).maybeSingle();
+    d = Number((cs as { client_discount_rate?: number } | null)?.client_discount_rate);
+  }
+  const retailMultiplier = d >= 0 && d < 1 ? 1 / (1 - d) : 1 / (1 - 0.65);
+  const { data, error } = await supabase.from("products").insert({ ...fields, product_number: productNumber, retail_rate: retailMultiplier }).select("id").single();
   if (error) return error.message;
   const syncErr = await syncProductColors(supabase, data.id, parseEnabledColorIds(formData));
   if (syncErr) return syncErr;
@@ -196,6 +207,9 @@ export async function updateProduct(
 ): Promise<string | null> {
   const supabase = await createClient();
   const id = formData.get("id") as string;
+  // Finalised products are locked — reject edits (the UI also disables the form).
+  const { data: cur } = await supabase.from("products").select("status").eq("id", id).single();
+  if ((cur as { status?: string } | null)?.status === "final") return "Product is finalised — unlock to edit.";
   const fields = extractProductFields(formData);
   if (!fields.season_id)        return "Season is required";
   if (!fields.model_name)       return "Model name is required";
@@ -351,6 +365,81 @@ export async function bulkDeleteProducts(ids: string[]): Promise<string | null> 
     if (error.code === "23503") return "Some products are used by orders and can't be deleted.";
     return error.message;
   }
+  revalidatePath("/products");
+  return null;
+}
+
+// Full edit bundle for the products-list popup (same data as the /edit page).
+export async function getProductEditData(id: string) {
+  const supabase = await createClient();
+  return loadProductEditBundle(supabase, id);
+}
+
+// Quick inline edit from the products list: set one retail price across every colour
+// of the product (uniform). Blocked when the product is finalised (locked).
+export async function setProductRetailPrice(productId: string, retailEur: number): Promise<string | null> {
+  if (isNaN(retailEur) || retailEur < 0) return "Invalid price";
+  const supabase = await createClient();
+  const { data: cur } = await supabase.from("products").select("status").eq("id", productId).single();
+  if ((cur as { status?: string } | null)?.status === "final") return "Product is finalised — unlock to edit.";
+  const { error: cErr } = await supabase.from("product_colors").update({ retail_price_eur: retailEur }).eq("product_id", productId);
+  if (cErr) return cErr.message;
+  const { error: pErr } = await supabase.from("products").update({ retail_price_eur: retailEur }).eq("id", productId);
+  if (pErr) return pErr.message;
+  revalidatePath("/products");
+  return null;
+}
+
+// Quick inline edit from the products list: set the markup rate across every colour
+// (uniform) and recompute each colour's Ideal WS € (= Cost € × markup). Cost € is
+// derived from the stored Ideal WS ÷ current markup, so the full cost calc isn't
+// re-run. Blocked when the product is finalised (locked).
+export async function setProductMarkup(productId: string, markup: number): Promise<string | null> {
+  if (isNaN(markup) || markup < 0) return "Invalid markup";
+  const supabase = await createClient();
+  const { data: cur } = await supabase.from("products").select("status, markup_rate, wholesale_eur").eq("id", productId).single();
+  const c0 = cur as { status?: string; markup_rate?: number | null; wholesale_eur?: number | null } | null;
+  if (c0?.status === "final") return "Product is finalised — unlock to edit.";
+
+  const { data: colors } = await supabase.from("product_colors").select("id, markup_rate, wholesale_eur").eq("product_id", productId);
+  for (const c of (colors ?? []) as { id: string; markup_rate: number | null; wholesale_eur: number | null }[]) {
+    const oldM = Number(c.markup_rate ?? 0), oldWs = Number(c.wholesale_eur ?? 0);
+    const costEur = oldM > 0 ? oldWs / oldM : null;
+    const newWs = costEur != null ? Number((costEur * markup).toFixed(2)) : oldWs;
+    const { error } = await supabase.from("product_colors").update({ markup_rate: markup, wholesale_eur: newWs }).eq("id", c.id);
+    if (error) return error.message;
+  }
+  const baseM = Number(c0?.markup_rate ?? 0), baseWs = Number(c0?.wholesale_eur ?? 0);
+  const baseCostEur = baseM > 0 ? baseWs / baseM : null;
+  const baseNewWs = baseCostEur != null ? Number((baseCostEur * markup).toFixed(2)) : baseWs;
+  const { error: pErr } = await supabase.from("products").update({ markup_rate: markup, wholesale_eur: baseNewWs }).eq("id", productId);
+  if (pErr) return pErr.message;
+  revalidatePath("/products");
+  return null;
+}
+
+// Complete Status: finalise (lock) or unlock (back to draft) a single product.
+export async function setProductFinalized(id: string, finalized: boolean): Promise<string | null> {
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("products")
+    .update({ status: finalized ? "final" : "draft", finalized_at: finalized ? new Date().toISOString() : null })
+    .eq("id", id);
+  if (error) return error.message;
+  revalidatePath(`/products/${id}/edit`);
+  revalidatePath("/products");
+  return null;
+}
+
+// Bulk finalise/unlock from the products list.
+export async function bulkSetProductFinalized(ids: string[], finalized: boolean): Promise<string | null> {
+  if (!ids.length) return null;
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("products")
+    .update({ status: finalized ? "final" : "draft", finalized_at: finalized ? new Date().toISOString() : null })
+    .in("id", ids);
+  if (error) return error.message;
   revalidatePath("/products");
   return null;
 }

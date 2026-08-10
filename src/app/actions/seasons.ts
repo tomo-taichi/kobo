@@ -67,12 +67,13 @@ export async function bulkDeleteSeasons(ids: string[]): Promise<string | null> {
 }
 
 // Modal edit (no redirect) — update a season's name + rate in place.
-export async function updateSeasonFields(id: string, name: string, rate: number): Promise<string | null> {
+export async function updateSeasonFields(id: string, name: string, rate: number, clientDiscount: number): Promise<string | null> {
   const supabase = await createClient();
   const n = name?.trim();
   if (!n) return "Please enter a season name";
   if (!rate || rate <= 0) return "Please enter an exchange rate (JPY/EUR)";
-  const { error } = await supabase.from("seasons").update({ name: n, eur_jpy_rate: rate }).eq("id", id);
+  if (!(clientDiscount >= 0 && clientDiscount < 1)) return "Client discount must be between 0% and 99%";
+  const { error } = await supabase.from("seasons").update({ name: n, eur_jpy_rate: rate, client_discount_rate: clientDiscount }).eq("id", id);
   if (error) return error.message;
   revalidatePath("/seasons");
   return null;

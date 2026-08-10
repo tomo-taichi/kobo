@@ -98,9 +98,22 @@ export function calcWholesaleEur(costEur: number, markupRate: number): number {
   return costEur * markupRate;
 }
 
-// Reference retail price = Ideal WS (EUR) × Retail Margin Rate. This is only a
-// suggestion shown next to the manually-set retail price; the actual
-// products.retail_price_eur is entered by hand and is the price Orders adopt.
+// The brand gives its B2B clients a fixed discount off retail, so the client's
+// wholesale price = retail × (1 − discount). Retail is therefore derived from the
+// target (Ideal) wholesale, not from a free multiplier.
+export const CLIENT_DISCOUNT_RATE = 0.65; // 65% off retail
+// Equivalent multiplier: retail = Ideal WS × RETAIL_MULTIPLIER (= 1 / (1 − 0.65)).
+export const RETAIL_MULTIPLIER = 1 / (1 - CLIENT_DISCOUNT_RATE);
+
+// Reference retail price derived from Ideal WS and the fixed client discount:
+// retail = Ideal WS ÷ (1 − discount). It is only a suggestion next to the
+// manually-set retail price; products.retail_price_eur is the price Orders adopt.
+export function calcRetailFromWholesale(idealWsEur: number, discountRate: number = CLIENT_DISCOUNT_RATE): number {
+  const keep = 1 - discountRate;
+  return keep > 0 ? idealWsEur / keep : 0;
+}
+
+// Legacy: reference retail = Ideal WS × explicit rate (kept for compatibility).
 export function calcRetailRefEur(idealWsEur: number, retailRate: number): number {
   return idealWsEur * retailRate;
 }

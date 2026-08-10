@@ -5,6 +5,8 @@ import { flushSync } from "react-dom";
 import { PRODUCT_CATEGORIES, PRODUCT_SEXES, ACCESSORY_COMPOSITIONS, defaultOrderableSizes, ORDERABLE_SIZE_PRESETS } from "@/lib/product-constants";
 import { SIZES } from "@/lib/order-constants";
 import { MaterialPickerModal, type PickableMaterial } from "@/components/material-picker";
+import { CollapsibleCard } from "@/components/collapsible-card";
+import { addListOption } from "@/app/actions/list-options";
 
 type Action = (_state: string | null, formData: FormData) => Promise<string | null>;
 type SelectOption = { id: string; name: string };
@@ -67,6 +69,7 @@ type Props = {
   sexOptions?: string[];
   accessoryCompositionOptions?: string[];
   tagOptions?: string[];
+  locked?: boolean;
 };
 
 const inputCls  = "w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-gray-900";
@@ -170,6 +173,7 @@ export function ProductForm({
   sexOptions = [...PRODUCT_SEXES],
   accessoryCompositionOptions = [...ACCESSORY_COMPOSITIONS],
   tagOptions = [],
+  locked = false,
 }: Props) {
   const [result, formAction, pending] = useActionState(action, null);
   const formRef     = useRef<HTMLFormElement>(null);
@@ -189,9 +193,29 @@ export function ProductForm({
   const [sex, setSex] = useState<string>(initialData.product_sex ?? "");
   const [tags, setTags] = useState<Set<string>>(() => new Set(initialData.tags ?? []));
   // Managed tags plus any already on the product that are no longer in the list.
-  const tagChoices = Array.from(new Set([...tagOptions, ...(initialData.tags ?? [])]));
+  const [tagChoices, setTagChoices] = useState<string[]>(
+    () => Array.from(new Set([...tagOptions, ...(initialData.tags ?? [])]))
+  );
+  const [newTag, setNewTag] = useState("");
+  const [addingTag, setAddingTag] = useState(false);
   function toggleTag(t: string) {
     setTags((prev) => { const n = new Set(prev); n.has(t) ? n.delete(t) : n.add(t); return n; });
+    scheduleSubmit(200);
+  }
+  // Create a brand-new tag right here: persist it to the shared list (Settings)
+  // and select it on this product immediately.
+  async function addNewTag() {
+    const v = newTag.trim();
+    if (!v) return;
+    if (!tagChoices.includes(v)) {
+      setAddingTag(true);
+      const err = await addListOption("product_tag", v);
+      setAddingTag(false);
+      if (err && !/already exists/i.test(err)) { alert(err); return; }
+      setTagChoices((prev) => (prev.includes(v) ? prev : [...prev, v]));
+    }
+    setTags((prev) => new Set(prev).add(v));
+    setNewTag("");
     scheduleSubmit(200);
   }
   const [orderableSizes, setOrderableSizes] = useState<Set<string>>(
@@ -276,33 +300,22 @@ export function ProductForm({
 
   const isError = result && result !== "ok";
 
-  return (
-    <>
-      {showMain && (
-        <MaterialPickerModal
-          materials={materials}
-          onSelect={selectMain}
-          onClose={() => setShowMain(false)}
-        />
-      )}
-      {showLining && (
-        <MaterialPickerModal
-          materials={materials}
-          onSelect={selectLining}
-          onClose={() => setShowLining(false)}
-        />
-      )}
-
-      <form action={formAction} ref={formRef} onChange={handleFormChange} className="flex flex-col gap-6">
+  const formInner = (
+      <form action={formAction} ref={formRef} onChange={handleFormChange}>
+        <fieldset disabled={locked} className="flex flex-col gap-5 border-0 p-0 m-0 min-w-0 disabled:opacity-70">
         {id && <input type="hidden" name="id" value={id} />}
         <input type="hidden" name="enabled_color_ids" value={JSON.stringify([...enabledColorIds])} />
         <input type="hidden" name="lining_material_color_id" value={liningColorId ?? ""} />
         <input type="hidden" name="orderable_sizes" value={JSON.stringify(SIZES.filter((s) => orderableSizes.has(s)))} />
         {isError && <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded">{result}</p>}
 
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-6 gap-y-5 items-start">
+        {/* ══ Left column: identity & sizes ══ */}
+        <div className="flex flex-col gap-5">
         {/* ── 1. Product Info ── */}
         <Section title="Product Info">
-          <div className="grid grid-cols-2 gap-3">
+          {/* Season / Category / Sex in one row */}
+          <div className="grid grid-cols-3 gap-3">
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">Season <span className="text-red-500">*</span></label>
               <select name="season_id" defaultValue={initialData.season_id ?? ""} required className={selectCls}>
@@ -311,7 +324,7 @@ export function ProductForm({
               </select>
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Product Category <span className="text-red-500">*</span></label>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Category <span className="text-red-500">*</span></label>
               <select name="product_category" value={category} required className={selectCls}
                 onChange={(e) => handleCategoryChange(e.target.value)}>
                 <option value="">Select...</option>
@@ -319,29 +332,8 @@ export function ProductForm({
                 {categoryOptions.map((c) => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Model Name <span className="text-red-500">*</span></label>
-              {pastModelNames.length > 0 && (
-                <datalist id="past-model-names">
-                  {pastModelNames.map((n) => <option key={n} value={n} />)}
-                </datalist>
-              )}
-              <input
-                name="model_name"
-                defaultValue={initialData.model_name ?? ""}
-                required
-                list={pastModelNames.length > 0 ? "past-model-names" : undefined}
-                lang="en-GB"
-                spellCheck
-                className={inputCls}
-                placeholder="e.g. Classic Coat"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Product Sex</label>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Sex</label>
               <select name="product_sex" value={sex} className={selectCls}
                 onChange={(e) => handleSexChange(e.target.value)}>
                 <option value="">—</option>
@@ -351,14 +343,31 @@ export function ProductForm({
             </div>
           </div>
 
-          {/* Tags — managed in Settings; multi-select for search/filter */}
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Model Name <span className="text-red-500">*</span></label>
+            {pastModelNames.length > 0 && (
+              <datalist id="past-model-names">
+                {pastModelNames.map((n) => <option key={n} value={n} />)}
+              </datalist>
+            )}
+            <input
+              name="model_name"
+              defaultValue={initialData.model_name ?? ""}
+              required
+              list={pastModelNames.length > 0 ? "past-model-names" : undefined}
+              lang="en-GB"
+              spellCheck
+              className={inputCls}
+              placeholder="e.g. Classic Coat"
+            />
+          </div>
+
+          {/* Tags — pick existing, or type a new one and Add (also saved to Settings) */}
           <div>
             <input type="hidden" name="tags" value={JSON.stringify([...tags])} />
             <label className="block text-xs font-medium text-gray-600 mb-1">Tags</label>
-            {tagChoices.length === 0 ? (
-              <p className="text-xs text-gray-400">No tags yet — add them in Settings → Products → Tags.</p>
-            ) : (
-              <div className="flex flex-wrap gap-1.5">
+            {tagChoices.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 mb-2">
                 {tagChoices.map((t) => {
                   const on = tags.has(t);
                   return (
@@ -370,6 +379,20 @@ export function ProductForm({
                 })}
               </div>
             )}
+            <div className="flex items-center gap-1.5">
+              <input
+                type="text"
+                value={newTag}
+                onChange={(e) => setNewTag(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addNewTag(); } }}
+                placeholder="New tag…"
+                className="w-40 px-2.5 py-1 border border-gray-300 rounded-full text-xs focus:outline-none focus:ring-2 focus:ring-gray-900/10"
+              />
+              <button type="button" onClick={addNewTag} disabled={addingTag || !newTag.trim()}
+                className="text-xs px-2.5 py-1 rounded-full border border-gray-300 text-gray-600 hover:border-gray-900 hover:text-gray-900 disabled:opacity-40">
+                {addingTag ? "…" : "+ Add"}
+              </button>
+            </div>
           </div>
 
           <div className="flex gap-6">
@@ -419,7 +442,10 @@ export function ProductForm({
             <p className="text-[11px] text-amber-600">No sizes selected — this product can&apos;t be ordered until at least one is selected.</p>
           )}
         </Section>
+        </div>
 
+        {/* ══ Right column: materials ══ */}
+        <div className="flex flex-col gap-5">
         {/* ── 2. Main Material ── */}
         <Section title="Main Material *">
           {mainMat ? (
@@ -427,9 +453,12 @@ export function ProductForm({
               <MaterialSummary mat={mainMat} prefix="main" />
               <button type="button" onClick={() => setShowMain(true)} className="text-xs text-gray-500 hover:text-gray-900 underline w-fit">Change material</button>
 
-              <div className="mt-1">
-                <p className="text-xs font-medium text-gray-600 mb-1.5">
-                  Colours offered <span className="text-gray-400 font-normal">(select which colours can be ordered)</span>
+              <div className={`mt-2 rounded-lg border p-3 ${mainColors.length > 0 && enabledColorIds.size === 0 ? "border-amber-300 bg-amber-50" : "border-gray-200 bg-gray-50/60"}`}>
+                <p className="text-xs font-semibold text-gray-700 mb-2 flex items-center gap-1.5">
+                  <span className={`inline-flex items-center justify-center w-4 h-4 rounded-full text-[10px] font-bold ${enabledColorIds.size > 0 ? "bg-green-600 text-white" : "bg-amber-500 text-white"}`}>
+                    {enabledColorIds.size > 0 ? "✓" : "!"}
+                  </span>
+                  Select orderable colours <span className="text-red-500">*</span>
                 </p>
                 {mainColors.length === 0 ? (
                   <p className="text-[11px] text-gray-400">This material has no colours — add colours on the material first.</p>
@@ -439,8 +468,9 @@ export function ProductForm({
                       const on = enabledColorIds.has(c.id);
                       return (
                         <label key={c.id}
-                          className={`flex items-center gap-1.5 px-2.5 py-1 rounded border text-xs cursor-pointer select-none transition-colors ${on ? "bg-gray-900 text-white border-gray-900" : "bg-white text-gray-600 border-gray-300 hover:border-gray-500"}`}>
+                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md border text-xs font-medium cursor-pointer select-none transition-colors ${on ? "bg-gray-900 text-white border-gray-900" : "bg-white text-gray-600 border-gray-300 hover:border-gray-900"}`}>
                           <input type="checkbox" checked={on} onChange={() => toggleColor(c.id)} className="sr-only" />
+                          <span className={`inline-block w-3 h-3 rounded-full border ${on ? "bg-white border-white" : "border-gray-400"}`} />
                           {c.color}
                         </label>
                       );
@@ -448,7 +478,10 @@ export function ProductForm({
                   </div>
                 )}
                 {mainColors.length > 0 && enabledColorIds.size === 0 && (
-                  <p className="text-[11px] text-amber-600 mt-1.5">No colours selected — this product can&apos;t be ordered until at least one is selected.</p>
+                  <p className="text-[11px] text-amber-700 font-medium mt-2">⚠ Pick at least one colour so this product can be ordered.</p>
+                )}
+                {mainColors.length > 0 && enabledColorIds.size > 0 && (
+                  <p className="text-[11px] text-gray-400 mt-2">{enabledColorIds.size} of {mainColors.length} colour(s) selected.</p>
                 )}
               </div>
             </>
@@ -515,6 +548,8 @@ export function ProductForm({
             {accessoryCompositionOptions.map((c) => <option key={c} value={c}>{c}</option>)}
           </select>
         </Section>
+        </div>
+        </div>
 
         <div className="pt-1 border-t border-gray-100 flex items-center gap-3">
           {id ? (
@@ -533,7 +568,38 @@ export function ProductForm({
             </>
           )}
         </div>
+        </fieldset>
       </form>
+  );
+
+  return (
+    <>
+      {showMain && (
+        <MaterialPickerModal
+          materials={materials}
+          onSelect={selectMain}
+          onClose={() => setShowMain(false)}
+        />
+      )}
+      {showLining && (
+        <MaterialPickerModal
+          materials={materials}
+          onSelect={selectLining}
+          onClose={() => setShowLining(false)}
+        />
+      )}
+      {id ? (
+        <CollapsibleCard
+          title="Basic Info"
+          right={locked
+            ? <span className="text-xs font-medium text-amber-600">🔒 Locked</span>
+            : <span className="text-xs text-gray-400">{pending ? "Saving…" : result === "ok" ? "✓ Saved" : ""}</span>}
+        >
+          {formInner}
+        </CollapsibleCard>
+      ) : (
+        formInner
+      )}
     </>
   );
 }

@@ -10,10 +10,10 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
   // Products can exceed Supabase's 1000-row per-request cap (1900+), so page through.
   const PRODUCT_SELECT =
     "id, product_number, name, model_name, product_category, product_sex, " +
-    "is_sample, is_invalid, main_material_id, " +
-    "wholesale_eur, retail_price_eur, " +
+    "is_sample, is_invalid, status, main_material_id, " +
+    "wholesale_eur, retail_price_eur, markup_rate, retail_rate, " +
     "main_m_name, main_m_color, seasons(id, name), " +
-    "product_colors(retail_price_eur, wholesale_eur, material_colors(color)), " +
+    "product_colors(retail_price_eur, wholesale_eur, markup_rate, retail_rate, material_colors(color)), " +
     "product_tags(tag)";
   async function fetchAllProducts() {
     const out: any[] = [];

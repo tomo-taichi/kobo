@@ -1,17 +1,20 @@
 "use client";
 
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef, useEffect, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { MaterialPickerModal, type PickableMaterial } from "@/components/material-picker";
-import { calcCostJpy, calcCostEur, calcWholesaleEur, calcRetailRefEur, calcMfgAmountFromHours, mfgHoursToMinutes, mfgMinutesToAmounts } from "@/lib/pricing";
+import { CollapsibleCard } from "@/components/collapsible-card";
+import { setProductFinalized } from "@/app/actions/products";
+import { calcCostJpy, calcCostEur, calcWholesaleEur, calcMfgAmountFromHours, mfgHoursToMinutes, mfgMinutesToAmounts } from "@/lib/pricing";
 import { fmtEur } from "@/lib/format";
 import {
-  GARMENT_TYPES,
+  MANUFACTURING_CATEGORIES,
   MANUFACTURING_HOUR_PRESETS,
   MANUFACTURING_COST_LABELS,
   formatHours,
   type ManufacturingCostKey,
   type ManufacturingHourPresets,
-  type GarmentType,
+  type ManufacturingCategory,
 } from "@/lib/presets";
 import { updateProductCosts } from "@/app/actions/product-costs";
 
@@ -24,13 +27,6 @@ const ROLES = [
   { key: "accessories",    label: "Accessories" },
 ] as const;
 type RoleKey = typeof ROLES[number]["key"];
-
-const CATEGORY_TO_GARMENT: Record<string, GarmentType | null> = {
-  "Coat": "COAT", "Jacket": "JACKET", "Trousers": "TROUSERS",
-  "Knitwear": "JACKET", "Shirt": "SHIRT", "T-shirt": "TSHIRT",
-  "Shoes": null, "Bag": null, "Watch": null, "Accessories": null,
-  "Eyewear": null, "Other": null,
-};
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 type MaterialInfo = {
@@ -64,6 +60,8 @@ type Props = {
   initialCostEurRate: number;
   colors: ColorRow[];
   presets: ManufacturingHourPresets; // manufacturing autofill matrix (Settings)
+  retailMultiplier: number;          // retail = Ideal WS × this (captured per product)
+  locked?: boolean;
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -77,7 +75,7 @@ const qtyInputCls =
 function SectionBlock({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div>
-      <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider border-b border-gray-100 pb-1 mb-4">
+      <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider border-b border-gray-100 pb-1 mb-3">
         {title}
       </h3>
       {children}
@@ -107,7 +105,7 @@ function MfgInput({ mfgKey, value, laborRate, presets, onChange }: {
         title="Quick-fill preset"
       >
         <option value="">▾</option>
-        {GARMENT_TYPES.map((g) => (
+        {MANUFACTURING_CATEGORIES.map((g) => (
           <option key={g} value={presets[mfgKey][g]}>
             {g}: {formatHours(presets[mfgKey][g])}h
           </option>
@@ -154,7 +152,13 @@ export function ProductCostForm({
   laborRate,
   initialCostEurRate, colors,
   presets,
+  retailMultiplier,
+  locked = false,
 }: Props) {
+  const router = useRouter();
+  const [lockPending, startLock] = useTransition();
+  const clientDiscountPct = Math.round((1 - 1 / retailMultiplier) * 100);
+  const toggleLock = () => startLock(async () => { await setProductFinalized(productId, !locked); router.refresh(); });
   const [mainQty,    setMainQty]    = useState(initialMainQuantity);
   const [liningQty,  setLiningQty]  = useState(initialLiningQuantity);
   const [additional, setAdditional] = useState<AdditionalRow[]>(
@@ -204,21 +208,22 @@ export function ProductCostForm({
     const costJpy = materialCost + mfgCost;
     const costEur = calcCostEur(costJpy, eurRate || 1);
     const idealWs = calcWholesaleEur(costEur, e.markup);       // Ideal WS = Cost × Markup
-    const ref     = calcRetailRefEur(idealWs, e.retailRate);   // Retail (ref) = Ideal WS × Retail Margin Rate
+    const ref     = idealWs * retailMultiplier;                // Retail (ref) = Ideal WS × captured multiplier
     return { costJpy, costEur, idealWs, ref };
   };
 
   // Autofill
-  const autofillType = productCategory ? (CATEGORY_TO_GARMENT[productCategory] ?? null) : null;
+  const autofillCat = productCategory && (MANUFACTURING_CATEGORIES as readonly string[]).includes(productCategory)
+    ? (productCategory as ManufacturingCategory) : null;
   function handleAutofill() {
-    if (!autofillType) return;
+    if (!autofillCat) return;
     setMfg({
-      cutting:  presets.cutting[autofillType],
-      sewing:   presets.sewing[autofillType],
-      knitting: presets.knitting[autofillType],
-      thread:   presets.thread[autofillType],
-      finish:   presets.finish[autofillType],
-      packing:  presets.packing[autofillType],
+      cutting:  presets.cutting[autofillCat],
+      sewing:   presets.sewing[autofillCat],
+      knitting: presets.knitting[autofillCat],
+      thread:   presets.thread[autofillCat],
+      finish:   presets.finish[autofillCat],
+      packing:  presets.packing[autofillCat],
     });
   }
 
@@ -243,7 +248,7 @@ export function ProductCostForm({
         colors.map((c, i) => ({
           productColorId: c.productColorId,
           markupRate:     v.colorEdits[i]?.markup ?? 3.0,
-          retailRate:     v.colorEdits[i]?.retailRate ?? 3.5,
+          retailRate:     retailMultiplier, // preserve product-captured multiplier
           retailPriceEur: v.colorEdits[i]?.retailPrice ?? 0,
         }))
       );
@@ -273,16 +278,37 @@ export function ProductCostForm({
     setColorEdits((prev) => prev.map((e, idx) => idx === i ? { ...e, [field]: v } : e));
   }
 
+  const saveIndicator =
+    saveStatus === "saving" ? <span className="text-xs text-gray-400">Saving…</span>
+    : saveStatus === "saved" ? <span className="text-xs text-green-600">✓ Saved</span>
+    : saveStatus === "error" ? <span className="text-xs text-red-500">{saveError ?? "Save failed"}</span>
+    : locked ? <span className="text-xs font-medium text-amber-600">🔒 Locked</span>
+    : null;
+
   return (
-    <div className="space-y-8">
+    <div className="space-y-4">
+      {pickerRole && (
+        <MaterialPickerModal
+          materials={allMaterials}
+          onSelect={handlePickerSelect}
+          onClose={() => setPickerRole(null)}
+        />
+      )}
 
-      {/* ── Save status indicator ── */}
-      <div className="flex justify-end h-5">
-        {saveStatus === "saving" && <span className="text-xs text-gray-400">Saving…</span>}
-        {saveStatus === "saved"  && <span className="text-xs text-green-600">✓ Saved</span>}
-        {saveStatus === "error"  && <span className="text-xs text-red-500">{saveError ?? "Save failed"}</span>}
-      </div>
-
+      {/* ══ Materials & Cost (collapsible) ══ */}
+      <CollapsibleCard title="Materials & Cost" right={
+        <div className="flex items-center gap-3">
+          {saveIndicator}
+          <button type="button" onClick={toggleLock} disabled={lockPending}
+            className={`inline-flex items-center gap-1 text-xs px-2 py-1 rounded-md border transition-colors disabled:opacity-50 ${locked ? "border-amber-300 text-amber-700 bg-amber-50 hover:bg-amber-100" : "border-gray-200 text-gray-500 hover:text-gray-900 hover:border-gray-300"}`}
+            title={locked ? "Cost is locked — click to unlock" : "Finalise & lock the cost"}>
+            {locked ? "🔒 Cost locked · Unlock" : "🔓 Lock cost"}
+          </button>
+        </div>
+      }>
+      <fieldset disabled={locked} className="border-0 p-0 m-0 min-w-0 disabled:opacity-70">
+      {/* ── Narrow zone: Materials + Manufacturing side by side ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
       {/* ── Materials ── */}
       <SectionBlock title="Materials">
         <div className="flex items-center gap-3 mb-3 text-xs text-gray-400">
@@ -293,9 +319,9 @@ export function ProductCostForm({
         </div>
 
         {/* Main */}
-        <div className="mb-3">
+        <div className="mb-2">
           <p className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-2">Main</p>
-          <div className="bg-gray-50 border border-gray-100 rounded-lg px-4 py-3">
+          <div className="bg-gray-50 border border-gray-100 rounded-lg px-3 py-2">
             {mainMaterial
               ? <MaterialCostRow mat={mainMaterial} quantity={mainQty} onQuantityChange={setMainQty} />
               : <p className="text-xs text-gray-400 italic">Main material not set — configure in Basic Info</p>
@@ -304,9 +330,9 @@ export function ProductCostForm({
         </div>
 
         {/* Lining */}
-        <div className="mb-3">
+        <div className="mb-2">
           <p className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-2">Lining</p>
-          <div className="bg-gray-50 border border-gray-100 rounded-lg px-4 py-3">
+          <div className="bg-gray-50 border border-gray-100 rounded-lg px-3 py-2">
             {liningMaterial
               ? <MaterialCostRow mat={liningMaterial} quantity={liningQty} onQuantityChange={setLiningQty} />
               : <div className="flex items-center justify-between">
@@ -318,15 +344,15 @@ export function ProductCostForm({
         </div>
 
         {/* Others */}
-        <div className="mb-3">
+        <div className="mb-2">
           <p className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-2">Others</p>
           <div className="border border-gray-100 rounded-lg overflow-hidden">
             {ROLES.map((role, roleIdx) => {
               const rows = additional.map((r, i) => ({ ...r, idx: i })).filter((r) => r.role === role.key);
               return (
                 <div key={role.key}
-                  className={`px-4 py-2.5 bg-white ${roleIdx < ROLES.length - 1 ? "border-b border-gray-50" : ""}`}>
-                  <div className="flex items-center justify-between mb-1.5">
+                  className={`px-3 py-2 bg-white ${roleIdx < ROLES.length - 1 ? "border-b border-gray-50" : ""}`}>
+                  <div className="flex items-center justify-between mb-1">
                     <span className="text-xs font-medium text-gray-600">
                       {role.label}
                     </span>
@@ -387,15 +413,15 @@ export function ProductCostForm({
           <p className="text-xs text-gray-400">
             {productCategory ? `Category: ${productCategory}` : "No category set"}
           </p>
-          {autofillType
+          {autofillCat
             ? <button type="button" onClick={handleAutofill}
                 className="text-xs px-3 py-1 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded border border-gray-200">
-                Autofill for {autofillType}
+                Autofill for {productCategory}
               </button>
             : <span className="text-xs text-gray-300 italic">No preset for this category</span>
           }
         </div>
-        <div className="grid grid-cols-2 gap-x-6 gap-y-2">
+        <div className="grid grid-cols-1 gap-y-2.5">
           {MFG_KEYS.map((key) => (
             <div key={key} className="flex items-center gap-2">
               <label className="text-xs text-gray-500 w-20 shrink-0">{MANUFACTURING_COST_LABELS[key]}</label>
@@ -411,9 +437,13 @@ export function ProductCostForm({
           </span>
         </div>
       </SectionBlock>
+      </div>
+      </fieldset>
+      </CollapsibleCard>
 
-      {/* ── Cost Summary (per colour) ── */}
-      <SectionBlock title="Cost Summary — per colour">
+      {/* ══ Cost Summary — per colour (its own established section) ══ */}
+      <CollapsibleCard title="Cost Summary — per colour" accent subtitle="pricing Orders adopt">
+      <fieldset disabled={locked} className="border-0 p-0 m-0 min-w-0 disabled:opacity-70">
         <div className="bg-gray-50 rounded-lg p-4 text-xs">
           {/* Shared base + EUR rate */}
           <div className="grid grid-cols-[1fr_auto_auto] gap-x-3 gap-y-1.5 items-center font-sans mb-3">
@@ -425,6 +455,10 @@ export function ProductCostForm({
             <input type="number" min="0" step={1} value={eurRate || ""} onChange={(e) => setEurRate(Number(e.target.value))}
               className="w-20 px-2 py-1 border border-gray-300 rounded text-xs text-right font-mono focus:outline-none focus:ring-1 focus:ring-gray-900 bg-white justify-self-end" />
             <span className="text-gray-400 text-right">JPY / EUR</span>
+
+            <span className="text-gray-400">Client discount <span className="text-gray-300">(fixed)</span></span>
+            <span className="text-right">=</span>
+            <span className="text-gray-800 font-semibold text-right font-mono">−{clientDiscountPct}%</span>
           </div>
 
           {colors.length === 0 ? (
@@ -441,8 +475,7 @@ export function ProductCostForm({
                     <th className="font-medium pb-1.5 px-2">Cost €</th>
                     <th className="font-medium pb-1.5 px-2">× Markup</th>
                     <th className="font-medium pb-1.5 px-2">Ideal WS €</th>
-                    <th className="font-medium pb-1.5 px-2">× Retail</th>
-                    <th className="font-medium pb-1.5 px-2">Retail (ref) €</th>
+                    <th className="font-medium pb-1.5 px-2">Retail (ref) €<span className="normal-case text-gray-300"> ÷{(1 / retailMultiplier).toFixed(2)}</span></th>
                     <th className="font-medium pb-1.5 pl-2">Retail Price €</th>
                   </tr>
                 </thead>
@@ -456,14 +489,16 @@ export function ProductCostForm({
                         <td className="px-2 text-gray-500">¥{fmt(calc.costJpy)}</td>
                         <td className="px-2 text-gray-500">€{fmtEur(calc.costEur)}</td>
                         <td className="px-2">
-                          <input type="number" min="0" step={0.1} value={e.markup || ""} onChange={(ev) => setColorField(i, "markup", Number(ev.target.value))}
-                            className="w-14 px-1.5 py-1 border border-gray-300 rounded text-xs text-right focus:outline-none focus:ring-1 focus:ring-gray-900 bg-white" />
+                          <div className="inline-flex items-center gap-0.5">
+                            <button type="button" tabIndex={-1} onClick={() => setColorField(i, "markup", Math.max(0, Math.round(((e.markup || 0) - 0.1) * 10) / 10))}
+                              className="w-5 h-6 flex items-center justify-center rounded border border-gray-300 text-gray-600 hover:bg-gray-100 leading-none">−</button>
+                            <input type="number" min="0" step={0.1} value={e.markup || ""} onChange={(ev) => setColorField(i, "markup", Number(ev.target.value))}
+                              className="w-12 px-1 py-1 border border-gray-300 rounded text-xs text-right focus:outline-none focus:ring-1 focus:ring-gray-900 bg-white" />
+                            <button type="button" tabIndex={-1} onClick={() => setColorField(i, "markup", Math.round(((e.markup || 0) + 0.1) * 10) / 10)}
+                              className="w-5 h-6 flex items-center justify-center rounded border border-gray-300 text-gray-600 hover:bg-gray-100 leading-none">+</button>
+                          </div>
                         </td>
                         <td className="px-2 text-gray-400">€{fmtEur(calc.idealWs)}</td>
-                        <td className="px-2">
-                          <input type="number" min="0" step={0.1} value={e.retailRate || ""} onChange={(ev) => setColorField(i, "retailRate", Number(ev.target.value))}
-                            className="w-14 px-1.5 py-1 border border-gray-300 rounded text-xs text-right focus:outline-none focus:ring-1 focus:ring-gray-900 bg-white" />
-                        </td>
                         <td className="px-2 text-gray-400">€{fmtEur(calc.ref)}</td>
                         <td className="pl-2">
                           <div className="flex items-center gap-1 justify-end">
@@ -479,19 +514,12 @@ export function ProductCostForm({
                   })}
                 </tbody>
               </table>
-              <p className="text-[11px] text-gray-400 font-sans mt-2">Retail Price (EUR) per colour is the price Orders adopt. Raw Cost differs by colour only when the main material has a per-colour price override.</p>
+              <p className="text-[11px] text-gray-400 font-sans mt-2">Retail (ref) = Ideal WS ÷ (1 − {clientDiscountPct}%), i.e. clients buy at Ideal WS after a {clientDiscountPct}% discount off retail (captured for this product). Retail Price (EUR) per colour is the price Orders adopt.</p>
             </div>
           )}
         </div>
-      </SectionBlock>
-
-      {pickerRole && (
-        <MaterialPickerModal
-          materials={allMaterials}
-          onSelect={handlePickerSelect}
-          onClose={() => setPickerRole(null)}
-        />
-      )}
+      </fieldset>
+      </CollapsibleCard>
     </div>
   );
 }

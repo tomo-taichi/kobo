@@ -4,7 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { updateManufacturingPresets } from "@/app/actions/company-settings";
 import {
-  GARMENT_TYPES,
+  MANUFACTURING_CATEGORIES,
   MANUFACTURING_COST_LABELS,
   formatHours,
   type ManufacturingCostKey,
@@ -21,9 +21,9 @@ export function ManufacturingPresetsForm({ presets }: { presets: ManufacturingHo
   const router = useRouter();
 
   const keys = Object.keys(MANUFACTURING_COST_LABELS) as ManufacturingCostKey[];
-  const dirty = keys.some((k) => GARMENT_TYPES.some((g) => matrix[k][g] !== presets[k][g]));
+  const dirty = keys.some((k) => MANUFACTURING_CATEGORIES.some((g) => matrix[k][g] !== presets[k][g]));
 
-  const setCell = (k: ManufacturingCostKey, g: (typeof GARMENT_TYPES)[number], v: number) =>
+  const setCell = (k: ManufacturingCostKey, g: (typeof MANUFACTURING_CATEGORIES)[number], v: number) =>
     setMatrix((m) => ({ ...m, [k]: { ...m[k], [g]: v } }));
 
   const startEdit = () => {
@@ -61,17 +61,17 @@ export function ManufacturingPresetsForm({ presets }: { presets: ManufacturingHo
         <table className="text-xs">
           <thead>
             <tr>
-              <th className="px-2 py-1 text-left font-medium text-gray-500">Step \ Type</th>
-              {GARMENT_TYPES.map((g) => (
-                <th key={g} className="px-2 py-1 font-medium text-gray-500">{g}</th>
+              <th className="px-2 py-1 text-left font-medium text-gray-500 sticky left-0 bg-white z-10">Step \ Category</th>
+              {MANUFACTURING_CATEGORIES.map((g) => (
+                <th key={g} className="px-2 py-1 font-medium text-gray-500 whitespace-nowrap">{g}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {keys.map((k) => (
               <tr key={k}>
-                <td className="px-2 py-1 text-gray-700 whitespace-nowrap">{MANUFACTURING_COST_LABELS[k]}</td>
-                {GARMENT_TYPES.map((g) => (
+                <td className="px-2 py-1 text-gray-700 whitespace-nowrap sticky left-0 bg-white z-10">{MANUFACTURING_COST_LABELS[k]}</td>
+                {MANUFACTURING_CATEGORIES.map((g) => (
                   <td key={g} className="px-1 py-1 text-center">
                     {editing ? (
                       <input
@@ -89,7 +89,7 @@ export function ManufacturingPresetsForm({ presets }: { presets: ManufacturingHo
           </tbody>
         </table>
       </div>
-      <p className="text-[11px] text-gray-400">Work hours per garment type. Used by “Autofill” on the product cost form.</p>
+      <p className="text-[11px] text-gray-400">Work hours per product category. Used by “Autofill” on the product cost form. Scroll sideways to reach every category.</p>
 
       {editing && (
         <div className="flex items-center gap-2">
