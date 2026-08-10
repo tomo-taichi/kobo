@@ -42,3 +42,6 @@ next-env.d.ts
 
 # FileMaker data imports (real customer data — never commit)
 /data/import/
+
+# Off-site DB backups (contain customer data — never commit)
+/data/backups/
