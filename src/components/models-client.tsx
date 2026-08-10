@@ -170,7 +170,16 @@ export function ModelsClient({ models, tagOptions }: { models: ModelRow[]; tagOp
                         {m.version_count} <span className="text-[9px]">{isOpen ? "▾" : "▸"}</span>
                       </button>
                     </td>
-                    <td className={`${td} text-center text-gray-500`}>{m.product_count}</td>
+                    <td className={`${td} text-center`} onClick={(e) => e.stopPropagation()}>
+                      {m.product_count > 0 ? (
+                        <a href={`/products?model=${m.id}`} target="_blank" rel="noopener" title={`${m.product_count} product(s) from this model`}
+                          className="inline-flex items-center text-xs px-2 py-1 rounded-md border border-gray-200 text-gray-500 hover:bg-gray-100 hover:text-gray-900">
+                          {m.product_count}
+                        </a>
+                      ) : (
+                        <span className="text-gray-300 text-xs">0</span>
+                      )}
+                    </td>
                   </tr>
                   {isOpen && (
                     <tr className="bg-gray-50/60">
