@@ -42,7 +42,7 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
-export function ModelDetail({ data }: { data: ModelDetailData }) {
+export function ModelDetail({ data, tagOptions }: { data: ModelDetailData; tagOptions: string[] }) {
   return (
     <div className="space-y-6">
       <Link href="/models" className="text-sm text-gray-500 hover:text-gray-900">← Models</Link>
@@ -54,7 +54,7 @@ export function ModelDetail({ data }: { data: ModelDetailData }) {
 
       <div className="grid gap-6 lg:grid-cols-2">
         <ModelSettings id={data.id} name={data.name} category={data.category} />
-        <DefaultTags modelId={data.id} initial={data.tags} />
+        <DefaultTags modelId={data.id} initial={data.tags} options={tagOptions} />
       </div>
 
       <VersionHistory versions={data.versions} />
@@ -94,21 +94,22 @@ function ModelSettings({ id, name, category }: { id: string; name: string; categ
   );
 }
 
-function DefaultTags({ modelId, initial }: { modelId: string; initial: string[] }) {
+function DefaultTags({ modelId, initial, options }: { modelId: string; initial: string[]; options: string[] }) {
   const router = useRouter();
-  const [tags, setTags] = useState<string[]>(initial);
-  const [input, setInput] = useState("");
+  const [selected, setSelected] = useState<Set<string>>(new Set(initial));
   const [pending, start] = useTransition();
 
-  const add = () => {
-    const t = input.trim();
-    if (t && !tags.includes(t)) setTags((p) => [...p, t]);
-    setInput("");
-  };
-  const remove = (t: string) => setTags((p) => p.filter((x) => x !== t));
+  // The shared product_tag vocabulary + any tags already on this model (defensive:
+  // a value could pre-date the current vocabulary).
+  const all = Array.from(new Set([...options, ...initial]));
+  const dirty =
+    selected.size !== initial.length || initial.some((t) => !selected.has(t));
+
+  const toggle = (t: string) =>
+    setSelected((p) => { const n = new Set(p); if (n.has(t)) n.delete(t); else n.add(t); return n; });
   const save = () =>
     start(async () => {
-      const err = await setModelTags(modelId, tags);
+      const err = await setModelTags(modelId, [...selected]);
       if (err) alert(err);
       else router.refresh();
     });
@@ -116,30 +117,23 @@ function DefaultTags({ modelId, initial }: { modelId: string; initial: string[] 
   return (
     <div className="bg-white border border-gray-200 rounded-xl p-4">
       <h2 className="text-sm font-medium text-gray-700 mb-1">Default tags</h2>
-      <p className="text-[11px] text-gray-400 mb-3">Seeded into a Product&apos;s tags when it is created from this model. Existing products are unaffected.</p>
+      <p className="text-[11px] text-gray-400 mb-3">Same tag list as Products (managed in Settings). Seeded into a Product&apos;s tags when it is created from this model; existing products are unaffected.</p>
       <div className="flex flex-wrap gap-1.5 mb-3 min-h-[1.5rem]">
-        {tags.map((t) => (
-          <span key={t} className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-700">
-            {t}
-            <button type="button" onClick={() => remove(t)} className="text-gray-400 hover:text-gray-700" aria-label={`Remove ${t}`}>✕</button>
-          </span>
-        ))}
-        {!tags.length && <span className="text-xs text-gray-300">No default tags</span>}
+        {all.map((t) => {
+          const on = selected.has(t);
+          return (
+            <button key={t} type="button" onClick={() => toggle(t)}
+              className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${on ? "bg-gray-900 text-white border-gray-900" : "bg-white text-gray-600 border-gray-300 hover:border-gray-500"}`}>
+              {t}
+            </button>
+          );
+        })}
+        {!all.length && <span className="text-xs text-gray-300">No tags — add in Settings</span>}
       </div>
-      <div className="flex gap-2">
-        <input
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); add(); } }}
-          placeholder="Add a tag and press Enter"
-          className="flex-1 px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
-        />
-        <button type="button" onClick={add} className="px-3 py-2 text-sm rounded-md border border-gray-300 text-gray-600 hover:bg-gray-50">Add</button>
-        <button type="button" onClick={save} disabled={pending}
-          className="px-4 py-2 bg-gray-900 text-white text-sm rounded-md hover:bg-gray-700 disabled:opacity-50">
-          {pending ? "Saving..." : "Save tags"}
-        </button>
-      </div>
+      <button type="button" onClick={save} disabled={pending || !dirty}
+        className="px-4 py-2 bg-gray-900 text-white text-sm rounded-md hover:bg-gray-700 disabled:opacity-50 w-fit">
+        {pending ? "Saving..." : "Save tags"}
+      </button>
     </div>
   );
 }

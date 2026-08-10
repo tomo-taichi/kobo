@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { getListValues } from "@/lib/list-options";
 import { ModelsClient, type ModelRow } from "@/components/models-client";
 
 export default async function ModelsPage() {
@@ -7,10 +8,11 @@ export default async function ModelsPage() {
   // Models + per-model counts. Products link to a Model via model_version_id →
   // model_versions.model_id (two hops), so we fold the counts in memory (small sets:
   // ~714 models / ~936 versions / ~1.9k linked products).
-  const [{ data: models }, { data: versions }, { data: prods }] = await Promise.all([
+  const [{ data: models }, { data: versions }, { data: prods }, tagOptions] = await Promise.all([
     supabase.from("models").select("id, name, category, archived").order("name"),
     supabase.from("model_versions").select("id, model_id"),
     supabase.from("products").select("model_version_id").not("model_version_id", "is", null),
+    getListValues(supabase, "product_tag", []),
   ]);
 
   const versionCount = new Map<string, number>();
@@ -36,7 +38,7 @@ export default async function ModelsPage() {
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold text-gray-900">Models</h1>
       </div>
-      <ModelsClient models={rows} />
+      <ModelsClient models={rows} tagOptions={tagOptions} />
     </div>
   );
 }

@@ -58,6 +58,25 @@ export async function bulkDeleteModels(ids: string[]): Promise<string | null> {
   return null;
 }
 
+// Add or remove one default tag across many models. Mirrors bulkSetProductTag —
+// same managed vocabulary (list_options domain 'product_tag').
+export async function bulkSetModelTag(ids: string[], tag: string, add: boolean): Promise<string | null> {
+  if (!ids.length || !tag) return null;
+  const supabase = await createClient();
+  if (add) {
+    const rows = ids.map((model_id) => ({ model_id, tag }));
+    const { error } = await supabase
+      .from("model_tags")
+      .upsert(rows, { onConflict: "model_id,tag", ignoreDuplicates: true });
+    if (error) return error.message;
+  } else {
+    const { error } = await supabase.from("model_tags").delete().eq("tag", tag).in("model_id", ids);
+    if (error) return error.message;
+  }
+  revalidatePath("/models");
+  return null;
+}
+
 export async function updateModel(
   _state: string | null,
   formData: FormData

@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useTransition, useActionState } from "react";
 import { useRouter } from "next/navigation";
-import { bulkArchiveModels, bulkDeleteModels, createModel } from "@/app/actions/models";
+import { bulkArchiveModels, bulkDeleteModels, bulkSetModelTag, createModel } from "@/app/actions/models";
 import { BulkBar } from "@/components/bulk-bar";
 import { MODEL_CATEGORIES } from "@/lib/model-constants";
 import { CATEGORY_ICON, catRank } from "@/lib/product-constants";
@@ -24,13 +24,14 @@ function SearchIcon() {
   );
 }
 
-export function ModelsClient({ models }: { models: ModelRow[] }) {
+export function ModelsClient({ models, tagOptions }: { models: ModelRow[]; tagOptions: string[] }) {
   const router = useRouter();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [showArchived, setShowArchived] = useState(false);
   const [search, setSearch] = useState("");
   const [fCat, setFCat] = useState("");
   const [showNew, setShowNew] = useState(false);
+  const [tagMenuOpen, setTagMenuOpen] = useState(false);
   const [pending, startBulk] = useTransition();
 
   const archivedCount = models.filter((m) => m.archived).length;
@@ -68,6 +69,7 @@ export function ModelsClient({ models }: { models: ModelRow[] }) {
     startBulk(async () => {
       const msg = await fn();
       setSelected(new Set());
+      setTagMenuOpen(false);
       router.refresh();
       if (msg) alert(msg);
     });
@@ -158,8 +160,30 @@ export function ModelsClient({ models }: { models: ModelRow[] }) {
         onArchive={() => runBulk(() => bulkArchiveModels([...selected], true))}
         onUnarchive={() => runBulk(() => bulkArchiveModels([...selected], false))}
         onDelete={() => { if (confirm(`Delete ${selected.size} model(s)? Models with versions are kept (archive them instead).`)) runBulk(() => bulkDeleteModels([...selected])); }}
-        onClear={() => setSelected(new Set())}
-      />
+        onClear={() => { setSelected(new Set()); setTagMenuOpen(false); }}
+      >
+        {/* Bulk tag — same managed vocabulary as Products */}
+        <div className="relative">
+          <button type="button" disabled={pending} onClick={() => setTagMenuOpen((v) => !v)}
+            className="px-3 py-1 rounded-lg hover:bg-white/10 disabled:opacity-50">Tag ▾</button>
+          {tagMenuOpen && (
+            <div className="absolute bottom-full mb-2 left-0 bg-white text-gray-800 rounded-lg shadow-xl border border-gray-200 py-1 min-w-44 max-h-72 overflow-y-auto">
+              {tagOptions.length === 0 && <div className="px-3 py-1.5 text-xs text-gray-400">No tags — add in Settings</div>}
+              {tagOptions.map((t) => (
+                <div key={t} className="flex items-center justify-between gap-2 px-3 py-1 hover:bg-gray-50 text-xs">
+                  <span>{t}</span>
+                  <span className="flex gap-1">
+                    <button type="button" title="Add to selected" onClick={() => runBulk(() => bulkSetModelTag([...selected], t, true))}
+                      className="px-1.5 rounded border border-gray-200 text-gray-500 hover:bg-indigo-50 hover:text-indigo-600">+</button>
+                    <button type="button" title="Remove from selected" onClick={() => runBulk(() => bulkSetModelTag([...selected], t, false))}
+                      className="px-1.5 rounded border border-gray-200 text-gray-500 hover:bg-red-50 hover:text-red-600">−</button>
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </BulkBar>
 
       {showNew && <NewModelModal onClose={() => setShowNew(false)} />}
     </div>

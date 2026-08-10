@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { getListValues } from "@/lib/list-options";
 import { ModelDetail, type ModelDetailData, type VersionRow } from "@/components/model-detail";
 
 export default async function ModelDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -13,12 +14,13 @@ export default async function ModelDetailPage({ params }: { params: Promise<{ id
     .single();
   if (!model) notFound();
 
-  const [{ data: versions }, { data: tagRows }] = await Promise.all([
+  const [{ data: versions }, { data: tagRows }, tagOptions] = await Promise.all([
     supabase
       .from("model_versions")
       .select("id, status, changelog, orderable_sizes, accessory_composition, updated_at, seasons(name)")
       .eq("model_id", id),
     supabase.from("model_tags").select("tag").eq("model_id", id),
+    getListValues(supabase, "product_tag", []),
   ]);
 
   const vIds = ((versions ?? []) as { id: string }[]).map((v) => v.id);
@@ -76,5 +78,5 @@ export default async function ModelDetailPage({ params }: { params: Promise<{ id
     versions: versionRows,
   };
 
-  return <ModelDetail data={data} />;
+  return <ModelDetail data={data} tagOptions={tagOptions} />;
 }
