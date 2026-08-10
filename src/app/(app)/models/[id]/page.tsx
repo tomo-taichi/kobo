@@ -14,12 +14,13 @@ export default async function ModelDetailPage({ params }: { params: Promise<{ id
     .single();
   if (!model) notFound();
 
-  const [{ data: versions }, { data: tagRows }, tagOptions] = await Promise.all([
+  const [{ data: versions }, { data: tagRows }, { data: seasons }, tagOptions] = await Promise.all([
     supabase
       .from("model_versions")
       .select("id, status, changelog, orderable_sizes, accessory_composition, updated_at, seasons(name)")
       .eq("model_id", id),
     supabase.from("model_tags").select("tag").eq("model_id", id),
+    supabase.from("seasons").select("id, name").order("name"),
     getListValues(supabase, "product_tag", []),
   ]);
 
@@ -78,5 +79,11 @@ export default async function ModelDetailPage({ params }: { params: Promise<{ id
     versions: versionRows,
   };
 
-  return <ModelDetail data={data} tagOptions={tagOptions} />;
+  return (
+    <ModelDetail
+      data={data}
+      tagOptions={tagOptions}
+      seasons={((seasons ?? []) as { id: string; name: string }[])}
+    />
+  );
 }

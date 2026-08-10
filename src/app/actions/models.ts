@@ -172,6 +172,82 @@ export async function updateModelVersion(versionId: string, input: UpdateVersion
   redirect(`/models/${ver.model_id}`);
 }
 
+// Copy-forward: create a new ACTIVE version for a target season, cloning an existing
+// version's shared recipe + mfg template + non-main materials (ADR-0011 §3.1). Backfilled
+// versions are all frozen, so this is how an editable version first comes to exist.
+export async function createModelVersionCopyForward(
+  modelId: string,
+  seasonId: string,
+  sourceVersionId: string
+): Promise<string | null> {
+  if (!seasonId) return "Please choose a target season.";
+  if (!sourceVersionId) return "Please choose a version to copy from.";
+  const supabase = await createClient();
+
+  const { data: src, error: sErr } = await supabase
+    .from("model_versions")
+    .select(
+      "model_id, orderable_sizes, accessory_composition, " +
+        "cutting_minutes, sewing_minutes, knitting_minutes, thread_minutes, finish_minutes, packing_minutes"
+    )
+    .eq("id", sourceVersionId)
+    .single();
+  if (sErr || !src) return sErr?.message ?? "Source version not found.";
+  const source = src as unknown as {
+    model_id: string;
+    orderable_sizes: string[] | null;
+    accessory_composition: string | null;
+    cutting_minutes: number; sewing_minutes: number; knitting_minutes: number;
+    thread_minutes: number; finish_minutes: number; packing_minutes: number;
+  };
+  if (source.model_id !== modelId) return "Source version belongs to a different model.";
+
+  const { data: created, error: cErr } = await supabase
+    .from("model_versions")
+    .insert({
+      model_id: modelId,
+      season_id: seasonId,
+      status: "active",
+      changelog: null,
+      orderable_sizes: source.orderable_sizes ?? [],
+      accessory_composition: source.accessory_composition,
+      cutting_minutes: source.cutting_minutes,
+      sewing_minutes: source.sewing_minutes,
+      knitting_minutes: source.knitting_minutes,
+      thread_minutes: source.thread_minutes,
+      finish_minutes: source.finish_minutes,
+      packing_minutes: source.packing_minutes,
+    })
+    .select("id")
+    .single();
+  if (cErr) {
+    // Partial unique (model_id, season_id) WHERE status='active'.
+    if (cErr.code === "23505") return "An active version already exists for that season — edit it, or deprecate it first.";
+    return cErr.message;
+  }
+  const newId = (created as unknown as { id: string } | null)?.id;
+  if (!newId) return "Failed to create the version.";
+
+  const { data: mats, error: mErr } = await supabase
+    .from("model_version_materials")
+    .select("role, material_id, material_color_id, usage_amount, sort_order")
+    .eq("model_version_id", sourceVersionId)
+    .order("sort_order");
+  if (mErr) return mErr.message;
+  const srcMats = (mats ?? []) as unknown as {
+    role: string; material_id: string; material_color_id: string | null; usage_amount: number; sort_order: number;
+  }[];
+  if (srcMats.length) {
+    const { error: iErr } = await supabase
+      .from("model_version_materials")
+      .insert(srcMats.map((m) => ({ model_version_id: newId, ...m })));
+    if (iErr) return iErr.message;
+  }
+
+  revalidatePath(`/models/${modelId}`);
+  redirect(`/models/${modelId}/versions/${newId}/edit`);
+}
+
 // Default tags for the Model — copied into product_tags at product creation (Phase 3).
 // Editing them here does NOT touch existing products' tags (those are Product-owned).
 export async function setModelTags(modelId: string, tags: string[]): Promise<string | null> {

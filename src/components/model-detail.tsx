@@ -3,7 +3,7 @@
 import { useActionState, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { updateModel, setModelTags } from "@/app/actions/models";
+import { updateModel, setModelTags, createModelVersionCopyForward } from "@/app/actions/models";
 import { MODEL_CATEGORIES, MODEL_VERSION_STATUS_LABELS, type ModelVersionStatus } from "@/lib/model-constants";
 
 export type VersionRow = {
@@ -42,7 +42,7 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
-export function ModelDetail({ data, tagOptions }: { data: ModelDetailData; tagOptions: string[] }) {
+export function ModelDetail({ data, tagOptions, seasons }: { data: ModelDetailData; tagOptions: string[]; seasons: { id: string; name: string }[] }) {
   return (
     <div className="space-y-6">
       <Link href="/models" className="text-sm text-gray-500 hover:text-gray-900">← Models</Link>
@@ -57,7 +57,7 @@ export function ModelDetail({ data, tagOptions }: { data: ModelDetailData; tagOp
         <DefaultTags modelId={data.id} initial={data.tags} options={tagOptions} />
       </div>
 
-      <VersionHistory modelId={data.id} versions={data.versions} />
+      <VersionHistory modelId={data.id} versions={data.versions} seasons={seasons} />
     </div>
   );
 }
@@ -138,12 +138,17 @@ function DefaultTags({ modelId, initial, options }: { modelId: string; initial: 
   );
 }
 
-function VersionHistory({ modelId, versions }: { modelId: string; versions: VersionRow[] }) {
+function VersionHistory({ modelId, versions, seasons }: { modelId: string; versions: VersionRow[]; seasons: { id: string; name: string }[] }) {
   const router = useRouter();
+  const [showCopy, setShowCopy] = useState(false);
   const td = "px-4 py-2.5";
   return (
     <div>
-      <h2 className="text-sm font-medium text-gray-700 mb-2">Versions <span className="text-gray-400">({versions.length})</span></h2>
+      <div className="flex items-center justify-between mb-2">
+        <h2 className="text-sm font-medium text-gray-700">Versions <span className="text-gray-400">({versions.length})</span></h2>
+        <button type="button" onClick={() => setShowCopy(true)}
+          className="text-xs px-3 py-1.5 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50">New version (copy-forward)</button>
+      </div>
       <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-gray-50 border-b border-gray-200">
@@ -174,6 +179,71 @@ function VersionHistory({ modelId, versions }: { modelId: string; versions: Vers
             )}
           </tbody>
         </table>
+      </div>
+      {showCopy && <CopyForwardModal modelId={modelId} versions={versions} seasons={seasons} onClose={() => setShowCopy(false)} />}
+    </div>
+  );
+}
+
+function CopyForwardModal({
+  modelId,
+  versions,
+  seasons,
+  onClose,
+}: {
+  modelId: string;
+  versions: VersionRow[];
+  seasons: { id: string; name: string }[];
+  onClose: () => void;
+}) {
+  // Default source = the latest version (list is sorted ascending by season).
+  const [sourceId, setSourceId] = useState(versions.length ? versions[versions.length - 1].id : "");
+  const [seasonId, setSeasonId] = useState("");
+  const [pending, start] = useTransition();
+
+  const create = () =>
+    start(async () => {
+      const err = await createModelVersionCopyForward(modelId, seasonId, sourceId);
+      if (err) alert(err); // success redirects to the new version's editor
+    });
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+      <div className="relative bg-white rounded-xl shadow-xl w-full max-w-md p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-base font-semibold text-gray-900">New version (copy-forward)</h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none" aria-label="Close">✕</button>
+        </div>
+        <div className="flex flex-col gap-3">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Copy recipe from</label>
+            <select value={sourceId} onChange={(e) => setSourceId(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-gray-900">
+              {versions.map((v) => (
+                <option key={v.id} value={v.id}>{v.season} · {v.status}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Target season *</label>
+            <select value={seasonId} onChange={(e) => setSeasonId(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-gray-900">
+              <option value="">Select season…</option>
+              {seasons.map((s) => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
+            </select>
+          </div>
+          <p className="text-[11px] text-gray-400">Creates a new <b>Active</b> version for the target season with the selected version&apos;s recipe. One active version per season — the season must not already have one.</p>
+          <div className="flex gap-2 justify-end pt-1">
+            <button type="button" onClick={onClose} className="px-4 py-2 text-sm rounded-md border border-gray-300 text-gray-600 hover:bg-gray-50">Cancel</button>
+            <button type="button" onClick={create} disabled={pending || !sourceId || !seasonId}
+              className="px-4 py-2 bg-gray-900 text-white text-sm rounded-md hover:bg-gray-700 disabled:opacity-50">
+              {pending ? "Creating..." : "Create version"}
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );
