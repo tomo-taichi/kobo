@@ -1,19 +1,24 @@
 "use client";
 
-import { useState, useMemo, useTransition, useActionState } from "react";
+import { Fragment, useState, useMemo, useTransition, useActionState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { bulkArchiveModels, bulkDeleteModels, bulkSetModelTag, createModel } from "@/app/actions/models";
+import { bulkArchiveModels, bulkDeleteModels, bulkSetModelTag, createModel, saveModel } from "@/app/actions/models";
 import { BulkBar } from "@/components/bulk-bar";
 import { MODEL_CATEGORIES } from "@/lib/model-constants";
 import { CATEGORY_ICON, catRank } from "@/lib/product-constants";
 
+export type ModelVersionLite = { id: string; season: string; status: string };
 export type ModelRow = {
   id: string;
   name: string;
   category: string;
   archived: boolean;
+  sexes: string[];
   version_count: number;
   product_count: number;
+  tags: string[];
+  versions: ModelVersionLite[];
 };
 
 function SearchIcon() {
@@ -29,18 +34,20 @@ export function ModelsClient({ models, tagOptions }: { models: ModelRow[]; tagOp
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [showArchived, setShowArchived] = useState(false);
   const [search, setSearch] = useState("");
-  const [fCat, setFCat] = useState("");
+  const [fCat, setFCat] = useState("Coat"); // default category view
   const [showNew, setShowNew] = useState(false);
+  const [editing, setEditing] = useState<ModelRow | null>(null);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [tagMenuOpen, setTagMenuOpen] = useState(false);
   const [pending, startBulk] = useTransition();
 
   const archivedCount = models.filter((m) => m.archived).length;
 
-  // Everything except the category filter → drives live per-category counts.
+  // Everything except the category filter → live per-category counts. Search matches name + tags.
   const preCat = useMemo(() => {
     let list = showArchived ? models : models.filter((m) => !m.archived);
     const q = search.trim().toLowerCase();
-    if (q) list = list.filter((m) => m.name.toLowerCase().includes(q));
+    if (q) list = list.filter((m) => m.name.toLowerCase().includes(q) || m.tags.some((t) => t.toLowerCase().includes(q)));
     return list;
   }, [models, showArchived, search]);
 
@@ -54,16 +61,15 @@ export function ModelsClient({ models, tagOptions }: { models: ModelRow[]; tagOp
     [catCounts]
   );
 
-  const shown = useMemo(
-    () => (fCat ? preCat.filter((m) => m.category === fCat) : preCat),
-    [preCat, fCat]
-  );
+  const shown = useMemo(() => (fCat ? preCat.filter((m) => m.category === fCat) : preCat), [preCat, fCat]);
   const seg = (active: boolean) =>
     `px-3 py-1 text-sm rounded-md transition-colors ${active ? "bg-white shadow-sm text-gray-900 font-medium" : "text-gray-500 hover:text-gray-700"}`;
 
   const toggle = (id: string) =>
     setSelected((p) => { const n = new Set(p); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   const allSel = shown.length > 0 && shown.every((m) => selected.has(m.id));
+  const toggleExpand = (id: string) =>
+    setExpanded((p) => { const n = new Set(p); if (n.has(id)) n.delete(id); else n.add(id); return n; });
 
   const runBulk = (fn: () => Promise<string | null>) =>
     startBulk(async () => {
@@ -94,7 +100,7 @@ export function ModelsClient({ models, tagOptions }: { models: ModelRow[]; tagOp
           <span className="absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none"><SearchIcon /></span>
           <input
             type="text"
-            placeholder="Search model name..."
+            placeholder="Search name or tag..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="w-64 pl-8 pr-3 py-1.5 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-gray-900/10 focus:border-gray-300"
@@ -122,33 +128,75 @@ export function ModelsClient({ models, tagOptions }: { models: ModelRow[]; tagOp
                   onChange={(e) => setSelected(e.target.checked ? new Set(shown.map((m) => m.id)) : new Set())}
                   className="align-middle accent-gray-900" />
               </th>
-              <th className="text-left px-4 py-2.5 font-medium text-gray-600">Name</th>
+              <th className="text-left px-4 py-2.5 font-medium text-gray-600">ID</th>
               <th className="text-left px-4 py-2.5 font-medium text-gray-600">Category</th>
+              <th className="text-left px-4 py-2.5 font-medium text-gray-600">Name</th>
+              <th className="text-left px-4 py-2.5 font-medium text-gray-600">Sex</th>
               <th className="text-center px-4 py-2.5 font-medium text-gray-600">Versions</th>
               <th className="text-center px-4 py-2.5 font-medium text-gray-600">Products</th>
+              <th className="text-left px-4 py-2.5 font-medium text-gray-600">Tags</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {shown.map((m) => {
               const isSel = selected.has(m.id);
+              const isOpen = expanded.has(m.id);
               return (
-                <tr key={m.id} onClick={() => router.push(`/models/${m.id}`)}
-                  className={`cursor-pointer hover:bg-gray-50 ${isSel ? "bg-gray-50" : ""} ${m.archived ? "opacity-50" : ""}`}>
-                  <td className={td} onClick={(e) => e.stopPropagation()}>
-                    <input type="checkbox" checked={isSel} onChange={() => toggle(m.id)} aria-label={`Select ${m.name}`} className="align-middle accent-gray-900" />
-                  </td>
-                  <td className={`${td} text-gray-900`}>
-                    {m.name}
-                    {m.archived && <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-500 align-middle">Archived</span>}
-                  </td>
-                  <td className={`${td} text-gray-500`}>{m.category}</td>
-                  <td className={`${td} text-center text-gray-500`}>{m.version_count}</td>
-                  <td className={`${td} text-center text-gray-500`}>{m.product_count}</td>
-                </tr>
+                <Fragment key={m.id}>
+                  <tr onClick={() => setEditing(m)}
+                    className={`cursor-pointer hover:bg-gray-50 ${isSel ? "bg-gray-50" : ""} ${m.archived ? "opacity-50" : ""}`}>
+                    <td className={td} onClick={(e) => e.stopPropagation()}>
+                      <input type="checkbox" checked={isSel} onChange={() => toggle(m.id)} aria-label={`Select ${m.name}`} className="align-middle accent-gray-900" />
+                    </td>
+                    <td className={`${td} text-gray-400 font-mono text-xs`} title={m.id}>{m.id.slice(0, 8)}</td>
+                    <td className={`${td} text-gray-500`}>{m.category}</td>
+                    <td className={`${td} text-gray-900`}>
+                      {m.name}
+                      {m.archived && <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-500 align-middle">Archived</span>}
+                    </td>
+                    <td className={`${td} text-gray-500`}>{m.sexes.length ? m.sexes.join(", ") : "—"}</td>
+                    <td className={`${td} text-center`} onClick={(e) => e.stopPropagation()}>
+                      <button type="button" onClick={() => toggleExpand(m.id)}
+                        className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-md border border-gray-200 text-gray-500 hover:bg-gray-100 hover:text-gray-900"
+                        title="Show versions">
+                        {m.version_count} <span className="text-[9px]">{isOpen ? "▾" : "▸"}</span>
+                      </button>
+                    </td>
+                    <td className={`${td} text-center text-gray-500`}>{m.product_count}</td>
+                    <td className={td} onClick={(e) => e.stopPropagation()}>
+                      <div className="flex flex-wrap gap-1">
+                        {m.tags.map((t) => (
+                          <span key={t} className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-600 whitespace-nowrap">{t}</span>
+                        ))}
+                        {!m.tags.length && <span className="text-gray-300 text-xs">—</span>}
+                      </div>
+                    </td>
+                  </tr>
+                  {isOpen && (
+                    <tr className="bg-gray-50/60">
+                      <td></td>
+                      <td colSpan={7} className="px-4 py-2">
+                        {m.versions.length ? (
+                          <div className="flex flex-wrap gap-1.5">
+                            {m.versions.map((v) => (
+                              <button key={v.id} type="button" onClick={() => router.push(`/models/${m.id}/versions/${v.id}/edit`)}
+                                className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-md border border-gray-200 bg-white text-gray-600 hover:border-gray-900 hover:text-gray-900">
+                                <span className="font-medium">{v.season}</span>
+                                <span className="text-gray-400">· {v.status}</span>
+                              </button>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="text-xs text-gray-400">No versions</span>
+                        )}
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
               );
             })}
             {!shown.length && (
-              <tr><td colSpan={5} className="px-4 py-8 text-center text-gray-400 text-sm">{search || fCat ? "No models match" : "No models"}</td></tr>
+              <tr><td colSpan={8} className="px-4 py-8 text-center text-gray-400 text-sm">{search || fCat ? "No models match" : "No models"}</td></tr>
             )}
           </tbody>
         </table>
@@ -186,6 +234,93 @@ export function ModelsClient({ models, tagOptions }: { models: ModelRow[]; tagOp
       </BulkBar>
 
       {showNew && <NewModelModal onClose={() => setShowNew(false)} />}
+      {editing && (
+        <ModelEditModal
+          model={editing}
+          options={tagOptions}
+          onClose={() => setEditing(null)}
+          onSaved={() => { setEditing(null); router.refresh(); }}
+        />
+      )}
+    </div>
+  );
+}
+
+function ModelEditModal({
+  model,
+  options,
+  onClose,
+  onSaved,
+}: {
+  model: ModelRow;
+  options: string[];
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [name, setName] = useState(model.name);
+  const [category, setCategory] = useState(model.category);
+  const [tags, setTags] = useState<Set<string>>(new Set(model.tags));
+  const [error, setError] = useState<string | null>(null);
+  const [pending, start] = useTransition();
+
+  const allTags = Array.from(new Set([...options, ...model.tags]));
+  const toggleTag = (t: string) =>
+    setTags((p) => { const n = new Set(p); if (n.has(t)) n.delete(t); else n.add(t); return n; });
+  const save = () =>
+    start(async () => {
+      const err = await saveModel(model.id, name, category, [...tags]);
+      if (err) setError(err);
+      else onSaved();
+    });
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+      <div className="relative bg-white rounded-xl shadow-xl w-full max-w-md p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-base font-semibold text-gray-900">Edit model</h2>
+          <div className="flex items-center gap-3">
+            <Link href={`/models/${model.id}`} className="text-xs text-gray-500 hover:text-gray-900 underline">Open full page →</Link>
+            <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl leading-none" aria-label="Close">✕</button>
+          </div>
+        </div>
+        <div className="flex flex-col gap-3">
+          {error && <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded">{error}</p>}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Model Name *</label>
+            <input value={name} onChange={(e) => setName(e.target.value)} autoFocus
+              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-gray-900" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Category *</label>
+            <select value={category} onChange={(e) => setCategory(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-gray-900">
+              {MODEL_CATEGORIES.map((c) => (<option key={c} value={c}>{c}</option>))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Tags</label>
+            <div className="flex flex-wrap gap-1.5">
+              {allTags.map((t) => {
+                const on = tags.has(t);
+                return (
+                  <button key={t} type="button" onClick={() => toggleTag(t)}
+                    className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${on ? "bg-gray-900 text-white border-gray-900" : "bg-white text-gray-600 border-gray-300 hover:border-gray-500"}`}>{t}</button>
+                );
+              })}
+              {!allTags.length && <span className="text-xs text-gray-300">No tags — add in Settings</span>}
+            </div>
+          </div>
+          <p className="text-[11px] text-gray-400">Sex is set per Product. Versions &amp; copy-forward are on the full page.</p>
+          <div className="flex gap-2 justify-end pt-1">
+            <button type="button" onClick={onClose} className="px-4 py-2 text-sm rounded-md border border-gray-300 text-gray-600 hover:bg-gray-50">Cancel</button>
+            <button type="button" onClick={save} disabled={pending}
+              className="px-4 py-2 bg-gray-900 text-white text-sm rounded-md hover:bg-gray-700 disabled:opacity-50">
+              {pending ? "Saving..." : "Save"}
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

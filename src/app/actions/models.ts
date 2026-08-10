@@ -248,6 +248,31 @@ export async function createModelVersionCopyForward(
   redirect(`/models/${modelId}/versions/${newId}/edit`);
 }
 
+// Save a Model's editable attributes + default tags in one call, WITHOUT redirecting
+// (used by the list-page edit popup, which stays on /models). identity = (name, category).
+export async function saveModel(id: string, name: string, category: string, tags: string[]): Promise<string | null> {
+  const supabase = await createClient();
+  const nm = name.trim();
+  if (!nm) return "Please enter a model name";
+  if (!MODEL_CATEGORIES.includes(category as (typeof MODEL_CATEGORIES)[number]))
+    return "Please select a category";
+  const { error } = await supabase.from("models").update({ name: nm, category }).eq("id", id);
+  if (error) {
+    if (error.code === "23505") return "A model with this name and category already exists.";
+    return error.message;
+  }
+  const clean = Array.from(new Set(tags.map((t) => t.trim()).filter(Boolean)));
+  const { error: dErr } = await supabase.from("model_tags").delete().eq("model_id", id);
+  if (dErr) return dErr.message;
+  if (clean.length) {
+    const { error: iErr } = await supabase.from("model_tags").insert(clean.map((tag) => ({ model_id: id, tag })));
+    if (iErr) return iErr.message;
+  }
+  revalidatePath("/models");
+  revalidatePath(`/models/${id}`);
+  return null;
+}
+
 // Default tags for the Model — copied into product_tags at product creation (Phase 3).
 // Editing them here does NOT touch existing products' tags (those are Product-owned).
 export async function setModelTags(modelId: string, tags: string[]): Promise<string | null> {
