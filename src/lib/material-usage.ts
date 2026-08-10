@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { MATERIAL_GROUP_LABELS } from "@/lib/presets";
+import { getMaterialRoleLabels, materialRoleLabel } from "@/lib/material-roles";
 
 // ADR-0009 Phase 2 — per-season material usage breakdown.
 // For each Material×Color, the list of order lines that consume it (which order,
@@ -50,7 +50,7 @@ export async function buildMaterialUsage(supabase: SupabaseClient, seasonId: str
 
   const productIds = Array.from(new Set(orderItems.map((it) => it.product_id)));
 
-  const [productsRes, pmRes, mcRes] = await Promise.all([
+  const [productsRes, pmRes, mcRes, roleLabels] = await Promise.all([
     supabase
       .from("products")
       .select(
@@ -66,6 +66,7 @@ export async function buildMaterialUsage(supabase: SupabaseClient, seasonId: str
       .select(
         "id, color, materials(id, material_number, name, category, unit_type, supplier_id, suppliers(id, name, primary_email, primary_name))"
       ),
+    getMaterialRoleLabels(supabase),
   ]);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -151,10 +152,10 @@ export async function buildMaterialUsage(supabase: SupabaseClient, seasonId: str
     const p: any = productsMap.get(it.product_id);
     if (!p) continue;
     const mainColor = it.product_colors?.material_color_id as string | undefined;
-    if (p.main_material_id) addLine(mainColor, Number(p.main_m_quantity ?? 0), "Main", it, p);
-    if (p.lining_material_id) addLine(p.lining_material_color_id, Number(p.lining_m_quantity ?? 0), "Lining", it, p);
+    if (p.main_material_id) addLine(mainColor, Number(p.main_m_quantity ?? 0), materialRoleLabel("main", roleLabels), it, p);
+    if (p.lining_material_id) addLine(p.lining_material_color_id, Number(p.lining_m_quantity ?? 0), materialRoleLabel("lining", roleLabels), it, p);
     for (const pm of pmsByProduct.get(it.product_id) ?? []) {
-      const label = MATERIAL_GROUP_LABELS[pm.material_group] ?? pm.material_group ?? "Other";
+      const label = materialRoleLabel(pm.material_group, roleLabels);
       addLine(pm.material_color_id, Number(pm.usage_amount ?? 0), label, it, p);
     }
   }

@@ -28,11 +28,5 @@ export const MODEL_VERSION_MATERIAL_ROLES = [
   "accessories",
 ] as const;
 export type ModelVersionMaterialRole = (typeof MODEL_VERSION_MATERIAL_ROLES)[number];
-export const MODEL_VERSION_MATERIAL_ROLE_LABELS: Record<ModelVersionMaterialRole, string> = {
-  lining: "Lining",
-  sleeve_lining: "Sleeve Lining",
-  pocket_facing: "Pocket Facing",
-  pocket_bag: "Pocket Bag",
-  interfacing: "Interfacing",
-  accessories: "Accessories",
-};
+// Role display labels now live in src/lib/material-roles.ts (Japanese defaults,
+// overridable in Settings) and are shared with the product material-usage pages.

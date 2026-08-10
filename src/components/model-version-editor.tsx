@@ -5,7 +5,6 @@ import { getModelVersionEditData, updateModelVersion, deleteModelVersion } from 
 import { MaterialPickerModal, type PickableMaterial } from "@/components/material-picker";
 import {
   MODEL_VERSION_MATERIAL_ROLES,
-  MODEL_VERSION_MATERIAL_ROLE_LABELS,
   MODEL_VERSION_STATUS_LABELS,
   type ModelVersionStatus,
 } from "@/lib/model-constants";
@@ -33,7 +32,7 @@ export type VersionEditData = {
   materials: { role: string; material_id: string; material_color_id: string | null; usage_amount: number }[];
   productCount: number;
 };
-export type ModelVersionEditBundle = { data: VersionEditData; materials: PickableMaterial[]; laborRate: number };
+export type ModelVersionEditBundle = { data: VersionEditData; materials: PickableMaterial[]; laborRate: number; roleLabels: Record<string, string> };
 
 type Row = { key: string; role: string; material_id: string; material_color_id: string | null; usage_amount: number };
 type Lining = { material_id: string; material_color_id: string | null; usage_amount: number } | null;
@@ -142,7 +141,8 @@ function MaterialColorSelect({
 }
 
 function VersionEditorBody({ bundle, onClose, onDone }: { bundle: ModelVersionEditBundle; onClose: () => void; onDone: () => void }) {
-  const { data, materials, laborRate } = bundle;
+  const { data, materials, laborRate, roleLabels } = bundle;
+  const roleLabel = (r: string) => roleLabels[r] ?? r;
   const readOnly = data.status !== "active";
   const matById = useMemo(() => new Map(materials.map((m) => [m.id, m])), [materials]);
   const setPriceOf = (id: string) => Number(matById.get(id)?.set_price_jpy ?? 0);
@@ -241,7 +241,7 @@ function VersionEditorBody({ bundle, onClose, onDone }: { bundle: ModelVersionEd
 
       {/* ── Lining (may be None) ── */}
       <section className={sectionCls}>
-        <h3 className="text-sm font-medium text-gray-700 mb-3">Lining</h3>
+        <h3 className="text-sm font-medium text-gray-700 mb-3">{roleLabel("lining")}</h3>
         {lining === null ? (
           <div className="flex items-center gap-3">
             <span className="text-sm text-gray-500">None (no lining)</span>
@@ -285,7 +285,7 @@ function VersionEditorBody({ bundle, onClose, onDone }: { bundle: ModelVersionEd
             return (
               <div key={row.key} className="flex items-center gap-2">
                 <select value={row.role} disabled={readOnly} onChange={(e) => updateRow(row.key, { role: e.target.value })} className={inputCls + " w-36"}>
-                  {OTHER_ROLES.map((r) => (<option key={r} value={r}>{MODEL_VERSION_MATERIAL_ROLE_LABELS[r]}</option>))}
+                  {OTHER_ROLES.map((r) => (<option key={r} value={r}>{roleLabel(r)}</option>))}
                 </select>
                 <button type="button" disabled={readOnly} onClick={() => setPickingKey(row.key)}
                   className="flex-1 min-w-0 truncate text-left px-2 py-1.5 border border-gray-300 rounded text-sm hover:border-gray-500 disabled:bg-gray-50 disabled:hover:border-gray-300">

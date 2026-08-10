@@ -47,6 +47,7 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
       { domain: "material_category_accessory", label: "Accessory Category", ready: true, withLabel: true },
       { domain: "material_unit", label: "Unit", ready: true, withLabel: true },
       { domain: "material_composition", label: "Composition", ready: true },
+      { domain: "material_role", label: "Material Roles (value = key, label = display)", ready: true, withLabel: true },
     ],
   },
   {

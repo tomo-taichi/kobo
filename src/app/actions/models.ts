@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { MODEL_CATEGORIES, MODEL_VERSION_MATERIAL_ROLES, type ModelVersionMaterialRole } from "@/lib/model-constants";
+import { getMaterialRoleLabels } from "@/lib/material-roles";
 import type { ModelVersionEditBundle } from "@/components/model-version-editor";
 
 // Shared with the version editor: one materials query covering picker + colours + set price.
@@ -34,7 +35,7 @@ export async function getModelVersionEditData(versionId: string): Promise<ModelV
     seasons: { name: string } | { name: string }[] | null;
   };
 
-  const [{ data: model }, { data: matRows }, { data: materials }, { data: settings }, { count: productCount }] =
+  const [{ data: model }, { data: matRows }, { data: materials }, { data: settings }, { count: productCount }, roleLabels] =
     await Promise.all([
       supabase.from("models").select("id, name, category").eq("id", v.model_id).single(),
       supabase
@@ -45,6 +46,7 @@ export async function getModelVersionEditData(versionId: string): Promise<ModelV
       supabase.from("materials").select(MV_MATERIAL_SELECT).order("name"),
       supabase.from("company_settings").select("labor_rate_jpy_per_hour").single(),
       supabase.from("products").select("id", { count: "exact", head: true }).eq("model_version_id", versionId),
+      getMaterialRoleLabels(supabase),
     ]);
   if (!model) return null;
   const m = model as unknown as { name: string; category: string };
@@ -80,6 +82,7 @@ export async function getModelVersionEditData(versionId: string): Promise<ModelV
     },
     materials: (materials ?? []) as unknown as ModelVersionEditBundle["materials"],
     laborRate: Number((settings as { labor_rate_jpy_per_hour: number } | null)?.labor_rate_jpy_per_hour) || 2000,
+    roleLabels,
   };
 }
 
