@@ -6,11 +6,6 @@ import { PRODUCT_CATEGORIES } from "./product-constants";
 // (coat/jacket/shirt/…) is gone — both here and as the dropped DB CHECK.
 export const MODEL_CATEGORIES = PRODUCT_CATEGORIES;
 
-// @deprecated sex now lives on the Product, not the Model (ADR-0011 §3.1).
-// Retained only until the legacy Model form/list/actions are replaced in
-// Phase 2 (#5/#9), where gender is removed from the Model surface entirely.
-export const MODEL_GENDERS = ["men", "women", "unisex"] as const;
-
 // ── Model Version lifecycle (ADR-0011 §3.4) ──────────────────────────────
 // active → frozen (on ProductionBatch creation) → deprecated (manual).
 export const MODEL_VERSION_STATUSES = ["active", "frozen", "deprecated"] as const;

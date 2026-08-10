@@ -130,7 +130,7 @@ export function ModelsClient({ models }: { models: ModelRow[] }) {
             {shown.map((m) => {
               const isSel = selected.has(m.id);
               return (
-                <tr key={m.id} onClick={() => router.push(`/models/${m.id}/edit`)}
+                <tr key={m.id} onClick={() => router.push(`/models/${m.id}`)}
                   className={`cursor-pointer hover:bg-gray-50 ${isSel ? "bg-gray-50" : ""} ${m.archived ? "opacity-50" : ""}`}>
                   <td className={td} onClick={(e) => e.stopPropagation()}>
                     <input type="checkbox" checked={isSel} onChange={() => toggle(m.id)} aria-label={`Select ${m.name}`} className="align-middle accent-gray-900" />

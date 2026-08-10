@@ -67,9 +67,32 @@ export async function updateModel(
   const name = (formData.get("name") as string)?.trim();
   if (!name) return "Please enter a model name";
   const category = formData.get("category") as string;
-  const gender = formData.get("gender") as string;
-  const { error } = await supabase.from("models").update({ name, category, gender }).eq("id", id);
-  if (error) return error.message;
+  if (!MODEL_CATEGORIES.includes(category as (typeof MODEL_CATEGORIES)[number]))
+    return "Please select a category";
+  // ADR-0011: a Model has only name + category; sex lives on the Product.
+  const { error } = await supabase.from("models").update({ name, category }).eq("id", id);
+  if (error) {
+    if (error.code === "23505") return "A model with this name and category already exists.";
+    return error.message;
+  }
   revalidatePath("/models");
-  redirect("/models");
+  revalidatePath(`/models/${id}`);
+  redirect(`/models/${id}`);
+}
+
+// Default tags for the Model — copied into product_tags at product creation (Phase 3).
+// Editing them here does NOT touch existing products' tags (those are Product-owned).
+export async function setModelTags(modelId: string, tags: string[]): Promise<string | null> {
+  const supabase = await createClient();
+  const clean = Array.from(new Set(tags.map((t) => t.trim()).filter(Boolean)));
+  const { error: dErr } = await supabase.from("model_tags").delete().eq("model_id", modelId);
+  if (dErr) return dErr.message;
+  if (clean.length) {
+    const { error: iErr } = await supabase
+      .from("model_tags")
+      .insert(clean.map((tag) => ({ model_id: modelId, tag })));
+    if (iErr) return iErr.message;
+  }
+  revalidatePath(`/models/${modelId}`);
+  return null;
 }
