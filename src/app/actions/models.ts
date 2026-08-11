@@ -118,6 +118,42 @@ export async function setModelVersionStatus(
   return null;
 }
 
+// Versions list bulk actions. Archive = Deprecate (hide from new-product selection,
+// keep history); Unarchive restores a deprecated version to frozen.
+export async function bulkArchiveModelVersions(ids: string[], deprecate: boolean): Promise<string | null> {
+  if (!ids.length) return null;
+  const supabase = await createClient();
+  if (deprecate) {
+    const { error } = await supabase.from("model_versions").update({ status: "deprecated" }).in("id", ids);
+    if (error) return error.message;
+  } else {
+    const { error } = await supabase.from("model_versions").update({ status: "frozen" }).in("id", ids).eq("status", "deprecated");
+    if (error) return error.message;
+  }
+  revalidatePath("/models");
+  revalidatePath("/model-versions");
+  return null;
+}
+
+// Bulk delete versions. Skip versions that have products (deleting would SET NULL their
+// link) — report instead, like bulkDeleteModels. model_version_materials cascade.
+export async function bulkDeleteModelVersions(ids: string[]): Promise<string | null> {
+  if (!ids.length) return null;
+  const supabase = await createClient();
+  const { data: withProds, error: pErr } = await supabase.from("products").select("model_version_id").in("model_version_id", ids);
+  if (pErr) return pErr.message;
+  const blocked = new Set(((withProds ?? []) as { model_version_id: string }[]).map((r) => r.model_version_id));
+  const deletable = ids.filter((id) => !blocked.has(id));
+  if (deletable.length) {
+    const { error } = await supabase.from("model_versions").delete().in("id", deletable);
+    if (error) return error.message;
+  }
+  revalidatePath("/models");
+  revalidatePath("/model-versions");
+  if (blocked.size) return `Deleted ${deletable.length}. Skipped ${blocked.size} — they have products (unlink first).`;
+  return null;
+}
+
 // Delete a version. Guard: refuse if any Product references it (products FK is ON DELETE
 // SET NULL, so a delete would silently unlink them — we block instead, per "never lose data").
 // model_version_materials cascade-delete with the version.

@@ -22,13 +22,23 @@ export function StatusBadge({ status, locked }: { status: string; locked: boolea
 // Shared Versions table (Season / Status / Lining / Products / Materials / Sizes /
 // Total / Mfg / Changelog). Row click → onOpen(id); the Products count links to the
 // version's linked products. Used by the Model detail page and the Models list expansion.
-export function VersionsTable({ versions, onOpen }: { versions: VersionRow[]; onOpen: (id: string) => void }) {
+type Selectable = { selected: Set<string>; onToggle: (id: string) => void; onToggleAll: (ids: string[], checked: boolean) => void };
+
+export function VersionsTable({ versions, onOpen, selectable }: { versions: VersionRow[]; onOpen: (id: string) => void; selectable?: Selectable }) {
   const td = "px-4 py-2.5";
+  const allSel = !!selectable && versions.length > 0 && versions.every((v) => selectable.selected.has(v.id));
   return (
     <div className="bg-white border border-gray-200 rounded-xl overflow-x-auto">
       <table className="w-full text-sm">
         <thead className="bg-gray-50 border-b border-gray-200">
           <tr>
+            {selectable && (
+              <th className="px-4 py-2.5 w-8">
+                <input type="checkbox" aria-label="Select all" checked={allSel}
+                  onChange={(e) => selectable.onToggleAll(versions.map((v) => v.id), e.target.checked)}
+                  className="align-middle accent-gray-900" />
+              </th>
+            )}
             <th className="text-left px-4 py-2.5 font-medium text-gray-600">Season</th>
             <th className="text-left px-4 py-2.5 font-medium text-gray-600">Status</th>
             <th className="text-left px-4 py-2.5 font-medium text-gray-600">Lining</th>
@@ -43,7 +53,12 @@ export function VersionsTable({ versions, onOpen }: { versions: VersionRow[]; on
         </thead>
         <tbody className="divide-y divide-gray-100">
           {versions.map((v) => (
-            <tr key={v.id} onClick={() => onOpen(v.id)} className="cursor-pointer hover:bg-gray-50">
+            <tr key={v.id} onClick={() => onOpen(v.id)} className={`cursor-pointer hover:bg-gray-50 ${selectable?.selected.has(v.id) ? "bg-gray-50" : ""}`}>
+              {selectable && (
+                <td className={td} onClick={(e) => e.stopPropagation()}>
+                  <input type="checkbox" checked={selectable.selected.has(v.id)} onChange={() => selectable.onToggle(v.id)} aria-label={`Select ${v.season}`} className="align-middle accent-gray-900" />
+                </td>
+              )}
               <td className={`${td} text-gray-900 whitespace-nowrap`}>{v.season}</td>
               <td className={td}><StatusBadge status={v.status} locked={v.locked} /></td>
               <td className={`${td} text-gray-500 max-w-[10rem] truncate`} title={v.lining_label}>
@@ -66,7 +81,7 @@ export function VersionsTable({ versions, onOpen }: { versions: VersionRow[]; on
             </tr>
           ))}
           {!versions.length && (
-            <tr><td colSpan={10} className="px-4 py-8 text-center text-gray-400 text-sm">No versions yet</td></tr>
+            <tr><td colSpan={selectable ? 11 : 10} className="px-4 py-8 text-center text-gray-400 text-sm">No versions yet</td></tr>
           )}
         </tbody>
       </table>

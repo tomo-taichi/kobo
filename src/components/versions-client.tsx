@@ -1,10 +1,12 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { VersionsTable, displayStatus } from "@/components/versions-table";
 import { ModelVersionEditModal } from "@/components/model-version-editor";
+import { BulkBar } from "@/components/bulk-bar";
+import { bulkArchiveModelVersions, bulkDeleteModelVersions } from "@/app/actions/models";
 import { CATEGORY_ICON, catRank } from "@/lib/product-constants";
 import type { VersionRow } from "@/lib/version-rows";
 
@@ -30,6 +32,19 @@ export function VersionsClient({ groups }: { groups: VersionGroup[] }) {
   const [fStatus, setFStatus] = useState(""); // "" = all
   const [search, setSearch] = useState("");
   const [editVer, setEditVer] = useState<{ id: string; ids: string[] } | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [pending, startBulk] = useTransition();
+
+  const toggle = (id: string) => setSelected((p) => { const n = new Set(p); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  const toggleAll = (ids: string[], checked: boolean) =>
+    setSelected((p) => { const n = new Set(p); for (const id of ids) { if (checked) n.add(id); else n.delete(id); } return n; });
+  const runBulk = (fn: () => Promise<string | null>) =>
+    startBulk(async () => {
+      const msg = await fn();
+      setSelected(new Set());
+      router.refresh();
+      if (msg) alert(msg);
+    });
 
   const q = search.trim().toLowerCase();
 
@@ -106,13 +121,27 @@ export function VersionsClient({ groups }: { groups: VersionGroup[] }) {
               <span className="text-xs text-gray-400">{g.modelCategory}</span>
               <span className="text-xs text-gray-300">· {g.versions.length} version{g.versions.length === 1 ? "" : "s"}</span>
             </div>
-            <VersionsTable versions={g.versions} onOpen={(id) => setEditVer({ id, ids: g.versions.map((v) => v.id) })} />
+            <VersionsTable
+              versions={g.versions}
+              onOpen={(id) => setEditVer({ id, ids: g.versions.map((v) => v.id) })}
+              selectable={{ selected, onToggle: toggle, onToggleAll: toggleAll }}
+            />
           </div>
         ))}
         {!shown.length && (
           <div className="bg-white border border-gray-200 rounded-xl px-4 py-10 text-center text-gray-400 text-sm">No versions match</div>
         )}
       </div>
+
+      <BulkBar
+        count={selected.size}
+        pending={pending}
+        deleteLabel="Delete"
+        onArchive={() => runBulk(() => bulkArchiveModelVersions([...selected], true))}
+        onUnarchive={() => runBulk(() => bulkArchiveModelVersions([...selected], false))}
+        onDelete={() => { if (confirm(`Delete ${selected.size} version(s)? Versions with products are kept (unlink first).`)) runBulk(() => bulkDeleteModelVersions([...selected])); }}
+        onClear={() => setSelected(new Set())}
+      />
 
       {editVer && (
         <ModelVersionEditModal
