@@ -136,6 +136,8 @@ export function VersionsClient({ groups }: { groups: VersionGroup[] }) {
         count={selected.size}
         pending={pending}
         deleteLabel="Delete"
+        archiveLabel="Deprecate"
+        unarchiveLabel="Undeprecate"
         onArchive={() => runBulk(() => bulkArchiveModelVersions([...selected], true))}
         onUnarchive={() => runBulk(() => bulkArchiveModelVersions([...selected], false))}
         onDelete={() => { if (confirm(`Delete ${selected.size} version(s)? Versions with products are kept (unlink first).`)) runBulk(() => bulkDeleteModelVersions([...selected])); }}

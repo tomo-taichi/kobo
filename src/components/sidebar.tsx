@@ -34,7 +34,7 @@ const BRAND_LINKS = [
   { href: "/seasons", label: "Seasons", icon: "calendar" },
   { href: "/materials", label: "Materials", icon: "layers", sub: [{ href: "/suppliers", label: "Suppliers" }] },
   { href: "/customers", label: "Customers", icon: "users" },
-  { href: "/products", label: "Products", icon: "tag", sub: [{ href: "/models", label: "Models" }, { href: "/model-versions", label: "Versions" }] },
+  { href: "/products", label: "Products", icon: "tag", sub: [{ href: "/models", label: "Models" }] },
   { href: "/orders", label: "Orders", icon: "receipt" },
   { href: "/settings", label: "Settings", icon: "cog" },
 ];
@@ -91,16 +91,14 @@ export function Sidebar({ isBrand, isProduction, displayName }: { isBrand: boole
         {links.map((l) => {
           const sub = (l as { sub?: { href: string; label: string }[] }).sub;
           const selfActive = pathname === l.href || pathname.startsWith(l.href + "/");
-          const subActive = sub?.some((s) => pathname === s.href || pathname.startsWith(s.href + "/")) ?? false;
-          const active = selfActive || subActive;
           return (
             <div key={l.href}>
               <Link href={l.href} className={item(selfActive)} title={collapsed ? l.label : undefined}>
                 <Icon name={l.icon} />
                 {!collapsed && l.label}
               </Link>
-              {/* Sub-menu — shown when the section is active (expanded sidebar only) */}
-              {!collapsed && sub && active && (
+              {/* Sub-menu — always shown (expanded sidebar only) */}
+              {!collapsed && sub && (
                 <div className="ml-7 mt-0.5 flex flex-col gap-0.5 border-l border-gray-200 pl-2">
                   {sub.map((s) => {
                     const sa = pathname === s.href || pathname.startsWith(s.href + "/");

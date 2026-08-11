@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getListValues } from "@/lib/list-options";
 import { loadAllVersionRows, fetchAllRows, type VersionRow } from "@/lib/version-rows";
 import { ModelsClient, type ModelRow } from "@/components/models-client";
+import { ModelsViewToggle } from "@/components/models-view-toggle";
 
 export default async function ModelsPage() {
   const supabase = await createClient();
@@ -58,8 +59,9 @@ export default async function ModelsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center gap-3">
         <h1 className="text-2xl font-semibold text-gray-900">Models</h1>
+        <ModelsViewToggle current="models" />
       </div>
       <ModelsClient models={rows} tagOptions={tagOptions} />
     </div>

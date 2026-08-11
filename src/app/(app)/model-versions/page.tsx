@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { loadAllVersionRows, type VersionRow } from "@/lib/version-rows";
 import { VersionsClient, type VersionGroup } from "@/components/versions-client";
+import { ModelsViewToggle } from "@/components/models-view-toggle";
 
 export default async function ModelVersionsPage() {
   const supabase = await createClient();
@@ -30,7 +31,10 @@ export default async function ModelVersionsPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-semibold text-gray-900">Model Versions</h1>
+      <div className="flex items-center gap-3">
+        <h1 className="text-2xl font-semibold text-gray-900">Model Versions</h1>
+        <ModelsViewToggle current="versions" />
+      </div>
       <VersionsClient groups={groups} />
     </div>
   );
