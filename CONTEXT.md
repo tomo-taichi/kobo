@@ -20,11 +20,12 @@ taichimurakami ブランドの商品管理・受注管理・書類発行・量�
   - **同名 Model マージ**: 大小文字/空白違い・同カテゴリの 27 グループを本番マージ（**models 714→682**、32 削除）。version/product・**legacy `products.model_id`**・整合を保全（不整合 0）。カテゴリ違い 8 名前・実バリアント（W/semilong 等）は手動 Merge 対象で残置。
   - **⚠ Phase 3/4 で必須**: **`products.model_id` は現役の FK**（`products_model_id_fkey`, NO ACTION, 全 1921 product で `model_version_id` と整合）。Model を削除/統合する処理は `model_versions.model_id` と `products.model_id` の**両方**を必ず付替える（`mergeModels` は対応済み）。
   - **Product 側は未連携（dual-write のまま）**: 編集/作成 UI は `model_version_id`/`model_id` を読まず、`model_name`（自由入力）＋自前 recipe を保持。version 読み替えは未実施。
-- **次 = Phase 3（Product ページの Model 連携）**:
-  - 作成フローを `Season→Model→Version→メイン素材→色/価格` に（category 継承・非メイン素材/サイズ/組成は Version 確定・tags/製造は初期値コピー）。
-  - Product 編集に **Model 詳細カード**（共有レシピ読取表示＋`old version`＋版編集導線）、`model_name` 自由入力→**Model 参照ピッカー**化。
-  - **裏地を含む非メイン素材・サイズ・組成の編集 UI を Product から撤去 → Version 表示へ**（Phase 4 の読み替えで完成）。
+- **次 = Phase 3（Product ページの Model 連携）**。**決定済**: recipe は **dual-write 維持＋表示カード**（読み替えは Phase 4）、作成は **フル Model/Version ピッカー**。実装単位:
+  - **3a データ層**: `resolveModelVersion(name, category, seasonId)` を追加。`createProduct`/`updateProduct` が `model_id`＋`model_version_id` をセット、`duplicateProduct` は source からコピー。`model_name` は非正規化コピーとして維持（検索・表示・material-usage 用）。
+  - **3b 作成/編集フォーム**: `model_name` 自由入力 → **Model/Version ピッカー**（既存 Model を name/category で検索、無ければ「新規 Model 作成」＝Model＋当該 season の空 active Version を生成）。Version 既定＝`season ≤ product.season` の最新（reuse-until-changed）、無ければ copy-forward。category は Model から継承（読取専用）。tags/製造は初期値コピー。メイン素材/色/価格/sex は従来どおり Product 入力。
+  - **3c Model 詳細カード**: Product 編集に、紐づく Model/Version と共有レシピ（非メイン素材/サイズ/組成を version 由来で読取表示）＋`old version` フラグ＋「Model 版を編集」導線（`ModelVersionEditModal`）。**Phase 3 は表示のみ。Product は自前 recipe 列を編集し続ける（dual-write）**。
   - フィールド所有: メイン素材/色/価格/sex/season=**Product**、非メイン素材/サイズ/組成=**Version 共有**、name/category=**Model**、tags/製造=**作成時コピー→Product 独立**。量産済み Product の recipe 列はスナップショット保持（ADR §3.3）。
+  - **Phase 4 に据え置き**: 裏地含む非メイン素材/サイズ/組成の編集 UI を Product から撤去し version 読み替え（ライブ反映）、素材コスト伝播、staleness 自動化、量産済み Product のスナップショット方針。
 - **以降**: Phase 4（version 読み替え・cost 伝播・staleness）→ Phase 5（Retail ガイド更新）→ Phase 6（Deprecation UX の影響 Product 警告一覧）。
 - **技術的負債（スコープ外・いつか別途対応）**: リポジトリ全体で `eslint` 218 errors のベースライン（大半は `as any` 由来の `@typescript-eslint/no-explicit-any`）。build は eslint を gate しないため、当面のコード変更の受け入れ基準は **tsc + build + vitest**（＋新規 lint エラーを増やさない）。
 
