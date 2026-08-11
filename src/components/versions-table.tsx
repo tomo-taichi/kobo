@@ -23,6 +23,13 @@ function LockOpenIcon() {
     </svg>
   );
 }
+function AlertIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z" />
+    </svg>
+  );
+}
 
 type Selectable = { selected: Set<string>; onToggle: (id: string) => void; onToggleAll: (ids: string[], checked: boolean) => void };
 
@@ -75,7 +82,13 @@ export function VersionsTable({ versions, onOpen, selectable }: { versions: Vers
                 {v.lining_label === "None" ? <span className="text-gray-300">None</span> : v.lining_label}
               </td>
               <td className={`${td} text-center text-gray-500`}>{v.material_count}</td>
-              <td className={`${td} text-center text-gray-500`}>{v.sizes_count}</td>
+              <td className={`${td} text-center`}>
+                {v.sizes_count > 0 ? (
+                  <span className="text-gray-500">{v.sizes_count}</span>
+                ) : (
+                  <span className="inline-flex text-amber-500" title="No orderable sizes set"><AlertIcon /></span>
+                )}
+              </td>
               <td className={`${td} text-right text-gray-700 font-mono whitespace-nowrap`}>¥{v.total_cost.toLocaleString()}</td>
               <td className={`${td} text-right text-gray-500 whitespace-nowrap`}>{formatHours(v.mfg_hours)}h</td>
               <td className={`${td} text-center`} onClick={(e) => e.stopPropagation()}>
