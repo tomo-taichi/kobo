@@ -11,17 +11,21 @@ taichimurakami ブランドの商品管理・受注管理・書類発行・量�
   - スキーマ: `model_versions` / `model_version_materials` / `model_tags` / `products.model_version_id`（＋ RLS `is_internal()` ＋ grants）、`models` の identity `unique(name, category)`、`models.gender` は NULL 許容、`model_versions` は **active 限定の部分ユニーク**（frozen は同一 season に複数可、active は 1 season 1 版）、旧 `models.category` CHECK は削除。
   - バックフィル: **Models 714 / Versions 936（全 frozen）/ model_version_materials 2,613 / products 紐付け 1,921**。既存 product の列・データは**無変更**（dual-write。version からの読み替えは未実施）。`model_tags` は空。
   - バックアップ: JSON＋`pg_dump` の二重オフサイトを取得済み（`data/backups/`, gitignore）。
-  - **次 = Phase 2（Models 一覧・Model/Version 編集 UI）**。既存 `/models` scaffolding は ADR-0011 以前の旧 Model（`gender` 直持ち・version なし）で ADR と矛盾するため **作り直し**。実装単位:
-    1. **スキーマ微追加**（additive）: `models.archived`（bulk Archive 用）、`model_versions.updated_at` の保存時更新。
-    2. **定数整理**: `MODEL_CATEGORIES` を撤廃し `PRODUCT_CATEGORIES` に統一、`MODEL_GENDERS` 削除（sex は Product 側）、status/role ラベル追加。
-    3. **サイドバー**: Products に `sub:[Models]`（Materials→Suppliers と同型）。
-    4. **Models 一覧の作り直し**: checkbox + 全選択 + 検索 + カテゴリ filter + showArchived + `BulkBar`（Archive/Unarchive/Delete。版持ち Model は FK でブロック→件数報告）。行クリックで `/models/[id]`。
-    5. **Model 詳細/編集**: 属性（name/category、`(name,category)` 一意）＋既定テンプレート（`model_tags`・製造 template）＋ Version 履歴を season 順に一覧。
-    6. **Version 編集**（Product 編集に倣った専用ページ）: 非メイン素材行（`MaterialPickerModal` 再利用・role×material×color×usage）、Orderable Sizes、Accessory Composition、製造時間（時間入力→分保存）、changelog。**frozen 版は読み取り専用**。
-    7. **copy-forward 新版作成**: 対象 Season を選び最新版 recipe を複製して `active` 版を生成（バックフィル版は全 frozen のため必須。同 (model,season) に active があれば partial unique でブロック）。
-    8. **状態遷移は Deprecate / 復帰のみ**（`setModelVersionStatus`。復帰の既定は `deprecated→frozen`、`active` へ戻すのは同 season に active が無い時のみ）。freeze は Phase 4 の batch 連動、影響 Product 警告は Phase 6。
-  - **Phase 2 の非対象**（別フェーズ）: version→Product の live 読み替え・即時反映（Phase 3/4。Phase 2 は master レコード編集に留まる）、作成フロー Season→Model→Version→メイン素材と Product 側 Model 詳細セクション（Phase 3）、素材コスト伝播・staleness（Phase 4）、Retail ガイド更新・OC out-of-date（Phase 5）、Deprecate 時の影響 Product 警告一覧（Phase 6）。
-  - **以降**: Phase 3（作成フロー・Product の Model 詳細セクション）→ Phase 4（version 読み替え・cost 伝播・staleness）→ Phase 5（Retail ガイド更新）→ Phase 6（Deprecation UX）。
+- **ADR-0011 Phase 2 = 完了（本番反映済み）**。旧 `/models` scaffolding（gender 直持ち・version なし）を作り直し:
+  - スキーマ微追加: `models.archived`、`model_versions` の `set_updated_at` トリガ。role 表示ラベルを `list_options`(`material_role`, withLabel) に seed（Settings で編集可、日本語既定）。
+  - Models サブメニュー（Products 配下）／**一覧**（ID・Category・Name＋tags・Sex(=紐づく product の product_sex 集約)・Versions 展開・Products リンク・checkbox+bulk Archive/Delete/Tag・**行クリックで編集 POPUP**・**正規化名でグループ表示**・**Merge 一括ツール**）。
+  - **Model 詳細**（属性編集・default tags＝共有 `product_tag` 語彙・Version 履歴＝Season/Status/Lining/Products/Materials/Sizes/Total/Mfg/Changelog）。
+  - **Version 編集 POPUP**（`ModelVersionEditModal`：`getModelVersionEditData` で bundle 取得。素材ピッカー、裏地は独立＋「None」、色は no-colour 廃止＋単色は自動選択、Cost summary(用尺+製造)、製造時間(時間↔分)、changelog、**前/次スライド**、Duplicate/Delete/**Deprecate・復帰**、frozen/deprecated は読み取り専用）。role ラベルは日本語で Model も Product/material-order も共有。
+  - copy-forward（同 season の新 active 生成）、Deprecate/復帰（`setModelVersionStatus`。復帰既定 frozen／active は「1 season 1 active」の部分ユニークで保護）。
+  - **同名 Model マージ**: 大小文字/空白違い・同カテゴリの 27 グループを本番マージ（**models 714→682**、32 削除）。version/product・**legacy `products.model_id`**・整合を保全（不整合 0）。カテゴリ違い 8 名前・実バリアント（W/semilong 等）は手動 Merge 対象で残置。
+  - **⚠ Phase 3/4 で必須**: **`products.model_id` は現役の FK**（`products_model_id_fkey`, NO ACTION, 全 1921 product で `model_version_id` と整合）。Model を削除/統合する処理は `model_versions.model_id` と `products.model_id` の**両方**を必ず付替える（`mergeModels` は対応済み）。
+  - **Product 側は未連携（dual-write のまま）**: 編集/作成 UI は `model_version_id`/`model_id` を読まず、`model_name`（自由入力）＋自前 recipe を保持。version 読み替えは未実施。
+- **次 = Phase 3（Product ページの Model 連携）**:
+  - 作成フローを `Season→Model→Version→メイン素材→色/価格` に（category 継承・非メイン素材/サイズ/組成は Version 確定・tags/製造は初期値コピー）。
+  - Product 編集に **Model 詳細カード**（共有レシピ読取表示＋`old version`＋版編集導線）、`model_name` 自由入力→**Model 参照ピッカー**化。
+  - **裏地を含む非メイン素材・サイズ・組成の編集 UI を Product から撤去 → Version 表示へ**（Phase 4 の読み替えで完成）。
+  - フィールド所有: メイン素材/色/価格/sex/season=**Product**、非メイン素材/サイズ/組成=**Version 共有**、name/category=**Model**、tags/製造=**作成時コピー→Product 独立**。量産済み Product の recipe 列はスナップショット保持（ADR §3.3）。
+- **以降**: Phase 4（version 読み替え・cost 伝播・staleness）→ Phase 5（Retail ガイド更新）→ Phase 6（Deprecation UX の影響 Product 警告一覧）。
 - **技術的負債（スコープ外・いつか別途対応）**: リポジトリ全体で `eslint` 218 errors のベースライン（大半は `as any` 由来の `@typescript-eslint/no-explicit-any`）。build は eslint を gate しないため、当面のコード変更の受け入れ基準は **tsc + build + vitest**（＋新規 lint エラーを増やさない）。
 
 ## 認証
