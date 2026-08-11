@@ -31,6 +31,7 @@ export type VersionEditData = {
   minutes: { cutting: number; sewing: number; knitting: number; thread: number; finish: number; packing: number };
   materials: { role: string; material_id: string; material_color_id: string | null; usage_amount: number }[];
   productCount: number;
+  locked: boolean; // in production (a finalised product uses it) → read-only
 };
 export type ModelVersionEditBundle = { data: VersionEditData; materials: PickableMaterial[]; laborRate: number; roleLabels: Record<string, string> };
 
@@ -160,7 +161,9 @@ function MaterialColorSelect({
 function VersionEditorBody({ bundle, onClose, onDone, onDuplicated }: { bundle: ModelVersionEditBundle; onClose: () => void; onDone: () => void; onDuplicated: (newVersionId: string) => void }) {
   const { data, materials, laborRate, roleLabels } = bundle;
   const roleLabel = (r: string) => roleLabels[r] ?? r;
-  const readOnly = data.status !== "active";
+  // Editable unless actually locked by production, or deprecated. A frozen version that
+  // isn't in production yet is still editable (ADR §3.4: lock = production start).
+  const readOnly = data.locked || data.status === "deprecated";
   const matById = useMemo(() => new Map(materials.map((m) => [m.id, m])), [materials]);
   const setPriceOf = (id: string) => Number(matById.get(id)?.set_price_jpy ?? 0);
   // A material with exactly one colour is auto-selected; otherwise keep the stored colour.
@@ -268,7 +271,9 @@ function VersionEditorBody({ bundle, onClose, onDone, onDuplicated }: { bundle: 
     <div className="space-y-4">
       {readOnly && (
         <div className="bg-amber-50 border border-amber-200 text-amber-800 rounded-lg px-4 py-3 text-sm">
-          This version is read-only. To change the recipe, create a new version (copy-forward) from the model page.
+          {data.locked
+            ? "This version is in production (a finalised product uses it) and is locked. To change the recipe, create a new version (copy-forward)."
+            : "This version is deprecated. Restore it to edit."}
         </div>
       )}
 

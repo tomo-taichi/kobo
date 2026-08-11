@@ -192,7 +192,7 @@ function VersionHistory({ modelId, versions, seasons }: { modelId: string; versi
                 <td className={`${td} text-right text-gray-700 font-mono whitespace-nowrap`}>¥{v.total_cost.toLocaleString()}</td>
                 <td className={`${td} text-right text-gray-500 whitespace-nowrap`}>{formatHours(v.mfg_hours)}h</td>
                 <td className={`${td} text-gray-500 max-w-xs truncate`} title={v.changelog ?? ""}>{v.changelog ?? "—"}</td>
-                <td className={`${td} text-right text-xs text-gray-400 whitespace-nowrap`}>{v.status === "active" ? "Edit →" : "View →"}</td>
+                <td className={`${td} text-right text-xs text-gray-400 whitespace-nowrap`}>{v.status === "deprecated" ? "View →" : "Edit →"}</td>
               </tr>
             ))}
             {!versions.length && (
