@@ -16,6 +16,7 @@ export type VersionRow = {
   lining_label: string; // lining material name, or "None"
   total_cost: number; // non-main materials (set_price × usage) + manufacturing (¥)
   mfg_hours: number;
+  locked: boolean; // in production (a finalised product uses it) → read-only / "Locked"
 };
 
 type MatEmbed = { name: string; set_price_jpy: number | null };
@@ -50,11 +51,15 @@ export async function fetchAllRows<T>(page: (from: number, to: number) => any): 
 function computeVersionRows(
   versions: RawVersion[],
   mats: MatRow[],
-  prods: { model_version_id: string }[],
+  prods: { model_version_id: string; status: string | null }[],
   laborRate: number
 ): VersionRow[] {
   const pCount = new Map<string, number>();
-  for (const p of prods) pCount.set(p.model_version_id, (pCount.get(p.model_version_id) ?? 0) + 1);
+  const lockedSet = new Set<string>(); // has a finalised (production-started) product
+  for (const p of prods) {
+    pCount.set(p.model_version_id, (pCount.get(p.model_version_id) ?? 0) + 1);
+    if (p.status === "final") lockedSet.add(p.model_version_id);
+  }
 
   const mCount = new Map<string, number>();
   const matCost = new Map<string, number>();
@@ -89,6 +94,7 @@ function computeVersionRows(
         lining_label: liningName.get(v.id) ?? "None",
         total_cost: Math.round(matCost.get(v.id) ?? 0) + Math.round(mfgHours * laborRate),
         mfg_hours: mfgHours,
+        locked: lockedSet.has(v.id),
       };
     })
     .sort((a, b) => a.season.localeCompare(b.season));
@@ -105,13 +111,13 @@ export async function loadVersionRows(supabase: SupabaseClient, versionIds: stri
   const [{ data: versions }, { data: mats }, { data: prods }, laborRate] = await Promise.all([
     supabase.from("model_versions").select(VERSION_SELECT).in("id", versionIds),
     supabase.from("model_version_materials").select(MV_MAT_SELECT).in("model_version_id", versionIds),
-    supabase.from("products").select("model_version_id").in("model_version_id", versionIds),
+    supabase.from("products").select("model_version_id, status").in("model_version_id", versionIds),
     laborRateOf(supabase),
   ]);
   return computeVersionRows(
     (versions ?? []) as unknown as RawVersion[],
     (mats ?? []) as unknown as MatRow[],
-    (prods ?? []) as { model_version_id: string }[],
+    (prods ?? []) as { model_version_id: string; status: string | null }[],
     laborRate
   );
 }
@@ -121,7 +127,7 @@ export async function loadAllVersionRows(supabase: SupabaseClient): Promise<Vers
   const [versions, mats, prods, laborRate] = await Promise.all([
     fetchAllRows<RawVersion>((f, t) => supabase.from("model_versions").select(VERSION_SELECT).range(f, t)),
     fetchAllRows<MatRow>((f, t) => supabase.from("model_version_materials").select(MV_MAT_SELECT).range(f, t)),
-    fetchAllRows<{ model_version_id: string }>((f, t) => supabase.from("products").select("model_version_id").not("model_version_id", "is", null).range(f, t)),
+    fetchAllRows<{ model_version_id: string; status: string | null }>((f, t) => supabase.from("products").select("model_version_id, status").not("model_version_id", "is", null).range(f, t)),
     laborRateOf(supabase),
   ]);
   return computeVersionRows(versions, mats, prods, laborRate);

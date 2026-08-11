@@ -3,11 +3,7 @@
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { getModelVersionEditData, updateModelVersion, deleteModelVersion, duplicateModelVersion, setModelVersionStatus } from "@/app/actions/models";
 import { MaterialPickerModal, type PickableMaterial } from "@/components/material-picker";
-import {
-  MODEL_VERSION_MATERIAL_ROLES,
-  MODEL_VERSION_STATUS_LABELS,
-  type ModelVersionStatus,
-} from "@/lib/model-constants";
+import { MODEL_VERSION_MATERIAL_ROLES } from "@/lib/model-constants";
 import { ACCESSORY_COMPOSITIONS, ORDERABLE_SIZE_PRESETS, defaultOrderableSizes } from "@/lib/product-constants";
 import { SIZES } from "@/lib/order-constants";
 import {
@@ -90,7 +86,9 @@ export function ModelVersionEditModal({
 
   const ready = !!bundle && bundle.data.versionId === currentId;
   const isMissing = missingId === currentId;
-  const statusLabel = ready ? MODEL_VERSION_STATUS_LABELS[bundle.data.status as ModelVersionStatus] ?? bundle.data.status : "";
+  const statusLabel = ready
+    ? bundle.data.locked ? "Locked" : bundle.data.status === "deprecated" ? "Deprecated" : "Active"
+    : "";
   const navBtn = "px-2 py-0.5 rounded border border-gray-300 text-gray-500 hover:bg-gray-100 disabled:opacity-30 disabled:hover:bg-transparent";
 
   return (

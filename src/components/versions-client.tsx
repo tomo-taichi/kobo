@@ -3,13 +3,18 @@
 import { useState, useMemo } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { VersionsTable } from "@/components/versions-table";
+import { VersionsTable, displayStatus } from "@/components/versions-table";
 import { ModelVersionEditModal } from "@/components/model-version-editor";
 import { CATEGORY_ICON, catRank } from "@/lib/product-constants";
-import { MODEL_VERSION_STATUSES, MODEL_VERSION_STATUS_LABELS } from "@/lib/model-constants";
 import type { VersionRow } from "@/lib/version-rows";
 
 export type VersionGroup = { modelId: string; modelName: string; modelCategory: string; versions: VersionRow[] };
+
+const DISPLAY_STATUSES: { value: string; label: string }[] = [
+  { value: "active", label: "Active" },
+  { value: "locked", label: "Locked" },
+  { value: "deprecated", label: "Deprecated" },
+];
 
 function SearchIcon() {
   return (
@@ -35,7 +40,7 @@ export function VersionsClient({ groups }: { groups: VersionGroup[] }) {
       .map((g) => {
         const nameHit = q ? g.modelName.toLowerCase().includes(q) : false;
         const versions = g.versions.filter(
-          (v) => (!fStatus || v.status === fStatus) && (!q || nameHit || v.season.toLowerCase().includes(q))
+          (v) => (!fStatus || displayStatus(v) === fStatus) && (!q || nameHit || v.season.toLowerCase().includes(q))
         );
         return { ...g, versions };
       })
@@ -76,8 +81,8 @@ export function VersionsClient({ groups }: { groups: VersionGroup[] }) {
         {/* Status filter */}
         <div className="flex rounded-lg bg-gray-100 p-0.5">
           <button type="button" onClick={() => setFStatus("")} className={seg(fStatus === "")}>All</button>
-          {MODEL_VERSION_STATUSES.map((s) => (
-            <button key={s} type="button" onClick={() => setFStatus(s)} className={seg(fStatus === s)}>{MODEL_VERSION_STATUS_LABELS[s]}</button>
+          {DISPLAY_STATUSES.map((s) => (
+            <button key={s.value} type="button" onClick={() => setFStatus(s.value)} className={seg(fStatus === s.value)}>{s.label}</button>
           ))}
         </div>
         <div className="relative">
