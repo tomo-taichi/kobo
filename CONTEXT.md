@@ -17,6 +17,7 @@ taichimurakami ブランドの商品管理・受注管理・書類発行・量�
   - **Model 詳細**（属性編集・default tags＝共有 `product_tag` 語彙・Version 履歴＝Season/Status/Lining/Products/Materials/Sizes/Total/Mfg/Changelog）。
   - **Version 編集 POPUP**（`ModelVersionEditModal`：`getModelVersionEditData` で bundle 取得。素材ピッカー、裏地は独立＋「None」、色は no-colour 廃止＋単色は自動選択、Cost summary(用尺+製造)、製造時間(時間↔分)、changelog、**前/次スライド**、Duplicate/Delete/**Deprecate・復帰**、frozen/deprecated は読み取り専用）。role ラベルは日本語で Model も Product/material-order も共有。
   - copy-forward（同 season の新 active 生成）、Deprecate/復帰（`setModelVersionStatus`。復帰既定 frozen／active は「1 season 1 active」の部分ユニークで保護）。
+  - **版の編集可否は status ラベルではなく「量産ロック」で判定**（cost-finalised product＝status='final' を持つ版のみ read-only。ADR §3.4「凍結＝量産開始」の実装）。backfill は都合上 全版 frozen だが、**量産前（finalised 0 件の今）は frozen でも編集可**。deprecated のみ別途 read-only。量産開始（finalise/batch 連動＝Phase 4）で自動ロック。
   - **同名 Model マージ**: 大小文字/空白違い・同カテゴリの 27 グループを本番マージ（**models 714→682**、32 削除）。version/product・**legacy `products.model_id`**・整合を保全（不整合 0）。カテゴリ違い 8 名前・実バリアント（W/semilong 等）は手動 Merge 対象で残置。
   - **⚠ Phase 3/4 で必須**: **`products.model_id` は現役の FK**（`products_model_id_fkey`, NO ACTION, 全 1921 product で `model_version_id` と整合）。Model を削除/統合する処理は `model_versions.model_id` と `products.model_id` の**両方**を必ず付替える（`mergeModels` は対応済み）。
   - **Product 側は未連携（dual-write のまま）**: 編集/作成 UI は `model_version_id`/`model_id` を読まず、`model_name`（自由入力）＋自前 recipe を保持。version 読み替えは未実施。
