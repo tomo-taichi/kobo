@@ -86,9 +86,7 @@ export function ModelVersionEditModal({
 
   const ready = !!bundle && bundle.data.versionId === currentId;
   const isMissing = missingId === currentId;
-  const statusLabel = ready
-    ? bundle.data.locked ? "Locked" : bundle.data.status === "deprecated" ? "Deprecated" : "Active"
-    : "";
+  const statusLabel = ready ? (bundle.data.status === "deprecated" ? "Deprecated" : "Active") : "";
   const navBtn = "px-2 py-0.5 rounded border border-gray-300 text-gray-500 hover:bg-gray-100 disabled:opacity-30 disabled:hover:bg-transparent";
 
   return (
@@ -101,6 +99,7 @@ export function ModelVersionEditModal({
               {ready ? `${bundle.data.modelName} · ${bundle.data.season} version` : "Version"}
             </h2>
             {ready && <span className="shrink-0 text-[11px] px-2 py-0.5 rounded-full font-medium bg-gray-100 text-gray-600">{statusLabel}</span>}
+            {ready && bundle.data.locked && <span className="shrink-0 text-[11px] px-2 py-0.5 rounded-full font-medium bg-blue-100 text-blue-700">🔒 Locked</span>}
             {ready && (
               <a href={`/products?version=${bundle.data.versionId}`} target="_blank" rel="noopener"
                 title="View the products using this version"

@@ -14,7 +14,6 @@ export type VersionGroup = { modelId: string; modelName: string; modelCategory: 
 
 const DISPLAY_STATUSES: { value: string; label: string }[] = [
   { value: "active", label: "Active" },
-  { value: "locked", label: "Locked" },
   { value: "deprecated", label: "Deprecated" },
 ];
 

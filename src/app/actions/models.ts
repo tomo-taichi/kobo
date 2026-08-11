@@ -35,7 +35,7 @@ export async function getModelVersionEditData(versionId: string): Promise<ModelV
     seasons: { name: string } | { name: string }[] | null;
   };
 
-  const [{ data: model }, { data: matRows }, { data: materials }, { data: settings }, { count: productCount }, { count: lockedCount }, roleLabels] =
+  const [{ data: model }, { data: matRows }, { data: materials }, { data: settings }, { data: vProds }, { data: batches }, roleLabels] =
     await Promise.all([
       supabase.from("models").select("id, name, category").eq("id", v.model_id).single(),
       supabase
@@ -45,13 +45,16 @@ export async function getModelVersionEditData(versionId: string): Promise<ModelV
         .order("sort_order"),
       supabase.from("materials").select(MV_MATERIAL_SELECT).order("name"),
       supabase.from("company_settings").select("labor_rate_jpy_per_hour").single(),
-      supabase.from("products").select("id", { count: "exact", head: true }).eq("model_version_id", versionId),
-      // Production lock (ADR §3.4): a version is read-only once a finalised (cost-finalised
-      // = production-started) product uses it. No finalised products yet ⇒ all editable.
-      supabase.from("products").select("id", { count: "exact", head: true }).eq("model_version_id", versionId).eq("status", "final"),
+      supabase.from("products").select("id").eq("model_version_id", versionId),
+      supabase.from("production_batches").select("product_id"),
       getMaterialRoleLabels(supabase),
     ]);
   if (!model) return null;
+  // Production lock (ADR §3.4): read-only once a product using this version has a generated
+  // ProductionBatch. Deprecated is also locked.
+  const vProductIds = new Set(((vProds ?? []) as { id: string }[]).map((p) => p.id));
+  const productCount = vProductIds.size;
+  const locked = v.status === "deprecated" || ((batches ?? []) as { product_id: string }[]).some((b) => vProductIds.has(b.product_id));
   const m = model as unknown as { name: string; category: string };
   const seasonName = Array.isArray(v.seasons) ? v.seasons[0]?.name : v.seasons?.name;
 
@@ -81,8 +84,8 @@ export async function getModelVersionEditData(versionId: string): Promise<ModelV
         material_color_id: mm.material_color_id,
         usage_amount: Number(mm.usage_amount),
       })),
-      productCount: productCount ?? 0,
-      locked: (lockedCount ?? 0) > 0,
+      productCount,
+      locked,
     },
     materials: (materials ?? []) as unknown as ModelVersionEditBundle["materials"],
     laborRate: Number((settings as { labor_rate_jpy_per_hour: number } | null)?.labor_rate_jpy_per_hour) || 2000,
@@ -294,10 +297,13 @@ export async function updateModelVersion(versionId: string, input: UpdateVersion
   // Read-only only when actually locked by production (a finalised product uses it) or
   // deprecated — NOT merely because the version is frozen (ADR §3.4: lock = production start).
   if (ver.status === "deprecated") return "This version is deprecated — restore it before editing.";
-  const { count: lockedCount } = await supabase
-    .from("products").select("id", { count: "exact", head: true })
-    .eq("model_version_id", versionId).eq("status", "final");
-  if ((lockedCount ?? 0) > 0) return "This version is in production (a finalised product uses it) and is locked.";
+  const [{ data: vProds }, { data: batches }] = await Promise.all([
+    supabase.from("products").select("id").eq("model_version_id", versionId),
+    supabase.from("production_batches").select("product_id"),
+  ]);
+  const vids = new Set(((vProds ?? []) as { id: string }[]).map((p) => p.id));
+  if (((batches ?? []) as { product_id: string }[]).some((b) => vids.has(b.product_id)))
+    return "This version is in production (a batch was generated) and is locked.";
 
   for (const m of input.materials) {
     if (!MODEL_VERSION_MATERIAL_ROLES.includes(m.role as ModelVersionMaterialRole))

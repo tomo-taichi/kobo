@@ -51,14 +51,15 @@ export async function fetchAllRows<T>(page: (from: number, to: number) => any): 
 function computeVersionRows(
   versions: RawVersion[],
   mats: MatRow[],
-  prods: { model_version_id: string; status: string | null }[],
+  products: { id: string; model_version_id: string }[],
+  batchedProductIds: Set<string>,
   laborRate: number
 ): VersionRow[] {
   const pCount = new Map<string, number>();
-  const lockedSet = new Set<string>(); // has a finalised (production-started) product
-  for (const p of prods) {
+  const batchedVersions = new Set<string>(); // has a product with a generated ProductionBatch
+  for (const p of products) {
     pCount.set(p.model_version_id, (pCount.get(p.model_version_id) ?? 0) + 1);
-    if (p.status === "final") lockedSet.add(p.model_version_id);
+    if (batchedProductIds.has(p.id)) batchedVersions.add(p.model_version_id);
   }
 
   const mCount = new Map<string, number>();
@@ -94,7 +95,8 @@ function computeVersionRows(
         lining_label: liningName.get(v.id) ?? "None",
         total_cost: Math.round(matCost.get(v.id) ?? 0) + Math.round(mfgHours * laborRate),
         mfg_hours: mfgHours,
-        locked: lockedSet.has(v.id),
+        // Deprecated ⇒ always locked; else locked once a product using it is batched.
+        locked: v.status === "deprecated" || batchedVersions.has(v.id),
       };
     })
     .sort((a, b) => a.season.localeCompare(b.season));
@@ -108,27 +110,32 @@ async function laborRateOf(supabase: SupabaseClient): Promise<number> {
 // A specific set of versions (few — e.g. one model's). Uses .in(), so keep the list small.
 export async function loadVersionRows(supabase: SupabaseClient, versionIds: string[]): Promise<VersionRow[]> {
   if (!versionIds.length) return [];
-  const [{ data: versions }, { data: mats }, { data: prods }, laborRate] = await Promise.all([
+  const [{ data: versions }, { data: mats }, { data: prods }, { data: batches }, laborRate] = await Promise.all([
     supabase.from("model_versions").select(VERSION_SELECT).in("id", versionIds),
     supabase.from("model_version_materials").select(MV_MAT_SELECT).in("model_version_id", versionIds),
-    supabase.from("products").select("model_version_id, status").in("model_version_id", versionIds),
+    supabase.from("products").select("id, model_version_id").in("model_version_id", versionIds),
+    supabase.from("production_batches").select("product_id"),
     laborRateOf(supabase),
   ]);
+  const batchedProductIds = new Set(((batches ?? []) as { product_id: string }[]).map((b) => b.product_id));
   return computeVersionRows(
     (versions ?? []) as unknown as RawVersion[],
     (mats ?? []) as unknown as MatRow[],
-    (prods ?? []) as { model_version_id: string; status: string | null }[],
+    (prods ?? []) as { id: string; model_version_id: string }[],
+    batchedProductIds,
     laborRate
   );
 }
 
 // EVERY version (for the Models list). Paged fetch — never a huge .in() (that blows the URL).
 export async function loadAllVersionRows(supabase: SupabaseClient): Promise<VersionRow[]> {
-  const [versions, mats, prods, laborRate] = await Promise.all([
+  const [versions, mats, prods, batches, laborRate] = await Promise.all([
     fetchAllRows<RawVersion>((f, t) => supabase.from("model_versions").select(VERSION_SELECT).range(f, t)),
     fetchAllRows<MatRow>((f, t) => supabase.from("model_version_materials").select(MV_MAT_SELECT).range(f, t)),
-    fetchAllRows<{ model_version_id: string; status: string | null }>((f, t) => supabase.from("products").select("model_version_id, status").not("model_version_id", "is", null).range(f, t)),
+    fetchAllRows<{ id: string; model_version_id: string }>((f, t) => supabase.from("products").select("id, model_version_id").not("model_version_id", "is", null).range(f, t)),
+    fetchAllRows<{ product_id: string }>((f, t) => supabase.from("production_batches").select("product_id").range(f, t)),
     laborRateOf(supabase),
   ]);
-  return computeVersionRows(versions, mats, prods, laborRate);
+  const batchedProductIds = new Set(batches.map((b) => b.product_id));
+  return computeVersionRows(versions, mats, prods, batchedProductIds, laborRate);
 }
