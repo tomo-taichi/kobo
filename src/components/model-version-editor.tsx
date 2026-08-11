@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, useTransition } from "react";
-import { getModelVersionEditData, updateModelVersion, deleteModelVersion, duplicateModelVersion } from "@/app/actions/models";
+import { getModelVersionEditData, updateModelVersion, deleteModelVersion, duplicateModelVersion, setModelVersionStatus } from "@/app/actions/models";
 import { MaterialPickerModal, type PickableMaterial } from "@/components/material-picker";
 import {
   MODEL_VERSION_MATERIAL_ROLES,
@@ -194,6 +194,14 @@ function VersionEditorBody({ bundle, onClose, onDone, onDuplicated }: { bundle: 
   const [pending, start] = useTransition();
   const [deleting, startDelete] = useTransition();
   const [duplicating, startDup] = useTransition();
+  const [statusPending, startStatus] = useTransition();
+
+  const changeStatus = (target: "active" | "frozen" | "deprecated") =>
+    startStatus(async () => {
+      const err = await setModelVersionStatus(data.versionId, target);
+      if (err) alert(err);
+      else onDone();
+    });
 
   const updateRow = (key: string, patch: Partial<Row>) => setRows((rs) => rs.map((r) => (r.key === key ? { ...r, ...patch } : r)));
   const removeRow = (key: string) => setRows((rs) => rs.filter((r) => r.key !== key));
@@ -411,12 +419,31 @@ function VersionEditorBody({ bundle, onClose, onDone, onDuplicated }: { bundle: 
 
       {/* ── Footer ── */}
       <div className="flex items-center justify-between pt-1">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
           <button type="button" onClick={duplicate} disabled={duplicating}
             className="inline-flex items-center gap-1.5 text-sm text-gray-600 hover:text-gray-900 disabled:opacity-50"
             title="Duplicate into a new active version for this season">
             <DuplicateIcon /> {duplicating ? "Duplicating…" : "Duplicate"}
           </button>
+          {data.status !== "deprecated" ? (
+            <button type="button" disabled={statusPending}
+              onClick={() => { if (confirm(`Deprecate this version? It won't be selectable for new products (history is kept; ${data.productCount} existing product(s) are unaffected).`)) changeStatus("deprecated"); }}
+              className="text-sm text-amber-700 hover:text-amber-800 disabled:opacity-50">
+              {statusPending ? "…" : "Deprecate"}
+            </button>
+          ) : (
+            <>
+              <button type="button" disabled={statusPending} onClick={() => changeStatus("frozen")}
+                className="text-sm text-gray-600 hover:text-gray-900 disabled:opacity-50">
+                {statusPending ? "…" : "Restore (frozen)"}
+              </button>
+              <button type="button" disabled={statusPending} onClick={() => changeStatus("active")}
+                title="Only if this season has no active version"
+                className="text-sm text-gray-500 hover:text-gray-900 disabled:opacity-50">
+                Restore as active
+              </button>
+            </>
+          )}
           <button type="button" onClick={del} disabled={deleting}
             className="text-sm text-red-600 hover:text-red-700 disabled:opacity-50" title={data.productCount > 0 ? `Used by ${data.productCount} product(s)` : undefined}>
             {deleting ? "Deleting…" : "Delete version"}

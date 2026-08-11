@@ -86,6 +86,34 @@ export async function getModelVersionEditData(versionId: string): Promise<ModelV
   };
 }
 
+// Manual lifecycle: Deprecate a version, or restore a deprecated one. (Freezing an active
+// version is batch-driven — ProductionBatch creation, Phase 4 — not a manual button here.)
+//   -> deprecated: from active/frozen. Hidden from new-product selection; history kept.
+//   -> frozen:     restore a deprecated version (always safe).
+//   -> active:     restore a deprecated version, guarded by the partial unique (one active
+//                  per season) — the DB rejects a second active for the season.
+export async function setModelVersionStatus(
+  versionId: string,
+  status: "active" | "frozen" | "deprecated"
+): Promise<string | null> {
+  const supabase = await createClient();
+  const { data: ver } = await supabase.from("model_versions").select("id, model_id, status").eq("id", versionId).single();
+  if (!ver) return "Version not found.";
+  const v = ver as unknown as { model_id: string; status: string };
+  if (status === v.status) return null;
+  if (status === "frozen" && v.status !== "deprecated") return "Only a deprecated version can be restored to frozen.";
+  if (status === "active" && v.status !== "deprecated") return "Only a deprecated version can be restored to active.";
+
+  const { error } = await supabase.from("model_versions").update({ status }).eq("id", versionId);
+  if (error) {
+    if (error.code === "23505") return "This season already has an active version — restore as frozen instead, or deprecate the other first.";
+    return error.message;
+  }
+  revalidatePath("/models");
+  revalidatePath(`/models/${v.model_id}`);
+  return null;
+}
+
 // Delete a version. Guard: refuse if any Product references it (products FK is ON DELETE
 // SET NULL, so a delete would silently unlink them — we block instead, per "never lose data").
 // model_version_materials cascade-delete with the version.
