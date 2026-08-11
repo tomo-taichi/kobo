@@ -6,10 +6,11 @@ import { useRouter } from "next/navigation";
 import { bulkArchiveModels, bulkDeleteModels, bulkSetModelTag, createModel, saveModel, mergeModels } from "@/app/actions/models";
 import { BulkBar } from "@/components/bulk-bar";
 import { ModelVersionEditModal } from "@/components/model-version-editor";
+import { VersionsTable } from "@/components/versions-table";
 import { MODEL_CATEGORIES } from "@/lib/model-constants";
 import { CATEGORY_ICON, catRank } from "@/lib/product-constants";
+import type { VersionRow } from "@/lib/version-rows";
 
-export type ModelVersionLite = { id: string; season: string; status: string };
 export type ModelRow = {
   id: string;
   name: string;
@@ -19,7 +20,7 @@ export type ModelRow = {
   version_count: number;
   product_count: number;
   tags: string[];
-  versions: ModelVersionLite[];
+  versions: VersionRow[];
 };
 
 function SearchIcon() {
@@ -210,21 +211,8 @@ export function ModelsClient({ models, tagOptions }: { models: ModelRow[]; tagOp
                   </tr>
                   {isOpen && (
                     <tr className="bg-gray-50/60">
-                      <td></td>
-                      <td colSpan={6} className="px-4 py-2">
-                        {m.versions.length ? (
-                          <div className="flex flex-wrap gap-1.5">
-                            {m.versions.map((v) => (
-                              <button key={v.id} type="button" onClick={() => setEditVer({ id: v.id, ids: m.versions.map((x) => x.id) })}
-                                className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-md border border-gray-200 bg-white text-gray-600 hover:border-gray-900 hover:text-gray-900">
-                                <span className="font-medium">{v.season}</span>
-                                <span className="text-gray-400">· {v.status}</span>
-                              </button>
-                            ))}
-                          </div>
-                        ) : (
-                          <span className="text-xs text-gray-400">No versions</span>
-                        )}
+                      <td colSpan={7} className="px-4 py-3">
+                        <VersionsTable versions={m.versions} onOpen={(vid) => setEditVer({ id: vid, ids: m.versions.map((x) => x.id) })} />
                       </td>
                     </tr>
                   )}
