@@ -163,6 +163,46 @@ function extractProductFields(formData: FormData) {
   };
 }
 
+// ADR-0011 Phase 3a — link a product to a Model + Version from its (name, category, season).
+// Find-or-create the Model (identity = name+category); pick the version for the product's
+// season (else the model's latest); create an active version if the model has none.
+// Season ordering has no cross-format helper yet, so "latest" = most recently created.
+async function resolveModelVersion(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  name: string | null,
+  category: string | null,
+  seasonId: string | null
+): Promise<{ model_id: string | null; model_version_id: string | null }> {
+  if (!name || !category) return { model_id: null, model_version_id: null };
+
+  // Match by NORMALIZED name (case/space-insensitive) within the category, so we reuse the
+  // merge survivor instead of re-creating a case-variant duplicate. Only create if truly new.
+  const norm = (s: string) => s.trim().toLowerCase().replace(/\s+/g, " ");
+  const target = norm(name);
+  const { data: candidates } = await supabase.from("models").select("id, name").eq("category", category);
+  let modelId = ((candidates ?? []) as { id: string; name: string }[]).find((m) => norm(m.name) === target)?.id ?? null;
+  if (!modelId) {
+    const { data: created, error } = await supabase.from("models").insert({ name, category }).select("id").single();
+    if (error || !created) return { model_id: null, model_version_id: null };
+    modelId = (created as { id: string }).id;
+  }
+
+  let versionId: string | null = null;
+  if (seasonId) {
+    const { data: sv } = await supabase.from("model_versions").select("id").eq("model_id", modelId).eq("season_id", seasonId).order("created_at", { ascending: false }).limit(1);
+    versionId = ((sv ?? []) as { id: string }[])[0]?.id ?? null;
+  }
+  if (!versionId) {
+    const { data: latest } = await supabase.from("model_versions").select("id").eq("model_id", modelId).order("created_at", { ascending: false }).limit(1);
+    versionId = ((latest ?? []) as { id: string }[])[0]?.id ?? null;
+  }
+  if (!versionId && seasonId) {
+    const { data: nv } = await supabase.from("model_versions").insert({ model_id: modelId, season_id: seasonId, status: "active" }).select("id").single();
+    versionId = (nv as { id: string } | null)?.id ?? null;
+  }
+  return { model_id: modelId, model_version_id: versionId };
+}
+
 async function nextProductNumber(supabase: Awaited<ReturnType<typeof createClient>>): Promise<string> {
   const { data } = await supabase.from("products").select("product_number").not("product_number", "is", null);
   const nums = (data ?? [])
@@ -192,7 +232,8 @@ export async function createProduct(
     d = Number((cs as { client_discount_rate?: number } | null)?.client_discount_rate);
   }
   const retailMultiplier = d >= 0 && d < 1 ? 1 / (1 - d) : 1 / (1 - 0.65);
-  const { data, error } = await supabase.from("products").insert({ ...fields, product_number: productNumber, retail_rate: retailMultiplier }).select("id").single();
+  const link = await resolveModelVersion(supabase, fields.model_name, fields.product_category, fields.season_id);
+  const { data, error } = await supabase.from("products").insert({ ...fields, product_number: productNumber, retail_rate: retailMultiplier, ...link }).select("id").single();
   if (error) return error.message;
   const syncErr = await syncProductColors(supabase, data.id, parseEnabledColorIds(formData));
   if (syncErr) return syncErr;
@@ -274,6 +315,7 @@ const DUPLICATE_FIELDS = [
   "lining_m_comp5_label", "lining_m_comp5_pct",
   "lining_m_quantity", "lining_material_color_id",
   "accessory_composition",
+  "model_id", "model_version_id",
   "cost_eur_rate", "markup_rate", "retail_rate", "retail_price_eur",
   "cutting_cost_jpy", "sewing_cost_jpy", "knitting_cost_jpy",
   "thread_cost_jpy", "finish_cost_jpy", "packing_cost_jpy",
