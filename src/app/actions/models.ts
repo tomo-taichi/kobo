@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { MODEL_CATEGORIES, MODEL_VERSION_MATERIAL_ROLES, type ModelVersionMaterialRole } from "@/lib/model-constants";
 import { getMaterialRoleLabels } from "@/lib/material-roles";
+import { seasonSortKey } from "@/lib/season-order";
 import type { ModelVersionEditBundle } from "@/components/model-version-editor";
 
 // Shared with the version editor: one materials query covering picker + colours + set price.
@@ -119,8 +120,7 @@ export async function getProductRecipeCard(productId: string): Promise<ProductRe
   const bundle = await getModelVersionEditData(p.model_version_id);
   if (!bundle) return null;
 
-  // "Latest" version = most recently created (season names have no cross-format ordering helper,
-  // same proxy resolveModelVersion uses). Ascending order also feeds the modal's prev/next slider.
+  // created_at asc feeds the edit modal's prev/next slider.
   const { data: vers } = await supabase
     .from("model_versions")
     .select("id, created_at, seasons(name)")
@@ -128,16 +128,27 @@ export async function getProductRecipeCard(productId: string): Promise<ProductRe
     .order("created_at", { ascending: true });
   const rows = (vers ?? []) as { id: string; seasons: { name: string } | { name: string }[] | null }[];
   const versionIds = rows.map((r) => r.id);
-  const last = rows[rows.length - 1] ?? null;
-  const latestVersionId = last?.id ?? null;
-  const latestSeason = last ? (Array.isArray(last.seasons) ? last.seasons[0]?.name : last.seasons?.name) ?? null : null;
+  const seasonOf = (r: (typeof rows)[number]) => (Array.isArray(r.seasons) ? r.seasons[0]?.name : r.seasons?.name) ?? null;
+
+  // "old version" = a version exists for a strictly LATER season (reuse-until-changed: a product on
+  // its season is fine unless construction has moved on). Ranked by SEASON order, not created_at —
+  // backfill created rows out of season order (e.g. a 22AW row created after 27.1), so created_at
+  // would wrongly call 22AW "newer" than 27.1. Season-agnostic versions (null key) don't count.
+  const productKey = seasonSortKey(bundle.data.season);
+  let later: { id: string; season: string | null; key: number } | null = null;
+  if (productKey != null) {
+    for (const r of rows) {
+      const k = seasonSortKey(seasonOf(r));
+      if (k != null && k > productKey && (later == null || k > later.key)) later = { id: r.id, season: seasonOf(r), key: k };
+    }
+  }
 
   return {
     bundle,
     versionIds,
-    isOldVersion: latestVersionId != null && latestVersionId !== p.model_version_id,
-    latestVersionId,
-    latestSeason,
+    isOldVersion: later != null,
+    latestVersionId: later?.id ?? null,
+    latestSeason: later?.season ?? null,
     modelId: p.model_id,
   };
 }
