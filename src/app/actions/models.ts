@@ -93,6 +93,55 @@ export async function getModelVersionEditData(versionId: string): Promise<ModelV
   };
 }
 
+// ADR-0011 §9.7 / Phase 3c — data for the Product Edit page's read-only "Model Recipe" card:
+// the linked Version's shared recipe (reused from getModelVersionEditData), the model's version
+// ids (for the edit modal's prev/next), and an old-version hint (this product isn't on the
+// model's newest version). Returns null when the product isn't linked to a version.
+export type ProductRecipeCard = {
+  bundle: ModelVersionEditBundle;
+  versionIds: string[];
+  isOldVersion: boolean;
+  latestVersionId: string | null;
+  latestSeason: string | null;
+  modelId: string;
+};
+
+export async function getProductRecipeCard(productId: string): Promise<ProductRecipeCard | null> {
+  const supabase = await createClient();
+  const { data: prod } = await supabase
+    .from("products")
+    .select("model_id, model_version_id")
+    .eq("id", productId)
+    .single();
+  const p = prod as { model_id: string | null; model_version_id: string | null } | null;
+  if (!p?.model_version_id || !p.model_id) return null;
+
+  const bundle = await getModelVersionEditData(p.model_version_id);
+  if (!bundle) return null;
+
+  // "Latest" version = most recently created (season names have no cross-format ordering helper,
+  // same proxy resolveModelVersion uses). Ascending order also feeds the modal's prev/next slider.
+  const { data: vers } = await supabase
+    .from("model_versions")
+    .select("id, created_at, seasons(name)")
+    .eq("model_id", p.model_id)
+    .order("created_at", { ascending: true });
+  const rows = (vers ?? []) as { id: string; seasons: { name: string } | { name: string }[] | null }[];
+  const versionIds = rows.map((r) => r.id);
+  const last = rows[rows.length - 1] ?? null;
+  const latestVersionId = last?.id ?? null;
+  const latestSeason = last ? (Array.isArray(last.seasons) ? last.seasons[0]?.name : last.seasons?.name) ?? null : null;
+
+  return {
+    bundle,
+    versionIds,
+    isOldVersion: latestVersionId != null && latestVersionId !== p.model_version_id,
+    latestVersionId,
+    latestSeason,
+    modelId: p.model_id,
+  };
+}
+
 // Manual lifecycle: Deprecate a version, or restore a deprecated one. (Freezing an active
 // version is batch-driven — ProductionBatch creation, Phase 4 — not a manual button here.)
 //   -> deprecated: from active/frozen. Hidden from new-product selection; history kept.
