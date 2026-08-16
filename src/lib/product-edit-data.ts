@@ -37,7 +37,7 @@ export async function loadProductEditBundle(supabase: SupabaseClient<any>, id: s
         "lining_m_comp3_label, lining_m_comp3_pct, lining_m_comp4_label, lining_m_comp4_pct, " +
         "lining_m_comp5_label, lining_m_comp5_pct, " +
         "accessory_composition, cleaning_instruction, weight_g, hs_code, " +
-        "main_m_quantity, lining_m_quantity, cost_eur_rate, retail_rate, " +
+        "main_m_quantity, lining_m_quantity, cost_eur_rate, retail_rate, material_cost_jpy, " +
         "cutting_minutes, sewing_minutes, knitting_minutes, " +
         "thread_minutes, finish_minutes, packing_minutes, " +
         "main_mat:materials!main_material_id(material_number, set_price_jpy, unit_type), " +
@@ -170,6 +170,9 @@ export async function loadProductEditBundle(supabase: SupabaseClient<any>, id: s
     liningMaterial,
     initialMainQuantity: Number(p.main_m_quantity ?? 0),
     initialLiningQuantity: Number(p.lining_m_quantity ?? 0),
+    // ADR-0011 §3.7 "old price" — the stored material cost, to compare against a recompute at
+    // current set prices (the cost form flags drift; recomputing is deferred to the drift stock-take).
+    storedMaterialCostJpy: Number(p.material_cost_jpy ?? 0),
     initialAdditionalRows,
     initialManufacturing: {
       cutting:  Number(p.cutting_minutes),

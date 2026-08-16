@@ -53,6 +53,7 @@ type Props = {
   productId: string; productCategory: string | null;
   mainMaterial: MaterialInfo | null; liningMaterial: MaterialInfo | null;
   initialMainQuantity: number; initialLiningQuantity: number;
+  storedMaterialCostJpy: number;    // stored cost vs current set prices → ADR §3.7 "old price"
   allMaterials: PickableMaterial[];
   initialAdditionalRows: { materialId: string; quantity: number; role: string }[];
   initialManufacturing: MfgState;   // minutes per manufacturing step
@@ -169,6 +170,7 @@ export function ProductCostForm({
   productId, productCategory,
   mainMaterial, liningMaterial,
   initialMainQuantity, initialLiningQuantity,
+  storedMaterialCostJpy,
   allMaterials, initialAdditionalRows,
   initialManufacturing,
   laborRate,
@@ -217,6 +219,14 @@ export function ProductCostForm({
   const nonMainCostJpy  = liningCost + additionalCost;
   const baseMainCost    = (mainMaterial?.setPriceJpy ?? 0) * mainQty;
   const baseMaterialCost = baseMainCost + nonMainCostJpy;
+
+  // ADR-0011 §3.7 "old price": stored material cost vs a recompute at CURRENT set prices (using the
+  // as-loaded quantities, so an in-progress edit doesn't conflate). Non-zero => this product's cost
+  // predates a Material set-cost change. Visualise-only — re-saving the cost recomputes and clears it.
+  const currentMaterialAtLoad = (mainMaterial?.setPriceJpy ?? 0) * initialMainQuantity + nonMainCostJpy;
+  const priceDriftJpy = currentMaterialAtLoad - storedMaterialCostJpy;
+  const oldPrice = storedMaterialCostJpy > 0 && Math.abs(priceDriftJpy) > 0.5;
+  const priceDriftPct = storedMaterialCostJpy > 0 ? priceDriftJpy / storedMaterialCostJpy : 0;
   // mfg is entered as HOURS; convert to minutes then derive the JPY amounts at the labor rate.
   const mfgAmounts      = mfgMinutesToAmounts(mfgHoursToMinutes(mfg), laborRate);
   const mfgCost         = calcCostJpy(0, mfgAmounts);
@@ -298,6 +308,12 @@ export function ProductCostForm({
       {/* ══ Materials & Cost (collapsible) ══ */}
       <CollapsibleCard title="Materials & Cost" right={
         <div className="flex items-center gap-3">
+          {oldPrice && saveStatus !== "saved" && (
+            <span title={`Stored material cost ¥${fmt(storedMaterialCostJpy)} vs current set prices ¥${fmt(currentMaterialAtLoad)}. Re-saving the cost recomputes at current prices.`}
+              className="text-[11px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 font-medium">
+              old price · {priceDriftJpy > 0 ? "+" : ""}{fmt(priceDriftJpy)} ({priceDriftPct > 0 ? "+" : ""}{(priceDriftPct * 100).toFixed(0)}%)
+            </span>
+          )}
           {saveIndicator}
           <button type="button" onClick={toggleLock} disabled={lockPending}
             className={`inline-flex items-center gap-1 text-xs px-2 py-1 rounded-md border transition-colors disabled:opacity-50 ${locked ? "border-amber-300 text-amber-700 bg-amber-50 hover:bg-amber-100" : "border-gray-200 text-gray-500 hover:text-gray-900 hover:border-gray-300"}`}
@@ -307,6 +323,12 @@ export function ProductCostForm({
         </div>
       }>
       <fieldset disabled={locked} className="border-0 p-0 m-0 min-w-0 disabled:opacity-70">
+      {oldPrice && saveStatus !== "saved" && (
+        <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          <span className="font-medium">Old price.</span> The stored material cost (¥{fmt(storedMaterialCostJpy)}) doesn&apos;t reflect current Material set costs
+          (¥{fmt(currentMaterialAtLoad)}, {priceDriftJpy > 0 ? "+" : ""}{fmt(priceDriftJpy)}). Nothing is changed automatically — saving any cost edit recomputes at current prices.
+        </div>
+      )}
       {/* ── Narrow zone: Materials + Manufacturing side by side ── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
       {/* ── Materials ── */}

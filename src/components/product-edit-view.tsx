@@ -38,6 +38,7 @@ export function ProductEditView({ bundle: b }: { bundle: ProductEditBundle }) {
         liningMaterial={b.liningMaterial}
         initialMainQuantity={b.initialMainQuantity}
         initialLiningQuantity={b.initialLiningQuantity}
+        storedMaterialCostJpy={b.storedMaterialCostJpy}
         allMaterials={b.materials}
         initialAdditionalRows={b.initialAdditionalRows}
         initialManufacturing={b.initialManufacturing}
