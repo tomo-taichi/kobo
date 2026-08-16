@@ -2,8 +2,7 @@
 
 import { useActionState, useState, useRef } from "react";
 import { flushSync } from "react-dom";
-import { PRODUCT_SEXES, ACCESSORY_COMPOSITIONS, defaultOrderableSizes, ORDERABLE_SIZE_PRESETS } from "@/lib/product-constants";
-import { SIZES } from "@/lib/order-constants";
+import { PRODUCT_SEXES } from "@/lib/product-constants";
 import { MaterialPickerModal, type PickableMaterial } from "@/components/material-picker";
 import { ModelVersionPicker, type ModelSelection } from "@/components/model-version-picker";
 import type { PickerModel } from "@/lib/models-picker-data";
@@ -175,7 +174,6 @@ export function ProductForm({
   initialData = {},
   id,
   sexOptions = [...PRODUCT_SEXES],
-  accessoryCompositionOptions = [...ACCESSORY_COMPOSITIONS],
   tagOptions = [],
   locked = false,
 }: Props) {
@@ -184,15 +182,11 @@ export function ProductForm({
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [mainMat,  setMainMat]  = useState<SelectedMaterial | null>(() => fromInitial(initialData, "main"));
-  const [liningMat, setLiningMat] = useState<SelectedMaterial | null>(() => fromInitial(initialData, "lining"));
-  const [noLining,  setNoLining]  = useState(!initialData.lining_material_id);
   const [showMain,  setShowMain]  = useState(false);
-  const [showLining, setShowLining] = useState(false);
   const [enabledColorIds, setEnabledColorIds] = useState<Set<string>>(() => new Set(initialData.enabled_color_ids ?? []));
-  const [liningColorId, setLiningColorId] = useState<string | null>(initialData.lining_material_color_id ?? null);
 
-  // Category + sex drive the orderable-size default. Tracked in state so changing either
-  // re-applies the default — unless the user has manually edited the selection (presets/checkboxes).
+  // Category is inherited from the Model; sex is Product-owned. Both tracked in state so the
+  // hidden inputs stay in sync (orderable sizes are Version-owned now — ADR-0011 §9.7).
   const [category, setCategory] = useState<string>(initialData.product_category ?? "");
   const [sex, setSex] = useState<string>(initialData.product_sex ?? "");
 
@@ -244,39 +238,17 @@ export function ProductForm({
     setNewTag("");
     scheduleSubmit(200);
   }
-  const [orderableSizes, setOrderableSizes] = useState<Set<string>>(
-    () => new Set(initialData.orderable_sizes ?? defaultOrderableSizes(initialData.product_category, initialData.product_sex))
-  );
-  const [sizesTouched, setSizesTouched] = useState(false);
-
   function handleCategoryChange(nextCategory: string) {
     setCategory(nextCategory);
-    if (!sizesTouched) setOrderableSizes(new Set(defaultOrderableSizes(nextCategory, sex)));
     scheduleSubmit(200);
   }
   function handleSexChange(nextSex: string) {
     setSex(nextSex);
-    if (!sizesTouched) setOrderableSizes(new Set(defaultOrderableSizes(category, nextSex)));
-    scheduleSubmit(200);
-  }
-  function applySizePreset(sizes: string[]) {
-    setSizesTouched(true);
-    setOrderableSizes(new Set(sizes));
-    scheduleSubmit(200);
-  }
-  function toggleSize(size: string) {
-    setSizesTouched(true);
-    setOrderableSizes((prev) => {
-      const next = new Set(prev);
-      if (next.has(size)) next.delete(size); else next.add(size);
-      return next;
-    });
     scheduleSubmit(200);
   }
 
-  // The selected materials' colour lists (looked up from the materials catalogue)
+  // The selected main material's colour list (looked up from the materials catalogue)
   const mainColors   = (mainMat   ? materials.find((m) => m.id === mainMat.id)?.colors   : null) ?? [];
-  const liningColors = (liningMat ? materials.find((m) => m.id === liningMat.id)?.colors : null) ?? [];
 
   // flushSync forces React to commit the state update to the DOM synchronously,
   // so requestSubmit() captures the new hidden-input values before any navigation.
@@ -307,14 +279,6 @@ export function ProductForm({
     // Colours belong to the main material — reset the enabled set when it changes.
     saveAfterStateChange(() => { setMainMat(toSelected(m)); setEnabledColorIds(new Set()); }, true);
   }
-  function selectLining(m: PickableMaterial) {
-    const cols = m.colors ?? [];
-    const auto = cols.length === 1 ? cols[0].id : null;  // auto-pick when single-colour; pinned
-    saveAfterStateChange(() => { setLiningMat(toSelected(m)); setNoLining(false); setLiningColorId(auto); }, !!mainMat);
-  }
-  function removeLining() {
-    saveAfterStateChange(() => { setLiningMat(null); setNoLining(true); setLiningColorId(null); }, !!mainMat);
-  }
   function toggleColor(mcId: string) {
     setEnabledColorIds((prev) => {
       const next = new Set(prev);
@@ -331,8 +295,6 @@ export function ProductForm({
         <fieldset disabled={locked} className="flex flex-col gap-5 border-0 p-0 m-0 min-w-0 disabled:opacity-70">
         {id && <input type="hidden" name="id" value={id} />}
         <input type="hidden" name="enabled_color_ids" value={JSON.stringify([...enabledColorIds])} />
-        <input type="hidden" name="lining_material_color_id" value={liningColorId ?? ""} />
-        <input type="hidden" name="orderable_sizes" value={JSON.stringify(SIZES.filter((s) => orderableSizes.has(s)))} />
         {isError && <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded">{result}</p>}
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-6 gap-y-5 items-start">
@@ -434,37 +396,8 @@ export function ProductForm({
           </div>
         </Section>
 
-        {/* ── 1b. Orderable Sizes — edit only; on create it's inherited from the Version (scope A, ADR-0011 §9.7) ── */}
-        {id && (
-        <Section title="Orderable Sizes">
-          <p className="text-xs text-gray-400 -mt-1">
-            Which sizes this product can be ordered in. Auto-filled from category + sex — use a preset or tick sizes to override.
-          </p>
-          <div className="flex flex-wrap gap-1.5">
-            {ORDERABLE_SIZE_PRESETS.map((preset) => (
-              <button key={preset.key} type="button" onClick={() => applySizePreset(preset.sizes)}
-                className="px-2.5 py-1 rounded-full border border-gray-300 text-xs text-gray-600 hover:border-gray-900 hover:text-gray-900 transition-colors">
-                {preset.label}
-              </button>
-            ))}
-          </div>
-          <div className="flex flex-wrap gap-1.5">
-            {SIZES.map((s) => {
-              const on = orderableSizes.has(s);
-              return (
-                <label key={s}
-                  className={`flex items-center justify-center min-w-[2.25rem] px-2 py-1 rounded border text-xs cursor-pointer select-none transition-colors ${on ? "bg-gray-900 text-white border-gray-900" : "bg-white text-gray-500 border-gray-300 hover:border-gray-500"}`}>
-                  <input type="checkbox" checked={on} onChange={() => toggleSize(s)} className="sr-only" />
-                  {s}
-                </label>
-              );
-            })}
-          </div>
-          {orderableSizes.size === 0 && (
-            <p className="text-[11px] text-amber-600">No sizes selected — this product can&apos;t be ordered until at least one is selected.</p>
-          )}
-        </Section>
-        )}
+        {/* Lining, Orderable Sizes and Accessories Composition are Version-owned — see the read-only
+            "Model Recipe" card below (ADR-0011 §9.7). Edit them via the Model version editor. */}
         </div>
 
         {/* ══ Right column: materials ══ */}
@@ -524,55 +457,7 @@ export function ProductForm({
           )}
         </Section>
 
-        {/* ── 3. Lining Material & 4. Accessories Composition — edit only; on create they're inherited from the Version (scope A, ADR-0011 §9.7) ── */}
-        {id && (<>
-        <Section title="Lining Material">
-          {noLining && !liningMat ? (
-            <div className="flex gap-3 items-center">
-              <span className="text-xs text-gray-400 italic">No Lining</span>
-              <button type="button" onClick={() => setShowLining(true)} className="text-xs text-gray-500 hover:text-gray-900 underline">+ Add lining</button>
-              <input type="hidden" name="lining_material_id" value="" />
-            </div>
-          ) : liningMat ? (
-            <>
-              <MaterialSummary mat={liningMat} prefix="lining" />
-              {liningColors.length > 1 ? (
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Lining colour</label>
-                  <select value={liningColorId ?? ""} onChange={(e) => setLiningColorId(e.target.value || null)} className={selectCls}>
-                    <option value="">— Select —</option>
-                    {liningColors.map((c) => <option key={c.id} value={c.id}>{c.color}</option>)}
-                  </select>
-                </div>
-              ) : liningColors.length === 1 ? (
-                <p className="text-xs text-gray-400">Lining colour: <span className="text-gray-600">{liningColors[0].color}</span></p>
-              ) : null}
-              <div className="flex gap-3">
-                <button type="button" onClick={() => setShowLining(true)} className="text-xs text-gray-500 hover:text-gray-900 underline">Change</button>
-                <button type="button" onClick={removeLining} className="text-xs text-red-400 hover:text-red-600 underline">Remove</button>
-              </div>
-            </>
-          ) : (
-            <div className="flex gap-3 items-center">
-              <button type="button" onClick={() => setShowLining(true)}
-                className="px-4 py-3 border-2 border-dashed border-gray-300 rounded-lg text-sm text-gray-500 hover:border-gray-500 hover:text-gray-700 w-fit">
-                + Select Lining Material
-              </button>
-              <button type="button" onClick={() => saveAfterStateChange(() => setNoLining(true))}
-                className="text-xs text-gray-400 hover:text-gray-600 underline">No Lining</button>
-              <input type="hidden" name="lining_material_id" value="" />
-            </div>
-          )}
-        </Section>
-
-        {/* ── 4. Accessories Composition ── */}
-        <Section title="Accessories Composition">
-          <select name="accessory_composition" defaultValue={initialData.accessory_composition ?? ""} className={selectCls}>
-            <option value="">— None —</option>
-            {accessoryCompositionOptions.map((c) => <option key={c} value={c}>{c}</option>)}
-          </select>
-        </Section>
-        </>)}
+        {/* Lining & Accessories Composition are Version-owned (read-only "Model Recipe" card below). */}
         </div>
         </div>
 
@@ -606,13 +491,6 @@ export function ProductForm({
           materials={materials}
           onSelect={selectMain}
           onClose={() => setShowMain(false)}
-        />
-      )}
-      {showLining && (
-        <MaterialPickerModal
-          materials={materials}
-          onSelect={selectLining}
-          onClose={() => setShowLining(false)}
         />
       )}
       {id ? (

@@ -5,6 +5,17 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { loadProductEditBundle } from "@/lib/product-edit-data";
 
+// ADR-0011 §9.7 — product columns that are Version-owned (edited on the Model version, propagated
+// by apply_model_version_recipe). updateProduct must never write these from the edit form.
+const VERSION_OWNED_PRODUCT_FIELDS = [
+  "orderable_sizes", "accessory_composition",
+  "lining_material_id", "lining_material_color_id",
+  "lining_m_category", "lining_m_name", "lining_m_color",
+  "lining_m_comp1_label", "lining_m_comp1_pct", "lining_m_comp2_label", "lining_m_comp2_pct",
+  "lining_m_comp3_label", "lining_m_comp3_pct", "lining_m_comp4_label", "lining_m_comp4_pct",
+  "lining_m_comp5_label", "lining_m_comp5_pct",
+] as const;
+
 function num(v: FormDataEntryValue | null): number | null {
   const s = (v as string)?.trim();
   if (!s) return null;
@@ -360,13 +371,19 @@ export async function updateProduct(
   // Main material is NOT required on edit — some imported products lack one, and
   // basic info (Category/Sex/etc.) must still be editable. It stays required to
   // *create* a product (enforced in the form + createProduct).
+  // ADR-0011 §9.7 — lining, orderable sizes and accessory composition are Version-owned now and
+  // edited via the Model Recipe card (propagated atomically by apply_model_version_recipe). The
+  // edit form no longer submits them, so DROP them from the patch: writing them here would null
+  // out the version-synced snapshot. (Create still seeds them via syncProductRecipeFromVersion.)
+  const editable: Record<string, unknown> = { ...fields };
+  for (const k of VERSION_OWNED_PRODUCT_FIELDS) delete editable[k];
   // ADR-0011 Phase 3b — apply the picker's explicit Model/Version link on edit (Phase 3a left
   // updateProduct untouched). Only when the form provides a model_id, so any legacy caller that
   // doesn't render the picker keeps its existing link.
   const formModelId = (formData.get("model_id") as string) || null;
   const patch = formModelId
-    ? { ...fields, model_id: formModelId, model_version_id: (formData.get("model_version_id") as string) || null }
-    : fields;
+    ? { ...editable, model_id: formModelId, model_version_id: (formData.get("model_version_id") as string) || null }
+    : editable;
   const { error } = await supabase.from("products").update(patch).eq("id", id);
   if (error) return error.message;
   const syncErr = await syncProductColors(supabase, id, parseEnabledColorIds(formData));
