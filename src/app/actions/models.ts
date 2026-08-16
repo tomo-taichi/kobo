@@ -426,6 +426,69 @@ export async function createModelVersionCopyForward(
   return { versionId: newId }; // caller opens the new version's edit popup
 }
 
+// ADR-0011 Phase 3b — the Product form's "New Model" affordance. Find-or-create the Model
+// (identity = name+category, normalized match reuses the merge survivor instead of making a
+// case/space-variant duplicate) and ensure it has a usable Version for the product's season:
+// an exact-season version if one exists, otherwise a fresh EMPTY ACTIVE version. Returns the
+// ids + display fields so the picker can select and show it without a page reload.
+export async function createModelForProduct(
+  name: string,
+  category: string,
+  seasonId: string
+): Promise<
+  | { modelId: string; versionId: string | null; modelName: string; category: string; seasonId: string; seasonName: string | null; status: string }
+  | { error: string }
+> {
+  const nm = name.trim();
+  if (!nm) return { error: "Please enter a model name." };
+  if (!MODEL_CATEGORIES.includes(category as (typeof MODEL_CATEGORIES)[number]))
+    return { error: "Please select a category." };
+  if (!seasonId) return { error: "Select the product's season first." };
+  const supabase = await createClient();
+
+  // Match by NORMALIZED name within the category (mirrors resolveModelVersion in products.ts).
+  const norm = (s: string) => s.trim().toLowerCase().replace(/\s+/g, " ");
+  const target = norm(nm);
+  const { data: candidates } = await supabase.from("models").select("id, name").eq("category", category);
+  let modelId = ((candidates ?? []) as { id: string; name: string }[]).find((m) => norm(m.name) === target)?.id ?? null;
+  if (!modelId) {
+    const { data: created, error } = await supabase.from("models").insert({ name: nm, category }).select("id").single();
+    if (error || !created) {
+      if (error?.code === "23505") return { error: "A model with this name and category already exists." };
+      return { error: error?.message ?? "Failed to create the model." };
+    }
+    modelId = (created as { id: string }).id;
+  }
+
+  // Reuse an existing version for this season; otherwise create an empty active one.
+  let versionId: string | null = null;
+  const { data: sv } = await supabase.from("model_versions").select("id").eq("model_id", modelId).eq("season_id", seasonId).order("created_at", { ascending: false }).limit(1);
+  versionId = ((sv ?? []) as { id: string }[])[0]?.id ?? null;
+  if (!versionId) {
+    const { data: nv, error: nErr } = await supabase.from("model_versions").insert({ model_id: modelId, season_id: seasonId, status: "active" }).select("id").single();
+    if (nErr) {
+      // Partial unique (model_id, season_id) WHERE status='active' — an active version raced in; fetch it.
+      if (nErr.code === "23505") {
+        const { data: av } = await supabase.from("model_versions").select("id").eq("model_id", modelId).eq("season_id", seasonId).limit(1);
+        versionId = ((av ?? []) as { id: string }[])[0]?.id ?? null;
+      } else return { error: nErr.message };
+    } else versionId = (nv as { id: string } | null)?.id ?? null;
+  }
+
+  const { data: season } = await supabase.from("seasons").select("name").eq("id", seasonId).maybeSingle();
+  revalidatePath("/models");
+  revalidatePath("/model-versions");
+  return {
+    modelId,
+    versionId,
+    modelName: nm,
+    category,
+    seasonId,
+    seasonName: (season as { name: string } | null)?.name ?? null,
+    status: "active",
+  };
+}
+
 // Merge one or more "loser" models into a survivor: reassign the losers' versions and
 // default tags to the survivor, then delete the losers. Versions/products are preserved
 // (products link via model_version_id, which is untouched). Guarded so it never creates

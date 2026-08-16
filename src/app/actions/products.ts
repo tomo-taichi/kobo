@@ -232,7 +232,12 @@ export async function createProduct(
     d = Number((cs as { client_discount_rate?: number } | null)?.client_discount_rate);
   }
   const retailMultiplier = d >= 0 && d < 1 ? 1 / (1 - d) : 1 / (1 - 0.65);
-  const link = await resolveModelVersion(supabase, fields.model_name, fields.product_category, fields.season_id);
+  // ADR-0011 Phase 3b — the form's Model/Version picker supplies the link explicitly. Fall
+  // back to resolve-by-name only when it didn't (safety net for the ~40 spelling variants).
+  const formModelId = (formData.get("model_id") as string) || null;
+  const link = formModelId
+    ? { model_id: formModelId, model_version_id: (formData.get("model_version_id") as string) || null }
+    : await resolveModelVersion(supabase, fields.model_name, fields.product_category, fields.season_id);
   const { data, error } = await supabase.from("products").insert({ ...fields, product_number: productNumber, retail_rate: retailMultiplier, ...link }).select("id").single();
   if (error) return error.message;
   const syncErr = await syncProductColors(supabase, data.id, parseEnabledColorIds(formData));
@@ -257,7 +262,14 @@ export async function updateProduct(
   // Main material is NOT required on edit — some imported products lack one, and
   // basic info (Category/Sex/etc.) must still be editable. It stays required to
   // *create* a product (enforced in the form + createProduct).
-  const { error } = await supabase.from("products").update(fields).eq("id", id);
+  // ADR-0011 Phase 3b — apply the picker's explicit Model/Version link on edit (Phase 3a left
+  // updateProduct untouched). Only when the form provides a model_id, so any legacy caller that
+  // doesn't render the picker keeps its existing link.
+  const formModelId = (formData.get("model_id") as string) || null;
+  const patch = formModelId
+    ? { ...fields, model_id: formModelId, model_version_id: (formData.get("model_version_id") as string) || null }
+    : fields;
+  const { error } = await supabase.from("products").update(patch).eq("id", id);
   if (error) return error.message;
   const syncErr = await syncProductColors(supabase, id, parseEnabledColorIds(formData));
   if (syncErr) return syncErr;

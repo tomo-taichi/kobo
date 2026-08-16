@@ -2,9 +2,11 @@
 
 import { useActionState, useState, useRef } from "react";
 import { flushSync } from "react-dom";
-import { PRODUCT_CATEGORIES, PRODUCT_SEXES, ACCESSORY_COMPOSITIONS, defaultOrderableSizes, ORDERABLE_SIZE_PRESETS } from "@/lib/product-constants";
+import { PRODUCT_SEXES, ACCESSORY_COMPOSITIONS, defaultOrderableSizes, ORDERABLE_SIZE_PRESETS } from "@/lib/product-constants";
 import { SIZES } from "@/lib/order-constants";
 import { MaterialPickerModal, type PickableMaterial } from "@/components/material-picker";
+import { ModelVersionPicker, type ModelSelection } from "@/components/model-version-picker";
+import type { PickerModel } from "@/lib/models-picker-data";
 import { CollapsibleCard } from "@/components/collapsible-card";
 import { addListOption } from "@/app/actions/list-options";
 
@@ -28,6 +30,8 @@ type InitialData = {
   season_id?: string;
   product_category?: string | null;
   model_name?: string | null;
+  model_id?: string | null;
+  model_version_id?: string | null;
   product_sex?: string | null;
   is_sample?: boolean;
   is_invalid?: boolean;
@@ -62,6 +66,7 @@ type Props = {
   action: Action;
   seasons: SelectOption[];
   materials: PickableMaterial[];
+  models?: PickerModel[];
   pastModelNames?: string[];
   initialData?: InitialData;
   id?: string;
@@ -166,10 +171,9 @@ export function ProductForm({
   action,
   seasons,
   materials,
-  pastModelNames = [],
+  models = [],
   initialData = {},
   id,
-  categoryOptions = [...PRODUCT_CATEGORIES],
   sexOptions = [...PRODUCT_SEXES],
   accessoryCompositionOptions = [...ACCESSORY_COMPOSITIONS],
   tagOptions = [],
@@ -191,6 +195,28 @@ export function ProductForm({
   // re-applies the default — unless the user has manually edited the selection (presets/checkboxes).
   const [category, setCategory] = useState<string>(initialData.product_category ?? "");
   const [sex, setSex] = useState<string>(initialData.product_sex ?? "");
+
+  // ADR-0011 Phase 3b — the product links to a Model + Version (picker below). Season is
+  // tracked in state so the picker can default/create versions for the right season; category
+  // is inherited from the selected Model (read-only), and model_name is a denormalized copy.
+  const [seasonId, setSeasonId] = useState<string>(initialData.season_id ?? "");
+  const [modelId, setModelId] = useState<string | null>(initialData.model_id ?? null);
+  const [versionId, setVersionId] = useState<string | null>(initialData.model_version_id ?? null);
+  const [modelName, setModelName] = useState<string>(initialData.model_name ?? "");
+  const seasonName = seasons.find((s) => s.id === seasonId)?.name ?? null;
+
+  function handleSeasonChange(next: string) {
+    setSeasonId(next);
+    scheduleSubmit(200);
+  }
+  function handleModelChange(sel: ModelSelection) {
+    setModelId(sel.modelId);
+    setVersionId(sel.versionId);
+    setModelName(sel.modelName);
+    // Category is inherited from the Model — re-apply it (also re-defaults orderable sizes).
+    if (sel.category !== category) handleCategoryChange(sel.category);
+    else scheduleSubmit(200);
+  }
   const [tags, setTags] = useState<Set<string>>(() => new Set(initialData.tags ?? []));
   // Managed tags plus any already on the product that are no longer in the list.
   const [tagChoices, setTagChoices] = useState<string[]>(
@@ -314,22 +340,21 @@ export function ProductForm({
         <div className="flex flex-col gap-5">
         {/* ── 1. Product Info ── */}
         <Section title="Product Info">
-          {/* Season / Category / Sex in one row */}
-          <div className="grid grid-cols-3 gap-3">
+          {/* Hidden inputs — the Model/Version picker (below) is the source of truth for
+              model_id / model_version_id / model_name, and category is inherited from the Model. */}
+          <input type="hidden" name="model_id" value={modelId ?? ""} />
+          <input type="hidden" name="model_version_id" value={versionId ?? ""} />
+          <input type="hidden" name="model_name" value={modelName} />
+          <input type="hidden" name="product_category" value={category} />
+
+          {/* Season / Sex in one row */}
+          <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">Season <span className="text-red-500">*</span></label>
-              <select name="season_id" defaultValue={initialData.season_id ?? ""} required className={selectCls}>
+              <select name="season_id" value={seasonId} required className={selectCls}
+                onChange={(e) => handleSeasonChange(e.target.value)}>
                 <option value="">Select...</option>
                 {seasons.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Category <span className="text-red-500">*</span></label>
-              <select name="product_category" value={category} required className={selectCls}
-                onChange={(e) => handleCategoryChange(e.target.value)}>
-                <option value="">Select...</option>
-                {category && !categoryOptions.includes(category) && <option value={category}>{category}</option>}
-                {categoryOptions.map((c) => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
             <div>
@@ -343,24 +368,19 @@ export function ProductForm({
             </div>
           </div>
 
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Model Name <span className="text-red-500">*</span></label>
-            {pastModelNames.length > 0 && (
-              <datalist id="past-model-names">
-                {pastModelNames.map((n) => <option key={n} value={n} />)}
-              </datalist>
-            )}
-            <input
-              name="model_name"
-              defaultValue={initialData.model_name ?? ""}
-              required
-              list={pastModelNames.length > 0 ? "past-model-names" : undefined}
-              lang="en-GB"
-              spellCheck
-              className={inputCls}
-              placeholder="e.g. Classic Coat"
-            />
-          </div>
+          <ModelVersionPicker
+            models={models}
+            seasonId={seasonId}
+            seasonName={seasonName}
+            value={{ modelId, versionId }}
+            fallbackName={initialData.model_name ?? null}
+            fallbackCategory={initialData.product_category ?? null}
+            onChange={handleModelChange}
+            disabled={locked}
+          />
+          {!seasonId && (
+            <p className="text-[11px] text-amber-600">Select a Season first — new versions are created for it.</p>
+          )}
 
           {/* Tags — pick existing, or type a new one and Add (also saved to Settings) */}
           <div>
@@ -558,10 +578,12 @@ export function ProductForm({
             </span>
           ) : (
             <>
-              {!mainMat && (
-                <span className="text-xs text-red-500">Select a main material to create</span>
+              {(!mainMat || !modelId) && (
+                <span className="text-xs text-red-500">
+                  {!modelId ? "Select a Model to create" : "Select a main material to create"}
+                </span>
               )}
-              <button type="submit" disabled={pending || !mainMat}
+              <button type="submit" disabled={pending || !mainMat || !modelId}
                 className="px-4 py-2 bg-gray-900 text-white text-sm rounded-md hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed">
                 {pending ? "Saving..." : "Create"}
               </button>

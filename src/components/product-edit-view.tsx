@@ -19,6 +19,7 @@ export function ProductEditView({ bundle: b }: { bundle: ProductEditBundle }) {
         locked={false}
         seasons={b.seasons}
         materials={b.materials}
+        models={b.models}
         pastModelNames={b.pastModelNames}
         categoryOptions={b.categoryOptions}
         sexOptions={b.sexOptions}

@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getFormOptions } from "@/lib/list-options";
 import { getManufacturingPresets } from "@/lib/manufacturing-presets";
+import { loadModelsForPicker } from "@/lib/models-picker-data";
 
 // One materials query that satisfies BOTH the Basic-Info picker (needs colours)
 // and the Cost form (needs set_price/unit_type).
@@ -20,12 +21,12 @@ export type ProductEditBundle = Record<string, any>;
 export async function loadProductEditBundle(supabase: SupabaseClient<any>, id: string): Promise<ProductEditBundle | null> {
   const [
     productResult, seasonsResult, pastModelsResult, materialsResult,
-    productColorsResult, productMaterialsResult, settingsResult, formOptions, tagsResult, mfgPresets, imagesResult,
+    productColorsResult, productMaterialsResult, settingsResult, formOptions, tagsResult, mfgPresets, imagesResult, models,
   ] = await Promise.all([
     supabase
       .from("products")
       .select(
-        "id, status, finalized_at, season_id, model_name, is_sample, is_invalid, orderable_sizes, " +
+        "id, status, finalized_at, season_id, model_name, model_id, model_version_id, is_sample, is_invalid, orderable_sizes, " +
         "product_category, product_sex, " +
         "main_material_id, main_m_category, main_m_name, main_m_color, " +
         "main_m_comp1_label, main_m_comp1_pct, main_m_comp2_label, main_m_comp2_pct, " +
@@ -58,6 +59,7 @@ export async function loadProductEditBundle(supabase: SupabaseClient<any>, id: s
     supabase.from("product_tags").select("tag").eq("product_id", id),
     getManufacturingPresets(supabase),
     supabase.from("product_images").select("id, product_color_id, web_url, thumb_url, sort_order").eq("product_id", id).order("sort_order"),
+    loadModelsForPicker(supabase),
   ]);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -108,6 +110,7 @@ export async function loadProductEditBundle(supabase: SupabaseClient<any>, id: s
     // ProductForm props
     seasons: seasonsResult.data ?? [],
     materials: allMaterials,
+    models,
     pastModelNames,
     categoryOptions: formOptions.productCategory,
     sexOptions: formOptions.productSex,
@@ -116,6 +119,8 @@ export async function loadProductEditBundle(supabase: SupabaseClient<any>, id: s
     initialData: {
       season_id:            p.season_id,
       model_name:           p.model_name ?? "",
+      model_id:             p.model_id ?? null,
+      model_version_id:     p.model_version_id ?? null,
       product_category:     p.product_category ?? undefined,
       product_sex:          p.product_sex ?? undefined,
       is_sample:            p.is_sample,
