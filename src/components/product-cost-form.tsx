@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useCallback, useRef, useEffect, useTransition } from "react";
+import { useState, useRef, useEffect, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { MaterialPickerModal, type PickableMaterial } from "@/components/material-picker";
+import { type PickableMaterial } from "@/components/material-picker";
 import { CollapsibleCard } from "@/components/collapsible-card";
 import { setProductFinalized } from "@/app/actions/products";
 import { calcCostJpy, calcCostEur, calcWholesaleEur, calcMfgAmountFromHours, mfgHoursToMinutes, mfgMinutesToAmounts } from "@/lib/pricing";
@@ -115,6 +115,28 @@ function MfgInput({ mfgKey, value, laborRate, presets, onChange }: {
   );
 }
 
+// Read-only material row (Version-owned non-main materials — no qty input, no remove).
+function ReadonlyMaterialRow({
+  materialNumber, name, color, setPriceJpy, unitType, quantity,
+}: { materialNumber: string | null; name: string; color: string | null; setPriceJpy: number; unitType: string | null; quantity: number }) {
+  return (
+    <div className="flex items-center gap-3">
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 flex-wrap">
+          {materialNumber && <span className="text-xs font-mono text-gray-400">{materialNumber}</span>}
+          <span className="text-sm font-medium text-gray-900">{name}</span>
+          {color && <span className="text-xs text-gray-500">/ {color}</span>}
+        </div>
+        <div className="text-xs text-gray-400 mt-0.5">
+          Set Price: ¥{fmt(setPriceJpy)}{unitType ? ` / ${unitType}` : ""}
+        </div>
+      </div>
+      <div className="text-xs text-gray-500 shrink-0 w-24 text-right">{quantity} {unitType ?? ""}</div>
+      <div className="w-24 shrink-0 text-right text-sm font-mono text-gray-700">¥{fmt(setPriceJpy * quantity)}</div>
+    </div>
+  );
+}
+
 function MaterialCostRow({
   mat, quantity, onQuantityChange,
 }: { mat: MaterialInfo; quantity: number; onQuantityChange: (v: number) => void }) {
@@ -160,11 +182,12 @@ export function ProductCostForm({
   const clientDiscountPct = Math.round((1 - 1 / retailMultiplier) * 100);
   const toggleLock = () => startLock(async () => { await setProductFinalized(productId, !locked); router.refresh(); });
   const [mainQty,    setMainQty]    = useState(initialMainQuantity);
-  const [liningQty,  setLiningQty]  = useState(initialLiningQuantity);
-  const [additional, setAdditional] = useState<AdditionalRow[]>(
-    initialAdditionalRows.map((r) => ({ ...r, role: isValidRole(r.role) ? r.role : "accessories" }))
-  );
-  const [pickerRole, setPickerRole] = useState<RoleKey | null>(null);
+  // ADR-0011 §9.7 — lining qty and the "other" non-main materials are Version-owned and read-only
+  // here (edit them on the Model version, see the Model Recipe card above). Fixed, not state.
+  const liningQty = initialLiningQuantity;
+  const additional: AdditionalRow[] = initialAdditionalRows.map((r) => ({
+    ...r, role: isValidRole(r.role) ? r.role : "accessories",
+  }));
   // DB stores minutes; the form edits HOURS. Convert minutes → hours on load.
   const [mfg,        setMfg]        = useState<MfgState>(() => ({
     cutting:  initialManufacturing.cutting  / 60,
@@ -227,11 +250,12 @@ export function ProductCostForm({
     });
   }
 
-  // Auto-save: debounce 800ms, skip initial mount
+  // Auto-save: debounce 800ms, skip initial mount. Only the Product-owned inputs drive saves now
+  // (main qty, manufacturing, EUR rate, per-colour pricing) — non-main is Version-owned.
   const isFirstRender = useRef(true);
   const saveTimer     = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const latestRef     = useRef({ mainQty, liningQty, additional, mfg, eurRate, colorEdits });
-  latestRef.current   = { mainQty, liningQty, additional, mfg, eurRate, colorEdits };
+  const latestRef     = useRef({ mainQty, mfg, eurRate, colorEdits });
+  latestRef.current   = { mainQty, mfg, eurRate, colorEdits };
 
   useEffect(() => {
     if (isFirstRender.current) { isFirstRender.current = false; return; }
@@ -242,8 +266,7 @@ export function ProductCostForm({
       setSaveStatus("saving");
       setSaveError(null);
       const result = await updateProductCosts(
-        productId, v.mainQty, v.liningQty,
-        v.additional.filter((r) => r.materialId),
+        productId, v.mainQty,
         mfgHoursToMinutes(v.mfg), laborRate, v.eurRate,   // hours → minutes for storage
         colors.map((c, i) => ({
           productColorId: c.productColorId,
@@ -257,22 +280,7 @@ export function ProductCostForm({
     }, 800);
     return () => { if (saveTimer.current) clearTimeout(saveTimer.current); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mainQty, liningQty, additional, mfg, eurRate, colorEdits]);
-
-  const handlePickerSelect = useCallback((m: PickableMaterial) => {
-    if (!pickerRole) return;
-    const role = pickerRole;
-    setAdditional((prev) => [...prev, { materialId: m.id, quantity: 0, role }]);
-    setPickerRole(null);
-  }, [pickerRole]);
-
-  const removeAdditional = useCallback((i: number) => {
-    setAdditional((prev) => prev.filter((_, idx) => idx !== i));
-  }, []);
-
-  const updateAdditionalQty = useCallback((i: number, qty: number) => {
-    setAdditional((prev) => prev.map((r, idx) => idx === i ? { ...r, quantity: qty } : r));
-  }, []);
+  }, [mainQty, mfg, eurRate, colorEdits]);
 
   function setColorField(i: number, field: keyof ColorEdit, v: number) {
     setColorEdits((prev) => prev.map((e, idx) => idx === i ? { ...e, [field]: v } : e));
@@ -287,14 +295,6 @@ export function ProductCostForm({
 
   return (
     <div className="space-y-4">
-      {pickerRole && (
-        <MaterialPickerModal
-          materials={allMaterials}
-          onSelect={handlePickerSelect}
-          onClose={() => setPickerRole(null)}
-        />
-      )}
-
       {/* ══ Materials & Cost (collapsible) ══ */}
       <CollapsibleCard title="Materials & Cost" right={
         <div className="flex items-center gap-3">
@@ -329,66 +329,44 @@ export function ProductCostForm({
           </div>
         </div>
 
-        {/* Lining */}
+        {/* Lining — Version-owned, read-only (edit on the Model version) */}
         <div className="mb-2">
-          <p className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-2">Lining</p>
+          <p className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-2">Lining <span className="normal-case text-gray-300">· from Model recipe</span></p>
           <div className="bg-gray-50 border border-gray-100 rounded-lg px-3 py-2">
-            {liningMaterial
-              ? <MaterialCostRow mat={liningMaterial} quantity={liningQty} onQuantityChange={setLiningQty} />
-              : <div className="flex items-center justify-between">
-                  <span className="text-xs text-gray-400 italic">No lining material</span>
-                  <span className="text-sm font-mono text-gray-400">¥0</span>
-                </div>
-            }
+            {liningMaterial ? (
+              <ReadonlyMaterialRow
+                materialNumber={liningMaterial.materialNumber} name={liningMaterial.name} color={liningMaterial.color}
+                setPriceJpy={liningMaterial.setPriceJpy} unitType={liningMaterial.unitType} quantity={liningQty} />
+            ) : (
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-gray-400 italic">No lining material</span>
+                <span className="text-sm font-mono text-gray-400">¥0</span>
+              </div>
+            )}
           </div>
         </div>
 
-        {/* Others */}
+        {/* Others — Version-owned, read-only */}
         <div className="mb-2">
-          <p className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-2">Others</p>
+          <p className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-2">Others <span className="normal-case text-gray-300">· from Model recipe</span></p>
           <div className="border border-gray-100 rounded-lg overflow-hidden">
             {ROLES.map((role, roleIdx) => {
-              const rows = additional.map((r, i) => ({ ...r, idx: i })).filter((r) => r.role === role.key);
+              const rows = additional.filter((r) => r.role === role.key);
               return (
                 <div key={role.key}
                   className={`px-3 py-2 bg-white ${roleIdx < ROLES.length - 1 ? "border-b border-gray-50" : ""}`}>
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-xs font-medium text-gray-600">
-                      {role.label}
-                    </span>
-                    <button type="button" onClick={() => setPickerRole(role.key)}
-                      className="text-xs text-gray-400 hover:text-gray-700 border border-gray-200 rounded px-2 py-0.5 hover:border-gray-400">
-                      + Add
-                    </button>
+                  <div className="mb-1">
+                    <span className="text-xs font-medium text-gray-600">{role.label}</span>
                   </div>
                   {rows.length > 0 ? (
                     <div className="space-y-2 pl-2">
-                      {rows.map(({ idx, materialId, quantity }) => {
+                      {rows.map(({ materialId, quantity }, i) => {
                         const m = materialMap.get(materialId);
                         if (!m) return null;
                         return (
-                          <div key={idx} className="flex items-center gap-3">
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                {m.material_number && <span className="text-xs font-mono text-gray-400">{m.material_number}</span>}
-                                <span className="text-sm font-medium text-gray-900">{m.name}</span>
-                                {m.color && <span className="text-xs text-gray-500">/ {m.color}</span>}
-                              </div>
-                              <div className="text-xs text-gray-400 mt-0.5">
-                                Set Price: ¥{fmt(Number(m.set_price_jpy))}{m.unit_type ? ` / ${m.unit_type}` : ""}
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-1.5 shrink-0">
-                              <input type="number" min="0" step="0.001" value={quantity || ""} placeholder="0"
-                                onChange={(e) => updateAdditionalQty(idx, Number(e.target.value))} className={qtyInputCls} />
-                              {m.unit_type && <span className="text-xs text-gray-400 w-8 shrink-0">{m.unit_type}</span>}
-                            </div>
-                            <div className="flex items-center gap-2 w-24 shrink-0 justify-end">
-                              <span className="text-sm font-mono text-gray-700">¥{fmt(Number(m.set_price_jpy) * quantity)}</span>
-                              <button type="button" onClick={() => removeAdditional(idx)}
-                                className="text-gray-300 hover:text-red-400 text-lg leading-none">×</button>
-                            </div>
-                          </div>
+                          <ReadonlyMaterialRow key={`${materialId}-${i}`}
+                            materialNumber={m.material_number} name={m.name} color={m.color}
+                            setPriceJpy={Number(m.set_price_jpy)} unitType={m.unit_type} quantity={quantity} />
                         );
                       })}
                     </div>
@@ -397,6 +375,7 @@ export function ProductCostForm({
               );
             })}
           </div>
+          <p className="text-[11px] text-gray-400 mt-1.5">Non-main materials &amp; 用尺 are set on the Model version — edit them via the <span className="font-medium">Model Recipe</span> card above.</p>
         </div>
 
         {/* Total material (base) */}
