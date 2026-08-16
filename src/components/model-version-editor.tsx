@@ -1,7 +1,16 @@
 "use client";
 
 import { useEffect, useMemo, useState, useTransition } from "react";
-import { getModelVersionEditData, updateModelVersion, deleteModelVersion, duplicateModelVersion, setModelVersionStatus } from "@/app/actions/models";
+import {
+  getModelVersionEditData,
+  deleteModelVersion,
+  duplicateModelVersion,
+  setModelVersionStatus,
+  previewModelVersionRecipe,
+  applyModelVersionRecipe,
+  type UpdateVersionInput,
+  type VersionRecipePreview,
+} from "@/app/actions/models";
 import { MaterialPickerModal, type PickableMaterial } from "@/components/material-picker";
 import { MODEL_VERSION_MATERIAL_ROLES } from "@/lib/model-constants";
 import { ACCESSORY_COMPOSITIONS, ORDERABLE_SIZE_PRESETS, defaultOrderableSizes } from "@/lib/product-constants";
@@ -195,6 +204,10 @@ function VersionEditorBody({ bundle, onClose, onDone, onDuplicated }: { bundle: 
   const [deleting, startDelete] = useTransition();
   const [duplicating, startDup] = useTransition();
   const [statusPending, startStatus] = useTransition();
+  const [applying, startApply] = useTransition();
+  // The recipe-edit confirm modal: holds the dry-run preview + the exact payload to apply on confirm.
+  // (Named `propagation`, not `confirm`, so it doesn't shadow window.confirm used by delete/deprecate.)
+  const [propagation, setPropagation] = useState<{ preview: VersionRecipePreview; input: UpdateVersionInput } | null>(null);
 
   const changeStatus = (target: "active" | "frozen" | "deprecated") =>
     startStatus(async () => {
@@ -222,25 +235,47 @@ function VersionEditorBody({ bundle, onClose, onDone, onDuplicated }: { bundle: 
   const grandTotal = materialsTotal + mfgTotal;
   const totalHours = MFG_KEYS.reduce((s, k) => s + (hours[k] || 0), 0);
 
+  // The exact payload to save — used for both the dry-run preview and the real apply.
+  const buildInput = (): UpdateVersionInput => ({
+    changelog: changelog.trim() || null,
+    orderable_sizes: SIZES.filter((s) => sizes.has(s)),
+    accessory_composition: accessory.trim() || null,
+    minutes: {
+      cutting: hours.cutting * 60, sewing: hours.sewing * 60, knitting: hours.knitting * 60,
+      thread: hours.thread * 60, finish: hours.finish * 60, packing: hours.packing * 60,
+    },
+    materials: [
+      ...(lining?.material_id ? [{ role: "lining", material_id: lining.material_id, material_color_id: lining.material_color_id, usage_amount: lining.usage_amount }] : []),
+      ...rows.map((r) => ({ role: r.role, material_id: r.material_id, material_color_id: r.material_color_id, usage_amount: r.usage_amount })),
+    ],
+  });
+
+  // Save = dry-run first. If pre-batch products would change cost, open the confirm modal; otherwise
+  // (recipe/size/composition-only change, or nothing linked) apply straight away.
   const save = () => {
     if (rows.some((r) => !r.material_id)) { alert("Select a material for every material row (or remove empty rows)."); return; }
+    const input = buildInput();
     start(async () => {
-      const materialsPayload = [
-        ...(lining?.material_id ? [{ role: "lining", material_id: lining.material_id, material_color_id: lining.material_color_id, usage_amount: lining.usage_amount }] : []),
-        ...rows.map((r) => ({ role: r.role, material_id: r.material_id, material_color_id: r.material_color_id, usage_amount: r.usage_amount })),
-      ];
-      const err = await updateModelVersion(data.versionId, {
-        changelog: changelog.trim() || null,
-        orderable_sizes: SIZES.filter((s) => sizes.has(s)),
-        accessory_composition: accessory.trim() || null,
-        minutes: {
-          cutting: hours.cutting * 60, sewing: hours.sewing * 60, knitting: hours.knitting * 60,
-          thread: hours.thread * 60, finish: hours.finish * 60, packing: hours.packing * 60,
-        },
-        materials: materialsPayload,
-      });
-      if (err) alert(err);
-      else onDone();
+      const res = await previewModelVersionRecipe(data.versionId, input);
+      if ("error" in res) { alert(res.error); return; }
+      if (res.affected.length === 0) {
+        const err = await applyModelVersionRecipe(data.versionId, input);
+        if (err) alert(err);
+        else onDone();
+        return;
+      }
+      setPropagation({ preview: res, input });
+    });
+  };
+
+  // Confirmed in the modal: apply the version edit + cost propagation atomically.
+  const applyConfirmed = () => {
+    if (!propagation) return;
+    startApply(async () => {
+      const err = await applyModelVersionRecipe(data.versionId, propagation.input);
+      if (err) { alert(err); return; }
+      setPropagation(null);
+      onDone();
     });
   };
 
@@ -454,15 +489,108 @@ function VersionEditorBody({ bundle, onClose, onDone, onDuplicated }: { bundle: 
         <div className="flex gap-2">
           <button type="button" onClick={onClose} className="px-4 py-2 text-sm rounded-md border border-gray-300 text-gray-600 hover:bg-gray-50">Cancel</button>
           {!readOnly && (
-            <button type="button" onClick={save} disabled={pending}
+            <button type="button" onClick={save} disabled={pending || applying}
               className="px-5 py-2 bg-gray-900 text-white text-sm rounded-md hover:bg-gray-700 disabled:opacity-50">
-              {pending ? "Saving..." : "Save version"}
+              {pending ? "Checking…" : "Save version"}
             </button>
           )}
         </div>
       </div>
 
       {pickingKey && <MaterialPickerModal materials={materials} onSelect={pickMaterial} onClose={() => setPickingKey(null)} />}
+      {propagation && (
+        <PropagationConfirm
+          preview={propagation.preview}
+          applying={applying}
+          onConfirm={applyConfirmed}
+          onCancel={() => setPropagation(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+// ADR-0011 §9.4 — recipe-edit fan-out confirmation. Shows each PRE-BATCH product's current→new cost
+// and delta, totals, and highlights ±20%+ swings (a cue for a material-data anomaly). Cancel closes
+// this modal only; the edit form underneath keeps its state so the user can adjust and retry.
+function PropagationConfirm({
+  preview,
+  applying,
+  onConfirm,
+  onCancel,
+}: {
+  preview: VersionRecipePreview;
+  applying: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  const totalDelta = preview.newSumJpy - preview.currentSumJpy;
+  const flaggedCount = preview.affected.filter((a) => a.flagged).length;
+  const sign = (n: number) => (n > 0 ? "+" : ""); // toLocaleString already carries the minus
+  const pctStr = (p: number) => `${sign(p)}${(p * 100).toFixed(1)}%`;
+  return (
+    <div className="fixed inset-0 z-[60] flex items-start justify-center p-3 sm:p-4 overflow-y-auto">
+      <div className="absolute inset-0 bg-black/50" onClick={applying ? undefined : onCancel} />
+      <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-2xl my-4">
+        <div className="px-5 py-3 border-b border-gray-200">
+          <h2 className="text-sm font-semibold text-gray-900">
+            Apply recipe change to {preview.count} pre-production {preview.count === 1 ? "product" : "products"}?
+          </h2>
+          <p className="mt-1 text-xs text-gray-500">
+            Saving live-recalculates cost on these products (retail is unchanged). In-production products are frozen and untouched.
+            {flaggedCount > 0 && (
+              <span className="text-amber-700">
+                {" "}{flaggedCount} shift by ±20%+ — check for a material-data anomaly before applying.
+              </span>
+            )}
+          </p>
+        </div>
+        <div className="max-h-[55vh] overflow-y-auto px-5 py-3">
+          <table className="w-full text-xs">
+            <thead className="text-gray-400 sticky top-0 bg-white">
+              <tr className="text-left">
+                <th className="py-1 pr-2 font-medium">#</th>
+                <th className="py-1 pr-2 font-medium">Product</th>
+                <th className="py-1 pr-2 font-medium text-right">Current</th>
+                <th className="py-1 pr-2 font-medium text-right">New</th>
+                <th className="py-1 pr-2 font-medium text-right">Δ</th>
+                <th className="py-1 font-medium text-right">%</th>
+              </tr>
+            </thead>
+            <tbody>
+              {preview.affected.map((a) => (
+                <tr key={a.productId} className={a.flagged ? "bg-amber-50" : ""}>
+                  <td className="py-1 pr-2 font-mono text-gray-500">{a.productNumber ?? "—"}</td>
+                  <td className="py-1 pr-2 text-gray-700 truncate max-w-[15rem]">{a.name}</td>
+                  <td className="py-1 pr-2 text-right font-mono text-gray-500">¥{fmt(a.currentCostJpy)}</td>
+                  <td className="py-1 pr-2 text-right font-mono text-gray-900">¥{fmt(a.newCostJpy)}</td>
+                  <td className={`py-1 pr-2 text-right font-mono ${a.deltaJpy < 0 ? "text-red-600" : "text-gray-900"}`}>{sign(a.deltaJpy)}{fmt(a.deltaJpy)}</td>
+                  <td className={`py-1 text-right font-mono ${a.flagged ? "text-amber-700 font-semibold" : "text-gray-500"}`}>{pctStr(a.pct)}{a.flagged ? " ⚠" : ""}</td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot className="border-t border-gray-200">
+              <tr className="font-medium text-gray-900">
+                <td className="py-1.5 pr-2" colSpan={2}>Total ({preview.count})</td>
+                <td className="py-1.5 pr-2 text-right font-mono">¥{fmt(preview.currentSumJpy)}</td>
+                <td className="py-1.5 pr-2 text-right font-mono">¥{fmt(preview.newSumJpy)}</td>
+                <td className={`py-1.5 pr-2 text-right font-mono ${totalDelta < 0 ? "text-red-600" : ""}`}>{sign(totalDelta)}{fmt(totalDelta)}</td>
+                <td />
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+        <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-gray-200">
+          <button type="button" onClick={onCancel} disabled={applying}
+            className="px-4 py-2 text-sm rounded-md border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-50">
+            Cancel (keep editing)
+          </button>
+          <button type="button" onClick={onConfirm} disabled={applying}
+            className="px-5 py-2 bg-gray-900 text-white text-sm rounded-md hover:bg-gray-700 disabled:opacity-50">
+            {applying ? "Applying…" : `Apply to ${preview.count} ${preview.count === 1 ? "product" : "products"}`}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

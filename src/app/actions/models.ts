@@ -283,69 +283,110 @@ export type UpdateVersionInput = {
   materials: VersionMaterialInput[];
 };
 
-// Edit a Model Version's shared recipe (non-main materials + 用尺), orderable sizes,
-// accessory composition, manufacturing-time template, and changelog. ONLY active
-// versions are editable — frozen/deprecated are read-only (change via copy-forward).
-export async function updateModelVersion(versionId: string, input: UpdateVersionInput): Promise<string | null> {
-  const supabase = await createClient();
-  const { data: ver, error: vErr } = await supabase
-    .from("model_versions")
-    .select("id, model_id, status")
-    .eq("id", versionId)
-    .single();
-  if (vErr || !ver) return vErr?.message ?? "Version not found";
-  // Read-only only when actually locked by production (a finalised product uses it) or
-  // deprecated — NOT merely because the version is frozen (ADR §3.4: lock = production start).
-  if (ver.status === "deprecated") return "This version is deprecated — restore it before editing.";
-  const [{ data: vProds }, { data: batches }] = await Promise.all([
-    supabase.from("products").select("id").eq("model_version_id", versionId),
-    supabase.from("production_batches").select("product_id"),
-  ]);
-  const vids = new Set(((vProds ?? []) as { id: string }[]).map((p) => p.id));
-  if (((batches ?? []) as { product_id: string }[]).some((b) => vids.has(b.product_id)))
-    return "This version is in production (a batch was generated) and is locked.";
+// ADR-0011 Phase 4-2 — the shape returned by the recipe-edit confirmation preview: which
+// PRE-BATCH products would change cost if the edit were applied, and by how much.
+export type VersionRecipePreview = {
+  affected: {
+    productId: string;
+    productNumber: string | null;
+    name: string;
+    currentCostJpy: number;
+    newCostJpy: number;
+    deltaJpy: number;
+    pct: number;      // fraction; 0.25 = +25%
+    flagged: boolean; // |pct| >= 0.20 — a big swing worth eyeballing for a material-data anomaly
+  }[];
+  count: number;
+  currentSumJpy: number;
+  newSumJpy: number;
+};
 
+// Row validation mirrored from the RPC, run client-first to fail fast before the round-trip.
+function validateVersionMaterials(input: UpdateVersionInput): string | null {
   for (const m of input.materials) {
     if (!MODEL_VERSION_MATERIAL_ROLES.includes(m.role as ModelVersionMaterialRole))
       return `Invalid material role: ${m.role}`;
     if (!m.material_id) return "Each material row needs a material selected.";
     if (!(Number(m.usage_amount) >= 0)) return "Usage amount must be zero or more.";
   }
+  return null;
+}
 
-  const { error: uErr } = await supabase
-    .from("model_versions")
-    .update({
-      changelog: input.changelog?.trim() || null,
-      orderable_sizes: input.orderable_sizes,
-      accessory_composition: input.accessory_composition?.trim() || null,
-      cutting_minutes: input.minutes.cutting,
-      sewing_minutes: input.minutes.sewing,
-      knitting_minutes: input.minutes.knitting,
-      thread_minutes: input.minutes.thread,
-      finish_minutes: input.minutes.finish,
-      packing_minutes: input.minutes.packing,
+// Edit a Model Version's shared recipe (non-main materials + 用尺), orderable sizes, accessory
+// composition, mfg-time template, changelog — AND live-recalc cost on every pre-batch product that
+// uses it, in ONE Postgres transaction (apply_model_version_recipe). supabase-js autocommits per
+// statement, so the fan-out has to be all-or-nothing server-side (ADR §9.4). ONLY active/frozen
+// versions are editable; deprecated or in-production versions are rejected by the RPC.
+async function callApplyRecipe(versionId: string, input: UpdateVersionInput, dryRun: boolean) {
+  const supabase = await createClient();
+  return supabase.rpc("apply_model_version_recipe", {
+    p_version_id: versionId,
+    p_changelog: input.changelog,
+    p_orderable_sizes: input.orderable_sizes,
+    p_accessory_composition: input.accessory_composition,
+    p_minutes: input.minutes,
+    p_materials: input.materials,
+    p_dry_run: dryRun,
+  });
+}
+
+// Dry-run: compute the per-product cost diff WITHOUT writing (drives the confirm modal). Same SQL
+// path as the real apply, so the confirmed numbers can never drift from what the preview showed.
+export async function previewModelVersionRecipe(
+  versionId: string,
+  input: UpdateVersionInput
+): Promise<VersionRecipePreview | { error: string }> {
+  const invalid = validateVersionMaterials(input);
+  if (invalid) return { error: invalid };
+  const { data, error } = await callApplyRecipe(versionId, input, true);
+  if (error) return { error: error.message };
+  const raw = (data ?? {}) as {
+    affected?: {
+      productId: string; productNumber: string | null; name: string;
+      currentCostJpy: number | string; newCostJpy: number | string;
+      deltaJpy: number | string; pct: number | string;
+    }[];
+    count?: number; currentSumJpy?: number | string; newSumJpy?: number | string;
+  };
+  const affected = (raw.affected ?? [])
+    .map((a) => {
+      const pct = Number(a.pct);
+      return {
+        productId: a.productId,
+        productNumber: a.productNumber,
+        name: a.name,
+        currentCostJpy: Number(a.currentCostJpy),
+        newCostJpy: Number(a.newCostJpy),
+        deltaJpy: Number(a.deltaJpy),
+        pct,
+        flagged: Math.abs(pct) >= 0.2,
+      };
     })
-    .eq("id", versionId);
-  if (uErr) return uErr.message;
+    .sort((x, y) => Math.abs(y.pct) - Math.abs(x.pct)); // biggest swings first
+  return {
+    affected,
+    count: Number(raw.count ?? affected.length),
+    currentSumJpy: Number(raw.currentSumJpy ?? 0),
+    newSumJpy: Number(raw.newSumJpy ?? 0),
+  };
+}
 
-  // Replace the non-main material set (delete + insert, sort_order = array order).
-  const { error: dErr } = await supabase.from("model_version_materials").delete().eq("model_version_id", versionId);
-  if (dErr) return dErr.message;
-  if (input.materials.length) {
-    const rows = input.materials.map((m, i) => ({
-      model_version_id: versionId,
-      role: m.role,
-      material_id: m.material_id,
-      material_color_id: m.material_color_id,
-      usage_amount: Number(m.usage_amount),
-      sort_order: i,
-    }));
-    const { error: iErr } = await supabase.from("model_version_materials").insert(rows);
-    if (iErr) return iErr.message;
-  }
-
+// Apply for real: version edit + cost propagation to all pre-batch products, atomically.
+export async function applyModelVersionRecipe(
+  versionId: string,
+  input: UpdateVersionInput
+): Promise<string | null> {
+  const invalid = validateVersionMaterials(input);
+  if (invalid) return invalid;
+  const { error } = await callApplyRecipe(versionId, input, false);
+  if (error) return error.message;
+  const supabase = await createClient();
+  const { data: ver } = await supabase.from("model_versions").select("model_id").eq("id", versionId).single();
+  const modelId = (ver as { model_id?: string } | null)?.model_id;
   revalidatePath("/models");
-  revalidatePath(`/models/${ver.model_id}`);
+  if (modelId) revalidatePath(`/models/${modelId}`);
+  revalidatePath("/model-versions");
+  revalidatePath("/products");
   return null; // popup handles close + refresh
 }
 
