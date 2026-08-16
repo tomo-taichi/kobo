@@ -376,6 +376,7 @@ export function ProductForm({
             fallbackName={initialData.model_name ?? null}
             fallbackCategory={initialData.product_category ?? null}
             onChange={handleModelChange}
+            productId={id}
             disabled={locked}
           />
           {!seasonId && (
@@ -433,7 +434,8 @@ export function ProductForm({
           </div>
         </Section>
 
-        {/* ── 1b. Orderable Sizes ── */}
+        {/* ── 1b. Orderable Sizes — edit only; on create it's inherited from the Version (scope A, ADR-0011 §9.7) ── */}
+        {id && (
         <Section title="Orderable Sizes">
           <p className="text-xs text-gray-400 -mt-1">
             Which sizes this product can be ordered in. Auto-filled from category + sex — use a preset or tick sizes to override.
@@ -462,6 +464,7 @@ export function ProductForm({
             <p className="text-[11px] text-amber-600">No sizes selected — this product can&apos;t be ordered until at least one is selected.</p>
           )}
         </Section>
+        )}
         </div>
 
         {/* ══ Right column: materials ══ */}
@@ -521,7 +524,8 @@ export function ProductForm({
           )}
         </Section>
 
-        {/* ── 3. Lining Material ── */}
+        {/* ── 3. Lining Material & 4. Accessories Composition — edit only; on create they're inherited from the Version (scope A, ADR-0011 §9.7) ── */}
+        {id && (<>
         <Section title="Lining Material">
           {noLining && !liningMat ? (
             <div className="flex gap-3 items-center">
@@ -568,6 +572,7 @@ export function ProductForm({
             {accessoryCompositionOptions.map((c) => <option key={c} value={c}>{c}</option>)}
           </select>
         </Section>
+        </>)}
         </div>
         </div>
 

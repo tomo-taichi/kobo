@@ -2,8 +2,10 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
+import { useRouter } from "next/navigation";
 import { MODEL_CATEGORIES, MODEL_VERSION_STATUS_LABELS, type ModelVersionStatus } from "@/lib/model-constants";
 import { createModelForProduct, createModelVersionCopyForward } from "@/app/actions/models";
+import { syncProductRecipeFromVersion } from "@/app/actions/products";
 import type { PickerModel, PickerVersion } from "@/lib/models-picker-data";
 
 export type ModelSelection = {
@@ -38,6 +40,7 @@ export function ModelVersionPicker({
   fallbackName,
   fallbackCategory,
   onChange,
+  productId,
   disabled = false,
 }: {
   models: PickerModel[];
@@ -47,8 +50,10 @@ export function ModelVersionPicker({
   fallbackName?: string | null;
   fallbackCategory?: string | null;
   onChange: (next: ModelSelection) => void;
+  productId?: string; // present in edit mode → enables "re-sync recipe from Version"
   disabled?: boolean;
 }) {
+  const router = useRouter();
   // Local catalogue so models/versions created inline (below) appear without a page reload.
   const [catalog, setCatalog] = useState<PickerModel[]>(models);
   const [showModal, setShowModal] = useState(false);
@@ -66,16 +71,21 @@ export function ModelVersionPicker({
 
   const hasSeasonVersion = !!selModel?.versions.some((v) => v.season_id === seasonId);
   const canCopyForward = !!selModel && !hasSeasonVersion && selModel.versions.length > 0 && !!seasonId;
-  // A linked version whose season differs from the product's = reuse of an older recipe.
   const reusingOlder = !!selVersion && selVersion.season_id !== seasonId;
+  const emptyRecipe = !!selVersion && !selVersion.has_recipe;
 
   function emit(model: PickerModel, versionId: string | null) {
     onChange({ modelId: model.id, versionId, modelName: model.name, category: model.category });
   }
 
-  function pickModel(m: PickerModel) {
-    setCatalog((prev) => (prev.some((x) => x.id === m.id) ? prev : [...prev, m]));
-    emit(m, defaultVersionId(m, seasonId));
+  function upsertModel(model: PickerModel) {
+    setCatalog((prev) => (prev.some((x) => x.id === model.id) ? prev.map((m) => (m.id === model.id ? model : m)) : [...prev, model]));
+  }
+
+  // Called by the modal: a (Model, Version) pair chosen together.
+  function pick(model: PickerModel, versionId: string | null) {
+    upsertModel(model);
+    emit(model, versionId ?? defaultVersionId(model, seasonId));
     setShowModal(false);
   }
 
@@ -95,20 +105,26 @@ export function ModelVersionPicker({
         alert(res.error);
         return;
       }
-      const version: PickerVersion = { id: res.versionId, season_id: seasonId, season_name: seasonName ?? "—", status: "active" };
-      setCatalog((prev) => prev.map((m) => (m.id === selModel.id ? { ...m, versions: [...m.versions, version] } : m)));
-      emit({ ...selModel, versions: [...selModel.versions, version] }, res.versionId);
+      const version: PickerVersion = { id: res.versionId, season_id: seasonId, season_name: seasonName ?? "—", status: "active", has_recipe: true };
+      const next = { ...selModel, versions: [...selModel.versions, version] };
+      upsertModel(next);
+      emit(next, res.versionId);
     });
   }
 
-  function onCreated(model: PickerModel, versionId: string | null) {
-    setCatalog((prev) => {
-      const existing = prev.find((m) => m.id === model.id);
-      if (existing) return prev.map((m) => (m.id === model.id ? model : m));
-      return [...prev, model];
+  // Manual re-sync of the linked Version's recipe onto this product (edit mode). Needed after
+  // defining the recipe on a newly-created (empty) Version, or to pull in later Version edits.
+  function resync() {
+    if (!productId) return;
+    if (!window.confirm("この Product のレシピ（裏地・非メイン素材・サイズ・組成・製造時間）を、現在の Version の内容で上書きします。よろしいですか？")) return;
+    start(async () => {
+      const err = await syncProductRecipeFromVersion(productId);
+      if (err) {
+        alert(err);
+        return;
+      }
+      router.refresh();
     });
-    emit(model, versionId);
-    setShowModal(false);
   }
 
   const displayName = selModel?.name ?? fallbackName ?? null;
@@ -133,7 +149,7 @@ export function ModelVersionPicker({
             </div>
             <button type="button" onClick={() => setShowModal(true)} disabled={disabled}
               className="shrink-0 text-xs text-gray-500 hover:text-gray-900 underline disabled:opacity-50">
-              Change model
+              Change model / version
             </button>
           </div>
 
@@ -151,7 +167,7 @@ export function ModelVersionPicker({
                 {!value.versionId && versionOptions.length > 0 && <option value="">— Select version —</option>}
                 {versionOptions.map((v) => (
                   <option key={v.id} value={v.id}>
-                    {v.season_name} · {statusLabel(v.status)}
+                    {v.season_name} · {statusLabel(v.status)}{v.has_recipe ? "" : " · レシピ未定義"}
                   </option>
                 ))}
               </select>
@@ -162,20 +178,42 @@ export function ModelVersionPicker({
                 </button>
               )}
             </div>
-            {reusingOlder && (
+            {reusingOlder && !emptyRecipe && (
               <p className="text-[11px] text-gray-400 mt-1">
                 Reusing the <span className="font-medium">{selVersion?.season_name}</span> version (no separate version for {seasonName ?? "this season"}).
               </p>
             )}
-            {!hasSeasonVersion && !canCopyForward && selVersion && (
-              <p className="text-[11px] text-gray-400 mt-1">This version covers {seasonName ?? "the product's season"}.</p>
+
+            {/* Empty-recipe guidance — the create form no longer collects lining/sizes/composition,
+                so an empty Version must be filled in on the Model (ADR-0011 §9.6). */}
+            {emptyRecipe && (
+              <div className="mt-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-[11px] text-amber-800">
+                ⚠ この Version はレシピ（素材・サイズ・組成・製造）が未定義です。
+                {productId && selModel ? (
+                  <>
+                    {" "}
+                    <a href={`/models/${selModel.id}`} className="underline font-medium hover:text-amber-900">Model 版を編集 →</a>
+                    {" "}でレシピを入力し、下の「Version から再取り込み」で反映してください。
+                  </>
+                ) : (
+                  <> 作成後、Model 版でレシピを入力してください。</>
+                )}
+              </div>
+            )}
+
+            {/* Re-sync (edit mode): pull the Version's current recipe onto this product. */}
+            {productId && value.versionId && (
+              <button type="button" onClick={resync} disabled={disabled || pending}
+                className="mt-2 text-[11px] px-2.5 py-1 rounded-md border border-gray-300 text-gray-600 hover:border-gray-900 hover:text-gray-900 disabled:opacity-50">
+                {pending ? "同期中…" : "↻ Version から再取り込み"}
+              </button>
             )}
           </div>
         </div>
       ) : (
         <button type="button" onClick={() => setShowModal(true)} disabled={disabled}
           className="px-4 py-3 border-2 border-dashed border-red-300 rounded-lg text-sm text-red-500 hover:border-red-500 hover:text-red-700 w-fit disabled:opacity-50">
-          + Select Model
+          + Select Model &amp; Version
         </button>
       )}
 
@@ -187,8 +225,7 @@ export function ModelVersionPicker({
             models={catalog}
             seasonId={seasonId}
             seasonName={seasonName}
-            onPick={pickModel}
-            onCreated={onCreated}
+            onPick={pick}
             onClose={() => setShowModal(false)}
           />,
           document.body
@@ -202,18 +239,17 @@ function ModelPickerModal({
   seasonId,
   seasonName,
   onPick,
-  onCreated,
   onClose,
 }: {
   models: PickerModel[];
   seasonId: string;
   seasonName?: string | null;
-  onPick: (m: PickerModel) => void;
-  onCreated: (model: PickerModel, versionId: string | null) => void;
+  onPick: (model: PickerModel, versionId: string | null) => void;
   onClose: () => void;
 }) {
   const [search, setSearch] = useState("");
   const [fCat, setFCat] = useState("");
+  const [selId, setSelId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
   const [newCat, setNewCat] = useState("");
@@ -227,6 +263,13 @@ function ModelPickerModal({
     return list;
   }, [models, search, fCat]);
 
+  const selModel = models.find((m) => m.id === selId) ?? null;
+  const versionRows = selModel
+    ? selModel.versions.filter((v) => v.status !== "deprecated")
+    : [];
+  const defaultVer = selModel ? defaultVersionId(selModel, seasonId) : null;
+  const hasSeasonVersion = !!selModel?.versions.some((v) => v.season_id === seasonId);
+
   function create() {
     setErr(null);
     start(async () => {
@@ -236,7 +279,7 @@ function ModelPickerModal({
         return;
       }
       const version: PickerVersion | null = res.versionId
-        ? { id: res.versionId, season_id: res.seasonId, season_name: res.seasonName ?? "—", status: res.status }
+        ? { id: res.versionId, season_id: res.seasonId, season_name: res.seasonName ?? "—", status: res.status, has_recipe: false }
         : null;
       const existing = models.find((m) => m.id === res.modelId);
       const versions = existing
@@ -246,7 +289,19 @@ function ModelPickerModal({
         : version
           ? [version]
           : [];
-      onCreated({ id: res.modelId, name: res.modelName, category: res.category, versions }, res.versionId);
+      onPick({ id: res.modelId, name: res.modelName, category: res.category, versions }, res.versionId);
+    });
+  }
+
+  function copyForward() {
+    if (!selModel || !seasonId) return;
+    const source = selModel.versions[selModel.versions.length - 1];
+    if (!source) return;
+    start(async () => {
+      const res = await createModelVersionCopyForward(selModel.id, seasonId, source.id);
+      if ("error" in res) { alert(res.error); return; }
+      const version: PickerVersion = { id: res.versionId, season_id: seasonId, season_name: seasonName ?? "—", status: "active", has_recipe: true };
+      onPick({ ...selModel, versions: [...selModel.versions, version] }, res.versionId);
     });
   }
 
@@ -255,10 +310,10 @@ function ModelPickerModal({
       className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl mx-4 flex flex-col max-h-[85vh]">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-3xl mx-4 flex flex-col max-h-[85vh]">
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-3.5 border-b border-gray-100">
-          <h2 className="text-sm font-semibold text-gray-900">Select Model</h2>
+          <h2 className="text-sm font-semibold text-gray-900">Select Model &amp; Version</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-lg leading-none">✕</button>
         </div>
 
@@ -267,16 +322,8 @@ function ModelPickerModal({
           {creating ? (
             <div className="space-y-2">
               <div className="grid grid-cols-[1fr_auto] gap-2">
-                <input
-                  type="text"
-                  placeholder="New model name…"
-                  value={newName}
-                  onChange={(e) => setNewName(e.target.value)}
-                  autoFocus
-                  lang="en-GB"
-                  spellCheck
-                  className={filterCls}
-                />
+                <input type="text" placeholder="New model name…" value={newName} onChange={(e) => setNewName(e.target.value)}
+                  autoFocus lang="en-GB" spellCheck className={filterCls} />
                 <select value={newCat} onChange={(e) => setNewCat(e.target.value)} className={filterCls + " w-40"}>
                   <option value="">Category…</option>
                   {MODEL_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
@@ -285,12 +332,10 @@ function ModelPickerModal({
               <div className="flex items-center gap-2">
                 <button type="button" onClick={create} disabled={pending || !newName.trim() || !newCat}
                   className="text-xs px-3 py-1.5 rounded-md bg-gray-900 text-white hover:bg-gray-700 disabled:opacity-50">
-                  {pending ? "Creating…" : "Create model"}
+                  {pending ? "Creating…" : "Create & select"}
                 </button>
                 <button type="button" onClick={() => { setCreating(false); setErr(null); }} className="text-xs text-gray-400 hover:text-gray-700 underline">Cancel</button>
-                <span className="text-[11px] text-gray-400">
-                  + an empty Active version for {seasonName ?? "this season"}.
-                </span>
+                <span className="text-[11px] text-gray-400">+ an empty Active version for {seasonName ?? "this season"} (define its recipe on the Model afterward).</span>
               </div>
               {err && <p className="text-xs text-red-600">{err}</p>}
             </div>
@@ -302,49 +347,68 @@ function ModelPickerModal({
           )}
         </div>
 
-        {/* Filters */}
-        <div className="px-4 py-3 border-b border-gray-100 grid grid-cols-[1fr_auto_auto] gap-2 items-center">
-          <input
-            type="text"
-            placeholder="Search by name…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className={filterCls}
-          />
-          <select value={fCat} onChange={(e) => setFCat(e.target.value)} className={filterCls + " w-40"}>
-            <option value="">All Categories</option>
-            {MODEL_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
-          </select>
-          <span className="text-xs text-gray-400 whitespace-nowrap px-1">{filtered.length}</span>
-        </div>
-
-        {/* Table */}
-        <div className="overflow-y-auto flex-1">
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50 border-b border-gray-200 sticky top-0">
-              <tr>
-                <th className="text-left px-3 py-2 font-medium text-gray-600 text-xs">Name</th>
-                <th className="text-left px-3 py-2 font-medium text-gray-600 text-xs">Category</th>
-                <th className="text-right px-3 py-2 font-medium text-gray-600 text-xs">Versions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-50">
+        {/* Two panes: models (left) → versions (right) */}
+        <div className="flex flex-1 min-h-0">
+          {/* Left: model list */}
+          <div className="flex flex-col w-1/2 border-r border-gray-100 min-h-0">
+            <div className="px-3 py-2.5 border-b border-gray-100 grid grid-cols-[1fr_auto] gap-2">
+              <input type="text" placeholder="Search by name…" value={search} onChange={(e) => setSearch(e.target.value)} className={filterCls} />
+              <select value={fCat} onChange={(e) => setFCat(e.target.value)} className={filterCls + " w-32"}>
+                <option value="">All</option>
+                {MODEL_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+            <div className="overflow-y-auto flex-1">
               {filtered.map((m) => (
-                <tr key={m.id} onClick={() => onPick(m)} className="hover:bg-blue-50 cursor-pointer">
-                  <td className="px-3 py-2 text-gray-900 font-medium text-xs">{m.name}</td>
-                  <td className="px-3 py-2 text-gray-500 text-xs">{m.category}</td>
-                  <td className="px-3 py-2 text-gray-400 text-xs text-right">{m.versions.length}</td>
-                </tr>
+                <button key={m.id} type="button" onClick={() => setSelId(m.id)}
+                  className={`w-full text-left px-3 py-2 border-b border-gray-50 flex items-center justify-between gap-2 ${selId === m.id ? "bg-blue-50" : "hover:bg-gray-50"}`}>
+                  <span className="min-w-0">
+                    <span className="block text-xs font-medium text-gray-900 truncate">{m.name}</span>
+                    <span className="block text-[11px] text-gray-400">{m.category}</span>
+                  </span>
+                  <span className="text-[11px] text-gray-400 shrink-0">{m.versions.length}v ›</span>
+                </button>
               ))}
               {!filtered.length && (
-                <tr>
-                  <td colSpan={3} className="px-4 py-8 text-center text-gray-400 text-xs">
-                    No models found — use “+ New model” to create one.
-                  </td>
-                </tr>
+                <div className="px-4 py-8 text-center text-gray-400 text-xs">No models found — use “+ New model”.</div>
               )}
-            </tbody>
-          </table>
+            </div>
+          </div>
+
+          {/* Right: version panel for the highlighted model */}
+          <div className="flex flex-col w-1/2 min-h-0">
+            {!selModel ? (
+              <div className="flex-1 flex items-center justify-center px-4 text-center text-gray-400 text-xs">← Select a model to choose its version</div>
+            ) : (
+              <>
+                <div className="px-4 py-2.5 border-b border-gray-100">
+                  <div className="text-sm font-medium text-gray-900 truncate">{selModel.name}</div>
+                  <div className="text-[11px] text-gray-400">{selModel.category}</div>
+                </div>
+                <div className="overflow-y-auto flex-1 p-2 space-y-1">
+                  {versionRows.length === 0 && (
+                    <p className="px-2 py-3 text-xs text-gray-400">No selectable versions.</p>
+                  )}
+                  {versionRows.map((v) => (
+                    <button key={v.id} type="button" onClick={() => onPick(selModel, v.id)}
+                      className="w-full text-left px-3 py-2 rounded-md border border-gray-200 hover:border-gray-900 hover:bg-blue-50 flex items-center justify-between gap-2">
+                      <span className="text-xs text-gray-800">
+                        {v.season_name} · {statusLabel(v.status)}
+                        {v.id === defaultVer && <span className="ml-1.5 text-[10px] text-gray-400">(default)</span>}
+                      </span>
+                      {!v.has_recipe && <span className="text-[10px] text-amber-600 shrink-0">レシピ未定義</span>}
+                    </button>
+                  ))}
+                  {!hasSeasonVersion && selModel.versions.length > 0 && seasonId && (
+                    <button type="button" onClick={copyForward} disabled={pending}
+                      className="w-full text-left px-3 py-2 rounded-md border border-dashed border-gray-300 text-xs text-gray-500 hover:border-gray-900 hover:text-gray-900 disabled:opacity-50">
+                      {pending ? "作成中…" : `+ ${seasonName ?? "この season"} の版を作成（copy-forward）`}
+                    </button>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </div>
     </div>

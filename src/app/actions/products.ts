@@ -242,9 +242,107 @@ export async function createProduct(
   if (error) return error.message;
   const syncErr = await syncProductColors(supabase, data.id, parseEnabledColorIds(formData));
   if (syncErr) return syncErr;
-  await syncProductTags(supabase, data.id, parseTags(formData));
+  // Tags: seed the Model's default tags (ADR-0011 §9.6) unioned with any picked in the form.
+  let tags = parseTags(formData);
+  if (link.model_id) {
+    const { data: mt } = await supabase.from("model_tags").select("tag").eq("model_id", link.model_id);
+    tags = Array.from(new Set([...tags, ...((mt ?? []) as { tag: string }[]).map((r) => r.tag)]));
+  }
+  await syncProductTags(supabase, data.id, tags);
+  // ADR-0011 Phase 4 (copy-on-create) — snapshot the linked Version's shared recipe (non-main
+  // materials, lining, sizes, composition, manufacturing template) onto the new product. The
+  // create form no longer collects these (scope A). Best-effort: a failure doesn't abort creation
+  // (the product exists; the recipe can be re-synced from the edit page).
+  await syncProductRecipeFromVersion(data.id);
   revalidatePath("/products");
   redirect(`/products/${data.id}/edit`);
+}
+
+// ADR-0011 Phase 4 (copy-on-create / manual re-sync) — snapshot the linked Model Version's shared
+// recipe onto the Product: non-main materials (product_materials), lining, orderable sizes,
+// accessory composition, and the manufacturing template (*_minutes). MONEY is NOT computed here —
+// the main-material quantity is per-product (entered on the cost form), which recomputes cost from
+// these inherited inputs. Pre-batch only: once a ProductionBatch exists the recipe is frozen (§9.2).
+export async function syncProductRecipeFromVersion(productId: string): Promise<string | null> {
+  const supabase = await createClient();
+  const { data: prod } = await supabase.from("products").select("model_version_id, status").eq("id", productId).single();
+  const p = prod as { model_version_id: string | null; status: string | null } | null;
+  if (!p) return "Product not found.";
+  if (p.status === "final") return "Product is finalised — unlock to edit.";
+  const versionId = p.model_version_id;
+  if (!versionId) return "No Model Version is linked to this product.";
+  const { count } = await supabase.from("production_batches").select("id", { count: "exact", head: true }).eq("product_id", productId);
+  if ((count ?? 0) > 0) return "This product is in production (a batch exists) — its recipe is frozen.";
+
+  const [{ data: ver }, { data: vmats }] = await Promise.all([
+    supabase
+      .from("model_versions")
+      .select("orderable_sizes, accessory_composition, cutting_minutes, sewing_minutes, knitting_minutes, thread_minutes, finish_minutes, packing_minutes")
+      .eq("id", versionId)
+      .single(),
+    supabase
+      .from("model_version_materials")
+      .select("role, material_id, material_color_id, usage_amount, sort_order")
+      .eq("model_version_id", versionId)
+      .order("sort_order"),
+  ]);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const v = (ver ?? {}) as any;
+  const mats = ((vmats ?? []) as { role: string; material_id: string; material_color_id: string | null; usage_amount: number }[]);
+  const liningRow = mats.find((m) => m.role === "lining") ?? null;
+  const nonLining = mats.filter((m) => m.role !== "lining");
+
+  // Lining's denormalized columns come from the material record (kept for the edit display).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let lm: any = null;
+  if (liningRow) {
+    const { data } = await supabase
+      .from("materials")
+      .select("category, name, color, comp_1_label, comp_1_pct, comp_2_label, comp_2_pct, comp_3_label, comp_3_pct, comp_4_label, comp_4_pct, comp_5_label, comp_5_pct")
+      .eq("id", liningRow.material_id)
+      .single();
+    lm = data;
+  }
+
+  const { error: uErr } = await supabase.from("products").update({
+    lining_material_id:       liningRow?.material_id ?? null,
+    lining_material_color_id: liningRow?.material_color_id ?? null,
+    lining_m_quantity:        liningRow ? Number(liningRow.usage_amount) : 0,
+    lining_m_category:        lm?.category ?? null,
+    lining_m_name:            lm?.name ?? null,
+    lining_m_color:           lm?.color ?? null,
+    lining_m_comp1_label: lm?.comp_1_label ?? null, lining_m_comp1_pct: lm?.comp_1_pct ?? null,
+    lining_m_comp2_label: lm?.comp_2_label ?? null, lining_m_comp2_pct: lm?.comp_2_pct ?? null,
+    lining_m_comp3_label: lm?.comp_3_label ?? null, lining_m_comp3_pct: lm?.comp_3_pct ?? null,
+    lining_m_comp4_label: lm?.comp_4_label ?? null, lining_m_comp4_pct: lm?.comp_4_pct ?? null,
+    lining_m_comp5_label: lm?.comp_5_label ?? null, lining_m_comp5_pct: lm?.comp_5_pct ?? null,
+    orderable_sizes:       v.orderable_sizes ?? [],
+    accessory_composition: v.accessory_composition ?? null,
+    cutting_minutes:  Number(v.cutting_minutes ?? 0),
+    sewing_minutes:   Number(v.sewing_minutes ?? 0),
+    knitting_minutes: Number(v.knitting_minutes ?? 0),
+    thread_minutes:   Number(v.thread_minutes ?? 0),
+    finish_minutes:   Number(v.finish_minutes ?? 0),
+    packing_minutes:  Number(v.packing_minutes ?? 0),
+  }).eq("id", productId);
+  if (uErr) return uErr.message;
+
+  // Replace the non-main materials (product_materials) with the Version's (role + colour preserved).
+  const { error: dErr } = await supabase.from("product_materials").delete().eq("product_id", productId);
+  if (dErr) return dErr.message;
+  if (nonLining.length) {
+    const { error: iErr } = await supabase.from("product_materials").insert(nonLining.map((m) => ({
+      product_id:        productId,
+      material_id:       m.material_id,
+      usage_amount:      Number(m.usage_amount),
+      material_group:    m.role,
+      material_color_id: m.material_color_id,
+    })));
+    if (iErr) return iErr.message;
+  }
+  revalidatePath(`/products/${productId}/edit`);
+  revalidatePath("/products");
+  return null;
 }
 
 export async function updateProduct(
