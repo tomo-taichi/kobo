@@ -66,6 +66,22 @@ export const PRODUCT_CATEGORIES = [
 
 export const PRODUCT_SEXES = ["Men", "Women", "Unisex", "Kids"] as const;
 
+// Fixed display order for category filters (canonical labels). Anything not listed
+// is appended at the end. Shared by the Products and Models list toolbars.
+export const CATEGORY_ORDER = [
+  "Coat", "Jacket", "Trousers", "Knitwear", "Shirt", "T-shirt",
+  "Accessories", "Watch", "Eyewear", "Shoes", "Bag", "Other",
+];
+export const catRank = (c: string) => {
+  const i = CATEGORY_ORDER.indexOf(c);
+  return i === -1 ? CATEGORY_ORDER.length : i;
+};
+// Emoji icon per category (tooltip shows the name). Shared by category-filter toolbars.
+export const CATEGORY_ICON: Record<string, string> = {
+  Coat: "🧥", Jacket: "🥼", Trousers: "👖", Knitwear: "🧶", Shirt: "👔", "T-shirt": "👕",
+  Accessories: "💍", Watch: "⌚", Eyewear: "👓", Shoes: "👟", Bag: "👜", Other: "📦",
+};
+
 // Default orderable sizes (overridable per product on the product form). Apparel sizes
 // by sex (Men 5–10, Women 1–4, Unisex/Kids 1–10); footwear/bags/jewellery/eyewear → Free;
 // Other → everything. Sizes here must stay a subset of order-constants SIZES.

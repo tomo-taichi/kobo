@@ -139,3 +139,56 @@ CONTEXT.md を正とする。要約:
 4. 素材コスト更新の伝播(ライブ再計算＋ cost-finalised スナップショット)と staleness flags。
 5. Retail 価格のガイド付き更新(販売数表示・Yes/No・OC out-of-date アラート)。
 6. Deprecation UX。
+
+## 9. Phase 4 詳細設計(決定事項・2026-08-16)
+
+ADR-0009 完了後に着手する Phase 4 の具体設計。grilling セッション（実データ dry-run 併用）で確定。Phase 3 完了（Product↔Model/Version の dual-write リンク＋作成/編集ピッカー）を前提とする。
+
+### 9.1 フィールド所有の最終確定
+- **製造時間(`*_minutes`) = Product 所有のまま**(ADR §3.2 の例外を維持)。Model/Version はテンプレートとして保持し、作成時にコピー、以後 Product 独立。**propagation の対象外**。
+  - 根拠(実データ): 同一 (Model, Season)×複数メイン素材の **427 グループ中 62 グループ(≈15%)で製造時間が商品ごとに実際に異なる**(例 `mountain parka long`/18SS: 縫製 4.3h〜17.5h)。難縫製素材(例 `nylon silver 925 oxidised`)が縫製時間を 3〜4 倍にする。per-product 調整は実運用されている。
+- **裏地(生地・用尺・色) / 非メイン素材 / orderable sizes / accessory composition = Version 所有、Product は同期スナップショットを保持**。
+  - 根拠(実データ): 裏地色は同一 Version 内で **分岐 0 件**(413/413 が color_id 保持)。→ 色も Version 共有で安全。
+
+### 9.2 同期モデル(snapshot + 導出凍結)
+- **量産バッチ生成までは自動同期・生成後は凍結**。凍結は **`EXISTS(production_batches WHERE product_id = X)` から導出**(Version ロックの導出＝CONTEXT.md「Model Version」節と同方式)。新カラム追加なし・バッチ生成時の書込なし・`status='final'`(手動 finalize)の流用なし。
+- 「スナップショット」の実体 = **その Product が最後に量産前同期した時点の列の値**。
+- 同期トリガー:
+  - (a) **作成時**: リンクした Version の recipe を Product にコピー＋cost 再計算。
+  - (b) **Duplicate 時**: **Version(現行)の recipe** から seed(コピー元 Product の列からではない)。
+  - (c) **Version recipe 編集時**: その版を参照する**全量産前 Product に伝播**(recipe 再同期＋cost 再計算)。
+  - (d) **凍結後の手動「update from Model」**: 警告付きで実行可。`material_orders`「要再確認」フラグ連携は **ADR-0009 実装後に後回し**。
+
+### 9.3 コスト再計算ルール(選択肢A採用)
+- **recipe 変更 → 量産前 Product の recipe＋原価・material_cost・Ideal WS を現在の set_cost でライブ再計算**。Retail は不変(手入力マスター・§3.6)。
+- 製造時間は Product 所有のため再計算では **Product 自身の `*_minutes`** を使用。原価式 = **メイン素材(Product) + 非メイン(Version 同期) + 製造(Product)**。
+- **material マスタの set_cost 編集**は従来どおり **手動 staleness(§3.7)**のまま(この経路は Phase 4 対象外)。ただし recipe 編集による再計算は現在 set_cost で行うため、溜まっていた set_cost ドリフトも同時にフラッシュされる(下記 9.4 の確認画面で可視化)。
+
+### 9.4 fan-out の安全策
+- 伝播は **単一の Postgres 関数(RPC)で all-or-nothing トランザクション**(supabase-js は文ごと autocommit のため JS 側での複数 update ではロールバック不可)。
+- 実行前に **確認画面(キャンセル可)**:
+  1. 商品ごとに **現在値 → 再計算値 → 差額** の一覧(合計だけでなく)。
+  2. **±20% 超の変動を強調表示**(素材データ異常＝単位ミス・差し替えの検知。例 `DOUBLE BREASTED WORK COAT` ¥42,384→¥4,290 の約9割減)。
+  3. キャンセル可能。
+
+### 9.5 マイグレーション(カットオーバー)
+- dry-run(2026-08-15)で **recipe 分岐 = 0 件 / 1,921 product**(全件 Product と Version のレシピが一致)。→ 切替時は **cost 完全 no-op**(stored 値を温存、blanket 再計算しない)。既存 cost/Ideal WS/Ideal Retail は不変を保証。
+
+### 9.6 作成 / Duplicate の recipe シード
+| | recipe(裏地/非メイン/サイズ/組成) | 製造時間 | メイン素材/色/価格/sex/season |
+|---|---|---|---|
+| 新規作成 | リンク Version から snapshot＋cost 再計算 | Model テンプレから初期化 | フォーム入力 |
+| Duplicate | **Version(現行)から** snapshot | コピー元 Product からコピー | 現行どおり(メインはクリア→再選択) |
+
+- **Duplicate 後のメイン素材変更ガード**: 再選択したメイン素材がコピー元と異なる場合、製造時間欄に注意表示(「メイン素材が変わりました。製造時間の確認をしてください」)。縫製時間は素材で最大 ~4 倍変わるため、引き継いだ値のまま気づかず進むのを防ぐ。
+- **新規 Model 空 Version ガード**: 新規 Model 作成直後は Version recipe が空 → Product recipe も空。Version 編集画面へ誘導するか「Version のレシピが未定義です」を明示し、空のまま進行するのを防ぐ。
+
+### 9.7 Product Edit ページ最終レイアウト
+- **残す(Product 所有・編集可)**: Basic Info(Season / Model・Version ピッカー / Sex / is_sample / is_invalid)、Main Material＋orderable colours、Manufacturing time、Pricing(カラー別 retail/markup/EUR rate)、Care & Logistics、Photos。
+- **撤去 → 読取専用へ**: Lining(色含む)、Accessories Composition、非メイン「Others」素材行、Orderable Sizes。
+- **新設「Model Recipe (v{season})」読取カード**(§5.2 / Phase 3c を統合): 非メイン素材＋用尺・裏地(＋色)・サイズ・組成・製造テンプレを表示、「Model 版を編集 →」導線(`ModelVersionEditModal`)、old-version ヒント、非メイン素材コスト小計。
+- **Cost UI**: 編集可＝メイン素材数量＋製造時間、読取専用＝Version 由来の非メイン素材コスト。
+
+### 9.8 スコープ外(別途対応)
+- 212 件の set_cost ドリフト(うち 75 件 ±20% 超、2 件 stored=0 のデータ穴・例 品番2304)は set-cost staleness 自動化時に棚卸し(CONTEXT.md データ品質メモ参照)。
+- `material_orders`「要再確認」フラグ連携は ADR-0009 完了後。

@@ -12,6 +12,8 @@ export function BulkBar({
   onClear,
   children,
   deleteLabel = "Delete",
+  archiveLabel = "Archive",
+  unarchiveLabel = "Unarchive",
 }: {
   count: number;
   pending?: boolean;
@@ -21,6 +23,8 @@ export function BulkBar({
   onClear: () => void;
   children?: React.ReactNode;
   deleteLabel?: string;
+  archiveLabel?: string;
+  unarchiveLabel?: string;
 }) {
   if (count <= 0) return null;
   return (
@@ -28,10 +32,10 @@ export function BulkBar({
       <span className="px-3 py-1 text-gray-300">{count} selected</span>
       {(onArchive || onUnarchive) && <span className="w-px h-5 bg-white/15" />}
       {onArchive && (
-        <button type="button" disabled={pending} onClick={onArchive} className="px-3 py-1 rounded-lg hover:bg-white/10 disabled:opacity-50">Archive</button>
+        <button type="button" disabled={pending} onClick={onArchive} className="px-3 py-1 rounded-lg hover:bg-white/10 disabled:opacity-50">{archiveLabel}</button>
       )}
       {onUnarchive && (
-        <button type="button" disabled={pending} onClick={onUnarchive} className="px-3 py-1 rounded-lg hover:bg-white/10 disabled:opacity-50">Unarchive</button>
+        <button type="button" disabled={pending} onClick={onUnarchive} className="px-3 py-1 rounded-lg hover:bg-white/10 disabled:opacity-50">{unarchiveLabel}</button>
       )}
       {children && <><span className="w-px h-5 bg-white/15" />{children}</>}
       <span className="w-px h-5 bg-white/15" />

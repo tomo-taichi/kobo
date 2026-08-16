@@ -10,18 +10,19 @@ import {
   type ManufacturingMinutes,
 } from "@/lib/pricing";
 
-type AdditionalRow = { materialId: string; quantity: number; role: string };
 type ColorEdit = { productColorId: string; markupRate: number; retailRate: number; retailPriceEur: number };
 
-// Per-colour cost model: manufacturing, usage amounts and the EUR rate are shared at the
-// product level; the MAIN material's price varies per colour (material_colors override,
-// else base). Each enabled colour (product_colors) gets its own computed cost stack +
-// manually-set Retail Price. Non-main materials use their base price.
+// Per-colour cost model: manufacturing, main quantity and the EUR rate are Product-owned; the
+// MAIN material's price varies per colour (material_colors override, else base). Each enabled
+// colour (product_colors) gets its own computed cost stack + manually-set Retail Price.
+//
+// ADR-0011 §9.7 — non-main materials (lining + product_materials) are Version-owned now and edited
+// on the Model version (propagated by apply_model_version_recipe). This action no longer accepts or
+// writes them: it READS the product's Version-synced snapshot to get the non-main cost, and never
+// touches product_materials or lining_m_quantity. Editable here = main quantity + manufacturing time.
 export async function updateProductCosts(
   productId: string,
   mainQuantity: number,
-  liningQuantity: number,
-  additionalRows: AdditionalRow[],
   manufacturingMinutes: ManufacturingMinutes,
   laborRate: number,
   costEurRate: number,
@@ -32,12 +33,13 @@ export async function updateProductCosts(
   // The 6 steps are entered as time; derive the JPY amounts (kept in sync with *_minutes).
   const manufacturingCosts = mfgMinutesToAmounts(manufacturingMinutes, laborRate);
 
-  // Main/lining base set prices + the main material id (for per-colour prices)
+  // Main/lining base set prices + main id (per-colour prices) + lining qty (Version-owned; read only)
   const { data: product } = await supabase
     .from("products")
     .select(`
       status,
       main_material_id,
+      lining_m_quantity,
       main_mat:materials!main_material_id(set_price_jpy),
       lining_mat:materials!lining_material_id(set_price_jpy)
     `)
@@ -50,42 +52,25 @@ export async function updateProductCosts(
   const mainMaterialId = (product as any)?.main_material_id ?? null;
   const mainBase       = Number((product as any)?.main_mat?.set_price_jpy   ?? 0);
   const liningBase     = Number((product as any)?.lining_mat?.set_price_jpy ?? 0);
+  const liningQuantity = Number((product as any)?.lining_m_quantity ?? 0);
 
-  // Additional materials: base prices + single colour (to pin material_color_id)
-  const additionalIds = additionalRows.map((r) => r.materialId).filter(Boolean);
-  const additionalSetPrices = new Map<string, number>();
-  const additionalPinnedColor = new Map<string, string>();
-  if (additionalIds.length > 0) {
-    const [{ data: mats }, { data: mcs }] = await Promise.all([
-      supabase.from("materials").select("id, set_price_jpy").in("id", additionalIds),
-      supabase.from("material_colors").select("id, material_id").in("material_id", additionalIds),
-    ]);
-    (mats ?? []).forEach((m: any) => additionalSetPrices.set(m.id, Number(m.set_price_jpy)));
-    const byMat = new Map<string, string[]>();
-    (mcs ?? []).forEach((r: any) => { const a = byMat.get(r.material_id) ?? []; a.push(r.id); byMat.set(r.material_id, a); });
-    for (const [mid, ids] of byMat) if (ids.length === 1) additionalPinnedColor.set(mid, ids[0]);
+  // Non-main cost = the product's Version-synced snapshot: lining (Version-owned) + the
+  // product_materials rows (Version-owned). Read here to recompute cost — never rewritten.
+  const { data: pmRows } = await supabase
+    .from("product_materials").select("material_id, usage_amount").eq("product_id", productId);
+  const pm = (pmRows ?? []) as { material_id: string; usage_amount: number }[];
+  const pmIds = Array.from(new Set(pm.map((r) => r.material_id)));
+  const pmSetPrice = new Map<string, number>();
+  if (pmIds.length > 0) {
+    const { data: mats } = await supabase.from("materials").select("id, set_price_jpy").in("id", pmIds);
+    (mats ?? []).forEach((m: any) => pmSetPrice.set(m.id, Number(m.set_price_jpy ?? 0)));
   }
 
-  // Cost shared across colours: lining + additional materials + manufacturing
+  // Cost shared across colours: lining + other non-main materials + manufacturing
   const nonMainCostJpy =
     liningBase * liningQuantity +
-    additionalRows.reduce((sum, r) => sum + (additionalSetPrices.get(r.materialId) ?? 0) * r.quantity, 0);
+    pm.reduce((sum, r) => sum + (pmSetPrice.get(r.material_id) ?? 0) * Number(r.usage_amount), 0);
   const mfgCost = calcCostJpy(0, manufacturingCosts);
-
-  // Replace additional product_materials (preserve pinned single colour)
-  await supabase.from("product_materials").delete().eq("product_id", productId);
-  if (additionalRows.length > 0) {
-    const { error: insertError } = await supabase.from("product_materials").insert(
-      additionalRows.map((r) => ({
-        product_id:        productId,
-        material_id:       r.materialId,
-        usage_amount:      r.quantity,
-        material_group:    r.role || null,
-        material_color_id: additionalPinnedColor.get(r.materialId) ?? null,
-      }))
-    );
-    if (insertError) return insertError.message;
-  }
 
   // Main material's per-colour prices (override, else base)
   const mainColorPrice = new Map<string, number>();
@@ -131,7 +116,6 @@ export async function updateProductCosts(
     .from("products")
     .update({
       main_m_quantity:   mainQuantity,
-      lining_m_quantity: liningQuantity,
       material_cost_jpy: baseMaterialCost,
       cost_jpy:          baseCostJpy,
       cost_eur:          baseCostEur,

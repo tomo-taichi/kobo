@@ -1,6 +1,7 @@
 "use client";
 
 import { ProductForm } from "@/components/product-form";
+import { ProductModelRecipeCard } from "@/components/product-model-recipe-card";
 import { ProductCostForm } from "@/components/product-cost-form";
 import { ProductPhotosManager } from "@/components/product-photos-manager";
 import { ProductCareForm } from "@/components/product-care-form";
@@ -19,6 +20,7 @@ export function ProductEditView({ bundle: b }: { bundle: ProductEditBundle }) {
         locked={false}
         seasons={b.seasons}
         materials={b.materials}
+        models={b.models}
         pastModelNames={b.pastModelNames}
         categoryOptions={b.categoryOptions}
         sexOptions={b.sexOptions}
@@ -27,6 +29,7 @@ export function ProductEditView({ bundle: b }: { bundle: ProductEditBundle }) {
         initialData={b.initialData}
         id={b.id}
       />
+      <ProductModelRecipeCard productId={b.id} />
       <ProductCostForm
         locked={b.locked}
         productId={b.id}
@@ -35,6 +38,7 @@ export function ProductEditView({ bundle: b }: { bundle: ProductEditBundle }) {
         liningMaterial={b.liningMaterial}
         initialMainQuantity={b.initialMainQuantity}
         initialLiningQuantity={b.initialLiningQuantity}
+        storedMaterialCostJpy={b.storedMaterialCostJpy}
         allMaterials={b.materials}
         initialAdditionalRows={b.initialAdditionalRows}
         initialManufacturing={b.initialManufacturing}
